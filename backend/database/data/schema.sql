@@ -1,0 +1,256 @@
+-- ============================================
+-- DATABASE SCHEMA
+-- ============================================
+-- This file contains the complete database schema
+-- Run this file to create all tables in your PostgreSQL database
+--
+-- Usage:
+--   psql -U username -d database_name -f src/db/schema.sql
+--   OR
+--   Use the setup-database.ts script: npm run db:setup
+-- ============================================
+
+-- Enable UUID extension (for generating unique IDs)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================
+-- USERS & AUTHENTICATION
+-- ============================================
+
+-- Users table - stores user account information
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  avatar_url TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Refresh tokens table - stores refresh tokens for authentication
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMP
+);
+
+-- ============================================
+-- ROLE-BASED ACCESS CONTROL (RBAC)
+-- ============================================
+
+-- Roles table - stores different user roles (e.g., Admin, Manager, Employee)
+CREATE TABLE IF NOT EXISTS roles (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Permissions table - stores individual permissions
+CREATE TABLE IF NOT EXISTS permissions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  resource TEXT NOT NULL, -- e.g., "employees", "departments"
+  action TEXT NOT NULL, -- e.g., "read", "write", "delete"
+  permission_type VARCHAR(50) NOT NULL, -- 'menu_access' or 'action'
+  description TEXT
+);
+
+-- Role permissions table - links roles to permissions (many-to-many)
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+  PRIMARY KEY (role_id, permission_id)
+);
+
+-- User roles table - links users to roles (many-to-many)
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, role_id)
+);
+
+-- ============================================
+-- DEPARTMENTS & EMPLOYEES
+-- ============================================
+
+-- Departments table - stores department information
+CREATE TABLE IF NOT EXISTS departments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'active' NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Positions table - stores job positions
+CREATE TABLE IF NOT EXISTS positions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  department_id UUID REFERENCES departments(id),
+  description TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Employees table - stores employee information
+CREATE TABLE IF NOT EXISTS employees (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id), -- Link to user account (nullable)
+  employee_code TEXT NOT NULL UNIQUE,
+  first_name TEXT NOT NULL,
+  middle_name TEXT,
+  last_name TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  birth_date TIMESTAMP,
+  gender VARCHAR(20),
+  marital_status VARCHAR(20),
+  avatar_url TEXT,
+  department_id UUID REFERENCES departments(id),
+  position_id UUID REFERENCES positions(id),
+  employment_type VARCHAR(50), -- Full-Time, Part-Time
+  supervisor_id UUID, -- Self-reference for manager hierarchy
+  status VARCHAR(50) DEFAULT 'active' NOT NULL,
+  hired_at TIMESTAMP,
+  terminated_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ============================================
+-- ATTENDANCE
+-- ============================================
+
+-- Attendance table - stores employee check-in/check-out records
+CREATE TABLE IF NOT EXISTS attendance (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  check_in_time TIMESTAMP NOT NULL,
+  check_out_time TIMESTAMP,
+  location_latitude DECIMAL(10, 8),
+  location_longitude DECIMAL(11, 8),
+  location_address TEXT,
+  notes TEXT,
+  status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ============================================
+-- LEAVES
+-- ============================================
+
+-- Leave requests table - stores employee leave requests
+CREATE TABLE IF NOT EXISTS leave_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  leave_type VARCHAR(50) NOT NULL, -- vacation, sick, personal, etc.
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  reason TEXT,
+  status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
+  approved_by UUID REFERENCES employees(id),
+  approved_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ============================================
+-- ACTIVITIES
+-- ============================================
+
+-- Activities table - stores employee field activities
+CREATE TABLE IF NOT EXISTS activities (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  activity_type TEXT NOT NULL,
+  description TEXT NOT NULL,
+  location_latitude DECIMAL(10, 8),
+  location_longitude DECIMAL(11, 8),
+  location_address TEXT,
+  start_time TIMESTAMP NOT NULL,
+  end_time TIMESTAMP,
+  status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
+  approved_by UUID REFERENCES employees(id),
+  approved_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ============================================
+-- LOCATIONS
+-- ============================================
+
+-- Locations table - stores location information
+CREATE TABLE IF NOT EXISTS locations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  address TEXT,
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  location_type TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Employee locations table - links employees to locations (many-to-many)
+CREATE TABLE IF NOT EXISTS employee_locations (
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  location_id UUID NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  PRIMARY KEY (employee_id, location_id)
+);
+
+-- ============================================
+-- EMERGENCY CONTACTS
+-- ============================================
+
+-- Emergency contacts table - stores employee emergency contact information
+CREATE TABLE IF NOT EXISTS emergency_contacts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  relationship TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ============================================
+-- INDEXES (for better query performance)
+-- ============================================
+
+-- User indexes
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- Employee indexes
+CREATE INDEX IF NOT EXISTS idx_employees_user_id ON employees(user_id);
+CREATE INDEX IF NOT EXISTS idx_employees_department_id ON employees(department_id);
+CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(email);
+CREATE INDEX IF NOT EXISTS idx_employees_employee_code ON employees(employee_code);
+
+-- Attendance indexes
+CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance(employee_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_check_in_time ON attendance(check_in_time);
+
+-- Leave requests indexes
+CREATE INDEX IF NOT EXISTS idx_leave_requests_employee_id ON leave_requests(employee_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
+
+-- Activities indexes
+CREATE INDEX IF NOT EXISTS idx_activities_employee_id ON activities(employee_id);
+CREATE INDEX IF NOT EXISTS idx_activities_status ON activities(status);
+
+-- User roles indexes
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
+
+-- Role permissions indexes
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id);
