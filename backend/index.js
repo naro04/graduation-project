@@ -1,15 +1,7 @@
-const app = require("./app");
-const PORT = app.get("port");
-const pool = require('./connection');
+const app = require('./app');
 
-pool.query('SELECT NOW()', (err, res) => {
-  if (err) {
-    console.error('❌ Database error:', err);
-  } else {
-    console.log('✅ DB Time:', res.rows[0]);
-  }
-});
+const PORT = app.get('port');
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
 });

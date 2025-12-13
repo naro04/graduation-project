@@ -1,16 +1,16 @@
 const express = require("express");
+const routes = require('./routes');
+
 const app = express();
 
-// ===== Middleware =====
-app.use(express.json()); // عشان نقرأ JSON من body
+// app.use(compression());
+// app.disable('x-powered-by');
+app.set('port', process.env.PORT || 5000);
 
-// ===== Test Route =====
-app.get("/", (req, res) => {
-  res.json({ message: "HR Backend App is running ✅" });
-});
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
-// ===== Port =====
-const PORT = 5000;
-app.set("port", PORT);
+app.use('/api/v1/', routes);
+
 
 module.exports = app;
