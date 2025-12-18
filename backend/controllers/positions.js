@@ -10,7 +10,6 @@ exports.getAllPositions = async (req, res) => {
             data: result.rows
         });
     } catch (err) {
-        console.error('Error fetching positions:', err);
         res.status(500).json({ message: 'Error fetching positions', error: err.message });
     }
 };
@@ -34,7 +33,6 @@ exports.createPosition = async (req, res) => {
             data: result.rows[0]
         });
     } catch (err) {
-        console.error('Error creating position:', err);
         res.status(500).json({ message: 'Error creating position', error: err.message });
     }
 };
@@ -60,7 +58,6 @@ exports.updatePosition = async (req, res) => {
             data: result.rows[0]
         });
     } catch (err) {
-        console.error('Error updating position:', err);
         res.status(500).json({ message: 'Error updating position', error: err.message });
     }
 };
@@ -79,7 +76,6 @@ exports.deletePosition = async (req, res) => {
             message: 'Position deleted successfully'
         });
     } catch (err) {
-        console.error('Error deleting position:', err);
         res.status(500).json({ message: 'Error deleting position', error: err.message });
     }
 };

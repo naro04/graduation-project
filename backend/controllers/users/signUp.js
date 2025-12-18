@@ -56,8 +56,7 @@ router.post("/signup", async (req, res) => {
         });
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Legacy Signup Error:', err);
-        res.status(500).json({ message: "Internal server error during signup" });
+        res.status(500).json({ message: "Internal server error during signup", error: err.message });
     } finally {
         client.release();
     }

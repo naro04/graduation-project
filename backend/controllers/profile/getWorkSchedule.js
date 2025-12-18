@@ -16,8 +16,7 @@ router.get("/", async (req, res) => {
         const { rows } = await pool.query(getWorkScheduleQuery, [id, startDate, endDate]);
         res.status(200).json(rows);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Error fetching work schedule" });
+        res.status(500).json({ message: "Error fetching work schedule", error: err.message });
     }
 });
 

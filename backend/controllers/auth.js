@@ -4,7 +4,6 @@ const pool = require('../database/connection');
 const { createUser, findUserByEmail, assignRole, retrieveUserPermissions } = require('../database/data/queries/auth');
 
 const signToken = (id) => {
-    console.log("id from register", id);
     return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', {
         expiresIn: process.env.JWT_EXPIRES_IN || '1d',
     });
@@ -12,7 +11,6 @@ const signToken = (id) => {
 
 const createSendToken = (user, statusCode, res) => {
     const token = signToken(user.id);
-    console.log("token from register", token);
     const cookieOptions = {
         expires: new Date(
             Date.now() + (parseInt(process.env.JWT_COOKIE_EXPIRES_IN) || 24) * 60 * 60 * 1000
@@ -23,9 +21,7 @@ const createSendToken = (user, statusCode, res) => {
     };
 
     res.cookie('token', token, cookieOptions);
-    console.log("res.cookie register", res.cookie);
     user.password_hash = undefined; // Hide password
-    console.log("user from register", user);
     res.status(statusCode).json({
         status: 'success',
         token,
@@ -88,8 +84,7 @@ exports.register = async (req, res) => {
         createSendToken(newUser, 201, res);
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Registration Error:', err);
-        res.status(500).json({ message: 'Internal server error during registration' });
+        res.status(500).json({ message: 'Internal server error during registration', error: err.message });
     } finally {
         client.release();
     }
@@ -97,7 +92,8 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const loginId = (email || emailOrId || identifier || '').toLowerCase().trim();
+        const { email, password } = req.body;
+        const loginId = (email || '').toLowerCase().trim();
 
         if (!loginId || !password) {
             return res.status(400).json({ message: 'Please provide email/ID and password' });
@@ -125,8 +121,7 @@ exports.login = async (req, res) => {
 
         createSendToken(user, 200, res);
     } catch (err) {
-        console.error('Login Error:', err);
-        res.status(500).json({ message: 'Internal server error during login' });
+        res.status(500).json({ message: 'Internal server error during login', error: err.message });
     }
 };
 

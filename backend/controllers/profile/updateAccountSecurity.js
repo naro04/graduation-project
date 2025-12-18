@@ -23,8 +23,7 @@ router.put("/", async (req, res) => {
 
         res.status(200).json({ message: "Account security updated successfully" });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Error updating account security" });
+        res.status(500).json({ message: "Error updating account security", error: err.message });
     }
 });
 

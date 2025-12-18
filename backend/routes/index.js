@@ -8,6 +8,12 @@ const rbacRouter = require('./rbac');
 const deptRouter = require('./departments');
 const employeeRouter = require('./employees');
 const posRouter = require('./positions');
+const locationTypesRouter = require('./locationTypes');
+const locationsRouter = require('./locations');
+const locationAssignmentsRouter = require('./locationAssignments');
+const locationActivitiesRouter = require('./locationActivities');
+const gpsVerificationRouter = require('./gpsVerification');
+const attendanceRouter = require('./attendance');
 
 router.use('/profile', profileRouter);
 router.use('/users', userRouter);
@@ -16,6 +22,12 @@ router.use('/rbac', rbacRouter);
 router.use('/departments', deptRouter);
 router.use('/employees', employeeRouter);
 router.use('/positions', posRouter);
+router.use('/location-types', locationTypesRouter);
+router.use('/locations', locationsRouter);
+router.use('/location-assignments', locationAssignmentsRouter);
+router.use('/location-activities', locationActivitiesRouter);
+router.use('/gps-verifications', gpsVerificationRouter);
+router.use('/attendance', attendanceRouter);
 router.use('/', dashboard);
 
 module.exports = router;

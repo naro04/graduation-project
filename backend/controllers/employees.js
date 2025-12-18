@@ -20,7 +20,6 @@ exports.getAllEmployees = async (req, res) => {
             data: result.rows
         });
     } catch (err) {
-        console.error('Error fetching employees:', err);
         res.status(500).json({ message: 'Error fetching employees', error: err.message });
     }
 };
@@ -32,7 +31,6 @@ exports.createEmployee = async (req, res) => {
             department_id, position_id, status, role_id, avatar_url
         } = req.body;
 
-        console.log('Creating employee with data:', req.body);
 
         // 1. Validation
         if (!first_name || !last_name) {
@@ -68,14 +66,12 @@ exports.createEmployee = async (req, res) => {
             await pool.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [user_id, role_id]);
         }
 
-        console.log('Employee created successfully:', newEmployee.id);
 
         res.status(201).json({
             status: 'success',
             data: newEmployee
         });
     } catch (err) {
-        console.error('Error creating employee:', err);
         res.status(500).json({
             status: 'error',
             message: 'Error creating employee',
@@ -116,7 +112,6 @@ exports.updateEmployee = async (req, res) => {
             data: result.rows[0]
         });
     } catch (err) {
-        console.error('Error updating employee:', err);
         res.status(500).json({
             status: 'error',
             message: 'Error updating employee',
@@ -140,7 +135,6 @@ exports.deleteEmployee = async (req, res) => {
             message: 'Employee deleted successfully'
         });
     } catch (err) {
-        console.error('Error deleting employee:', err);
         res.status(500).json({ message: 'Error deleting employee', error: err.message });
     }
 };

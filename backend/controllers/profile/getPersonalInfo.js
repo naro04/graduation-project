@@ -8,7 +8,6 @@ router.get("/", async (req, res) => {
 
     try {
         const { rows } = await pool.query(getPersonalInfoQuery, [id]);
-        console.log("rows", rows);
 
         if (rows.length === 0) {
             return res.status(404).json({ message: "Employee not found" });
@@ -16,8 +15,7 @@ router.get("/", async (req, res) => {
 
         res.status(200).json(rows[0]);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Error fetching personal info" });
+        res.status(500).json({ message: "Error fetching personal info", error: err.message });
     }
 });
 

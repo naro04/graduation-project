@@ -41,8 +41,8 @@ const dashboardQueries = {
     getActivityChartData: `
     SELECT 
       TO_CHAR(day_series, 'Mon') as day_name,
-      SUM(CASE WHEN act.status = 'approved' THEN 1 ELSE 0 END) as implemented_count,
-      SUM(CASE WHEN act.status = 'pending' THEN 1 ELSE 0 END) as planned_count
+      SUM(CASE WHEN act.implementation_status = 'Implemented' THEN 1 ELSE 0 END) as implemented_count,
+      SUM(CASE WHEN act.implementation_status = 'Planned' THEN 1 ELSE 0 END) as planned_count
     FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') as day_series
     LEFT JOIN activities act ON DATE(act.start_time) = day_series
     GROUP BY day_series

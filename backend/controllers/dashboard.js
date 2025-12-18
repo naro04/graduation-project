@@ -40,8 +40,7 @@ router.get("/dashboard", async (req, res) => {
         res.status(200).json(responseData);
 
     } catch (err) {
-        console.error("Dashboard Error:", err);
-        res.status(500).json({ message: "Error loading dashboard metrics" });
+        res.status(500).json({ message: "Error loading dashboard metrics", error: err.message });
     }
 });
 

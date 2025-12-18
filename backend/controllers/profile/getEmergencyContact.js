@@ -10,8 +10,7 @@ router.get("/", async (req, res) => {
         const { rows } = await pool.query(getEmergencyContactQuery, [id]);
         res.status(200).json(rows);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Error fetching emergency contacts" });
+        res.status(500).json({ message: "Error fetching emergency contacts", error: err.message });
     }
 });
 

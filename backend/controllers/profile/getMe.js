@@ -11,8 +11,7 @@ router.get("/", async (req, res) => {
         }
         res.status(200).json(rows[0]);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Error fetching profile" });
+        res.status(500).json({ message: "Error fetching profile", error: err.message });
     }
 });
 
