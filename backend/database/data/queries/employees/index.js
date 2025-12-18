@@ -1,18 +1,11 @@
-const { getEmployeesQuery } = require("./getEmployees");
-const { getPersonalInfoQuery } = require("./getPersonalInfo");
-const { getJobInfoQuery } = require("./getJobInfo");
-const { getLocationQuery } = require("./getLocation");
-const { getAccountSecuirtyQuery } = require("./getAccountSecuirty");
-const { getWorkSchedualQuery } = require("./getWorkSchedual");
-const { getEmergencyContactQuery } = require("./getEmergencyContact");
-
+const { getEmployeesQuery } = require('./getEmployees');
+const { createEmployeeQuery } = require('./createEmployee');
+const { updateEmployeeQuery } = require('./updateEmployee');
+const { deleteEmployeeQuery } = require('./deleteEmployee');
 
 module.exports = {
     getEmployeesQuery,
-    getPersonalInfoQuery,
-    getJobInfoQuery,
-    getLocationQuery,
-    getAccountSecuirtyQuery,
-    getWorkSchedualQuery,
-    getEmergencyContactQuery
+    createEmployeeQuery,
+    updateEmployeeQuery,
+    deleteEmployeeQuery
 };

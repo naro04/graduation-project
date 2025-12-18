@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../../database/connection");
-const { getEmergencyContactQuery } = require("../../database/data/queries/employees");
+const { getEmergencyContactQuery } = require("../../database/data/queries/profile");
 
-router.get("/:id", async (req, res) => {
-    const { id } = req.params;
+router.get("/", async (req, res) => {
+    const id = req.user.id;
 
     try {
         const { rows } = await pool.query(getEmergencyContactQuery, [id]);
