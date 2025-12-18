@@ -63,8 +63,7 @@ router.post("/login", async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Legacy Login Error:', err);
-        res.status(500).json({ message: "Internal server error during login" });
+        res.status(500).json({ message: "Internal server error during login", error: err.message });
     }
 });
 
