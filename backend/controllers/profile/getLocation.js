@@ -10,8 +10,7 @@ router.get("/", async (req, res) => {
         const { rows } = await pool.query(getLocationQuery, [id]);
         res.status(200).json(rows);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Error fetching locations" });
+        res.status(500).json({ message: "Error fetching locations", error: err.message });
     }
 });
 

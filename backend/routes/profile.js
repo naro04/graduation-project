@@ -1,9 +1,13 @@
 const router = require("express").Router();
+const { protect } = require("../middleware/auth");
 
 const { getPersonalInfo, getAccountSecurity,
     getJobInfo, getEmergencyContact,
     getLocation, getWorkSchedule, getMe
 } = require("../controllers/profile");
+
+// All profile routes require authentication
+router.use(protect);
 
 // router.use("/employees", getEmployees);
 router.use("/me", getMe);
