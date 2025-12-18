@@ -23,7 +23,7 @@ LEFT JOIN positions p ON e.position_id = p.id
 LEFT JOIN users u ON e.user_id = u.id
 LEFT JOIN user_roles ur ON u.id = ur.user_id
 LEFT JOIN roles r ON ur.role_id = r.id
-WHERE e.id = $1;
+WHERE e.user_id = $1;
 `;
 
 module.exports = { getPersonalInfoQuery };

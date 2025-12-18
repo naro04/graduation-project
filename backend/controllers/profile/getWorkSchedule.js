@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../../database/connection");
-const { getWorkSchedualQuery } = require("../../database/data/queries/employees");
+const { getWorkScheduleQuery } = require("../../database/data/queries/profile");
 
-router.get("/:id", async (req, res) => {
-    const { id } = req.params;
+router.get("/", async (req, res) => {
+    const id = req.user.id;
     const { startDate, endDate } = req.query;
 
     // Validate date range parameters
@@ -13,7 +13,7 @@ router.get("/:id", async (req, res) => {
     }
 
     try {
-        const { rows } = await pool.query(getWorkSchedualQuery, [id, startDate, endDate]);
+        const { rows } = await pool.query(getWorkScheduleQuery, [id, startDate, endDate]);
         res.status(200).json(rows);
     } catch (err) {
         console.error(err);

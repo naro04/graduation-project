@@ -1,17 +1,17 @@
-const router = require("express").Router();
+const express = require('express');
+const router = express.Router();
+const employeesController = require('../controllers/employees');
+const { protect, restrictTo } = require('../middleware/auth');
 
-const { getPersonalInfo, getAccountSecuirty,
-    getJobInfo, getEmergencyContact,
-    getLocation, getWorkSchedual, getEmployees
-} = require("../controllers/employee");
+// All employee routes are protected and restricted to users with manage_employees permission
+router.use(protect);
 
-router.get("/employees", getEmployees);
-router.get("/personal-info/:id", getPersonalInfo);
-router.get("/account-security/:id", getAccountSecuirty);
-router.get("/job-info/:id", getJobInfo);
-router.get("/emergency-contact/:id", getEmergencyContact);
-router.get("/location/:id", getLocation);
-router.get("/work-schedual/:id", getWorkSchedual);
+router.route('/')
+    .get(restrictTo('view_employees', 'manage_employees'), employeesController.getAllEmployees)
+    .post(restrictTo('manage_employees'), employeesController.createEmployee);
+
+router.route('/:id')
+    .put(restrictTo('manage_employees'), employeesController.updateEmployee)
+    .delete(restrictTo('manage_employees'), employeesController.deleteEmployee);
 
 module.exports = router;
-
