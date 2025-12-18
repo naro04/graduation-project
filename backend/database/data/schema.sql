@@ -54,10 +54,16 @@ CREATE TABLE IF NOT EXISTS roles (
 -- Permissions table - stores individual permissions
 CREATE TABLE IF NOT EXISTS permissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  resource TEXT NOT NULL, -- e.g., "employees", "departments"
-  action TEXT NOT NULL, -- e.g., "read", "write", "delete"
-  permission_type VARCHAR(50) NOT NULL, -- 'menu_access' or 'action'
-  description TEXT
+  slug TEXT NOT NULL UNIQUE, -- e.g., 'menu:dashboard', 'action:create_employee'
+  display_name TEXT NOT NULL, -- e.g., "Dashboard", "Create Employee"
+  description TEXT,
+  resource TEXT, -- e.g., "employees" (used for grouping actions)
+  action TEXT, -- e.g., "read" (optional for menus)
+  permission_type VARCHAR(50) NOT NULL, -- 'menu' or 'action'
+  parent_id UUID REFERENCES permissions(id), -- For hierarchical structure
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- Role permissions table - links roles to permissions (many-to-many)
@@ -134,11 +140,20 @@ CREATE TABLE IF NOT EXISTS attendance (
   employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
   check_in_time TIMESTAMP NOT NULL,
   check_out_time TIMESTAMP,
+  
+  -- Location & GPS Verification
   location_latitude DECIMAL(10, 8),
   location_longitude DECIMAL(11, 8),
   location_address TEXT,
+  distance_from_base DECIMAL(10, 2), -- Distance in meters from assigned location
+  gps_status VARCHAR(50) DEFAULT 'Not Verified', -- 'Verified', 'Suspicious', 'Not Verified', 'Rejected'
+  
+  -- Attendance details
+  daily_status VARCHAR(50), -- 'Present', 'Late', 'Absent', 'Missing Check-out'
+  work_type VARCHAR(50) DEFAULT 'Office', -- 'Office', 'Remote', 'Field'
+  
   notes TEXT,
-  status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
+  approval_status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -166,10 +181,22 @@ CREATE TABLE IF NOT EXISTS leave_requests (
 -- ACTIVITIES
 -- ============================================
 
+-- Projects table - stores project information
+CREATE TABLE IF NOT EXISTS projects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'active' NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 -- Activities table - stores employee field activities
 CREATE TABLE IF NOT EXISTS activities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES projects(id), -- Link to project
+  name TEXT NOT NULL, -- Activity title/name
   activity_type TEXT NOT NULL,
   description TEXT NOT NULL,
   location_latitude DECIMAL(10, 8),
@@ -177,7 +204,11 @@ CREATE TABLE IF NOT EXISTS activities (
   location_address TEXT,
   start_time TIMESTAMP NOT NULL,
   end_time TIMESTAMP,
-  status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
+  
+  -- Statuses
+  implementation_status VARCHAR(50) DEFAULT 'Planned', -- 'Planned', 'Implemented', 'Cancelled'
+  approval_status VARCHAR(50) DEFAULT 'Pending', -- 'Pending', 'Approved', 'Rejected'
+  
   approved_by UUID REFERENCES employees(id),
   approved_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -245,7 +276,8 @@ CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
 
 -- Activities indexes
 CREATE INDEX IF NOT EXISTS idx_activities_employee_id ON activities(employee_id);
-CREATE INDEX IF NOT EXISTS idx_activities_status ON activities(status);
+CREATE INDEX IF NOT EXISTS idx_activities_impl_status ON activities(implementation_status);
+CREATE INDEX IF NOT EXISTS idx_activities_appr_status ON activities(approval_status);
 
 -- User roles indexes
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
@@ -254,3 +286,6 @@ CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
 -- Role permissions indexes
 CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role_id);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id);
+
+-- Permissions indexes
+CREATE INDEX IF NOT EXISTS idx_permissions_parent_id ON permissions(parent_id);
