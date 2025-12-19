@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../database/connection');
-const { createUser, findUserByEmail, assignRole, retrieveUserPermissions } = require('../database/data/queries/auth');
+const { createUser, findUserByEmail, assignRole, retrieveUserPermissions, findRoleByName } = require('../database/data/queries/auth');
 
 const signToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', {
