@@ -1,0 +1,123 @@
+const pool = require("../../database/connection");
+const { updatePersonalInfoQuery } = require("../../database/data/queries/profile/getPersonalInfo");
+const { upsertEmergencyContactQuery } = require("../../database/data/queries/profile/getEmergencyContact");
+
+exports.updateProfile = async (req, res) => {
+    if (!req.user || !req.user.id) {
+        return res.status(401).json({ message: "Not authorized, user ID missing" });
+    }
+
+    const userId = req.user.id;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Get Employee ID from User ID
+        const empRes = await client.query('SELECT id FROM employees WHERE user_id = $1', [userId]);
+        if (empRes.rows.length === 0) {
+            throw new Error('Employee record not found');
+        }
+        const employeeId = empRes.rows[0].id;
+
+        // 2. Extract & Normalize Data from Body
+        console.log("PROFILE: Update request for EMP:", employeeId);
+
+        // Destructure personal info and potential flat emergency fields
+        let {
+            // Personal Info
+            first_name, middle_name, last_name, birth_date,
+            gender, marital_status, phone,
+
+            // Support alternative birth date field names
+            'birth_of_date': birth_of_underscore,
+            'birth_of-date': birth_of_dash,
+            'birth-of-date': birth_of_kebab,
+            'birth_date': birth_date_standard,
+            'birthDate': birth_date_camel,
+
+            // Nested Emergency Contact Object
+            emergency_contact,
+
+            // Flat Emergency Contact Fields (if not nested)
+            name: ec_name_flat,
+            relationship: ec_rel_flat,
+            phone: ec_phone_flat,
+            email: ec_email_flat,
+            address: ec_address_flat,
+            'alternate-phone': ec_alt_phone_kebab_flat,
+            'alternate_phone': ec_alt_phone_snake_flat
+        } = req.body;
+
+        // Normalize birth_date
+        let finalBirthDate = birth_date || birth_date_standard || birth_date_camel ||
+            birth_of_underscore || birth_of_dash || birth_of_kebab || null;
+
+        if (finalBirthDate && typeof finalBirthDate === 'string' && finalBirthDate.includes('-')) {
+            const parts = finalBirthDate.split('-');
+            if (parts[0].length === 2 && parts[2].length === 4) {
+                finalBirthDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+
+        // 3. Update Personal Info
+        await client.query(updatePersonalInfoQuery, [
+            employeeId,
+            first_name || null,
+            middle_name || null,
+            last_name || null,
+            finalBirthDate,
+            gender || null,
+            marital_status || null,
+            phone || null
+        ]);
+
+        // 4. Upsert Emergency Contact
+        // Decide if we have emergency data (either nested or flat)
+        const hasNestedEC = emergency_contact && emergency_contact.name;
+        const hasFlatEC = ec_name_flat;
+
+        if (hasNestedEC || hasFlatEC) {
+            const ecName = hasNestedEC ? emergency_contact.name : ec_name_flat;
+            const ecRel = hasNestedEC ? emergency_contact.relationship : ec_rel_flat;
+            const ecPhone = hasNestedEC ? emergency_contact.phone : ec_phone_flat;
+            const ecEmail = hasNestedEC ? (emergency_contact.email || null) : (ec_email_flat || null);
+            const ecAddress = hasNestedEC ? (emergency_contact.address || null) : (ec_address_flat || null);
+
+            const ecAltPhone = hasNestedEC
+                ? (emergency_contact.alternate_phone || emergency_contact['alternate-phone'] || null)
+                : (ec_alt_phone_kebab_flat || ec_alt_phone_snake_flat || null);
+
+            // Ensure table exists
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS emergency_contacts (
+                    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    relationship TEXT,
+                    phone TEXT,
+                    alternate_phone TEXT,
+                    address TEXT,
+                    email TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(employee_id)
+                );
+            `);
+
+            await client.query(upsertEmergencyContactQuery, [
+                employeeId, ecName, ecRel, ecPhone, ecAltPhone, ecAddress, ecEmail
+            ]);
+        }
+
+        await client.query('COMMIT');
+        res.status(200).json({ status: 'success', message: 'Profile updated successfully' });
+
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Update Profile Error:', err);
+        res.status(500).json({ message: "Internal server error during profile update", error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+};
