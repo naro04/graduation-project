@@ -1,4 +1,4 @@
-const getEmployeesQuery = `
+const getEmployeeByIdQuery = `
   SELECT 
     e.id,
     e.employee_code,
@@ -11,6 +11,7 @@ const getEmployeesQuery = `
     e.position_id,
     d.name as department_name,
     p.title as position_title,
+    u.id as user_id,
     r.id as role_id,
     r.name as role_name
   FROM employees e
@@ -19,11 +20,8 @@ const getEmployeesQuery = `
   LEFT JOIN positions p ON e.position_id = p.id
   LEFT JOIN user_roles ur ON u.id = ur.user_id
   LEFT JOIN roles r ON ur.role_id = r.id
-  WHERE ($1::UUID IS NULL OR e.department_id = $1::UUID)
-    AND ($2::UUID IS NULL OR ur.role_id = $2::UUID)
-    AND ($3::TEXT IS NULL OR e.status = $3)
-    AND ($4::TEXT IS NULL OR (e.full_name ILIKE '%' || $4 || '%' OR e.employee_code ILIKE '%' || $4 || '%'))
-  ORDER BY e.created_at DESC;
+  WHERE e.id = $1;
 `;
 
-module.exports = { getEmployeesQuery };
+module.exports = { getEmployeeByIdQuery };
+

@@ -84,9 +84,16 @@ exports.updateLocationActivity = async (req, res) => {
             return res.status(400).json({ message: 'Cannot edit activity with past end date' });
         }
 
+        // Validate dates if provided
+        if (dates && (!Array.isArray(dates) || dates.length === 0)) {
+            return res.status(400).json({ message: 'dates must be a non-empty array' });
+        }
+
+        // If dates is provided, use dates.length as activity_days (dates takes precedence)
+        // Only validate activity_days if it's provided AND dates is NOT provided
         const start_date = dates ? dates[0] : existingActivity.start_date;
         const end_date = dates ? dates[dates.length - 1] : existingActivity.end_date;
-        const final_activity_days = activity_days || (dates ? dates.length : existingActivity.activity_days);
+        const final_activity_days = dates ? dates.length : (activity_days || existingActivity.activity_days);
 
         // Update activity
         const updateResult = await pool.query(activityQueries.updateLocationActivityQuery, [

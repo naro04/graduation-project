@@ -11,6 +11,7 @@ router.route('/')
     .post(restrictTo('manage_employees'), employeesController.createEmployee);
 
 router.route('/:id')
+    .get(restrictTo('view_employees', 'manage_employees'), employeesController.getEmployeeById)
     .put(restrictTo('manage_employees'), employeesController.updateEmployee)
     .delete(restrictTo('manage_employees'), employeesController.deleteEmployee);
 

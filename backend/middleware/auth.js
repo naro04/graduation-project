@@ -3,6 +3,7 @@ const pool = require('../database/connection');
 const { retrieveUserPermissions, findUserById } = require('../database/data/queries/auth');
 
 const protect = async (req, res, next) => {
+
     let token;
 
     if (req.cookies && req.cookies.token) {
@@ -12,14 +13,11 @@ const protect = async (req, res, next) => {
     }
 
     if (!token) {
-        console.log("AUTH: No token found in cookies or headers");
         return res.status(401).json({ message: 'Not authorized, please login' });
     }
 
     try {
-        console.log("AUTH: Verifying token...");
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-        console.log("AUTH: Token decoded for user ID:", decoded.id);
 
         // Check if user still exists
         const userResult = await pool.query(findUserById, [decoded.id]);
@@ -34,7 +32,6 @@ const protect = async (req, res, next) => {
         user.permissions = permResult.rows.map(row => row.slug);
 
         req.user = user;
-        console.log("AUTH: Authentication successful for:", user.email, "Role:", user.role_name);
         next();
     } catch (error) {
         return res.status(401).json({ message: 'Not authorized, token failed', error: error.message });
@@ -52,7 +49,7 @@ const restrictTo = (...requiredPermissions) => {
             return res.status(403).json({ message: 'You do not have permission to perform this action' });
         }
 
-        const hasPermission = requiredPermissions.every(perm => req.user.permissions.includes(perm));
+        const hasPermission = requiredPermissions.some(perm => req.user.permissions.includes(perm));
 
         if (!hasPermission) {
             return res.status(403).json({ message: 'You do not have permission to perform this action' });
