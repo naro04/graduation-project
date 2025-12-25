@@ -12,11 +12,14 @@ const protect = async (req, res, next) => {
     }
 
     if (!token) {
+        console.log("AUTH: No token found in cookies or headers");
         return res.status(401).json({ message: 'Not authorized, please login' });
     }
 
     try {
+        console.log("AUTH: Verifying token...");
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+        console.log("AUTH: Token decoded for user ID:", decoded.id);
 
         // Check if user still exists
         const userResult = await pool.query(findUserById, [decoded.id]);
@@ -31,6 +34,7 @@ const protect = async (req, res, next) => {
         user.permissions = permResult.rows.map(row => row.slug);
 
         req.user = user;
+        console.log("AUTH: Authentication successful for:", user.email, "Role:", user.role_name);
         next();
     } catch (error) {
         console.error('Auth Middleware Error:', error);
@@ -40,8 +44,8 @@ const protect = async (req, res, next) => {
 
 const restrictTo = (...requiredPermissions) => {
     return (req, res, next) => {
-        // If user is Admin, bypass check
-        if (req.user && req.user.role_name === 'Admin') {
+        // If user is Super Admin, bypass check
+        if (req.user && req.user.role_name === 'Super Admin') {
             return next();
         }
 

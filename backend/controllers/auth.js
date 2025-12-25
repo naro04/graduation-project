@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../database/connection');
-const { createUser, findUserByEmail, assignRole, retrieveUserPermissions } = require('../database/data/queries/auth');
+const { createUser, findUserByEmail, assignRole, retrieveUserPermissions, findRoleByName } = require('../database/data/queries/auth');
 
 const signToken = (id) => {
     console.log("id from register", id);
@@ -38,10 +38,27 @@ const createSendToken = (user, statusCode, res) => {
 exports.register = async (req, res) => {
     const client = await pool.connect();
     try {
-        const { name, email, password, roleId } = req.body;
+        let { name, first_name, last_name, email, password, confirm_password, phone, roleId } = req.body;
 
+        // 1. Handle Input Variations (Postman/Frontend differences)
+        // Map kebab-case from request if present (as seen in user screenshot)
+        if (!first_name && req.body['first-name']) first_name = req.body['first-name'];
+        if (!last_name && req.body['last-name']) last_name = req.body['last-name'];
+        if (!confirm_password && req.body['confirm-password']) confirm_password = req.body['confirm-password'];
+
+        // Construct full name if not provided
+        if (!name && first_name && last_name) {
+            name = `${first_name} ${last_name}`;
+        }
+
+        // 2. Validate Required Fields
         if (!name || !email || !password) {
-            return res.status(400).json({ message: 'Name, email, and password are required' });
+            return res.status(400).json({ message: 'First name, last name, email, and password are required' });
+        }
+
+        // 3. Validate Password Match
+        if (confirm_password && password !== confirm_password) {
+            return res.status(400).json({ message: 'Passwords do not match' });
         }
 
         // Check if user exists
@@ -62,7 +79,7 @@ exports.register = async (req, res) => {
         // Assign Role
         let targetRoleId = roleId;
         if (!targetRoleId) {
-            const defaultRole = await client.query(findRoleByName, ['Employee']);
+            const defaultRole = await client.query(findRoleByName, ['Office Staff']);
             if (defaultRole.rows.length > 0) {
                 targetRoleId = defaultRole.rows[0].id;
             }
@@ -74,14 +91,15 @@ exports.register = async (req, res) => {
 
         // Create initial employee record
         const employee_code = `EMP-${Date.now()}`;
-        const nameParts = name.split(' ');
-        const first_name = nameParts[0];
-        const last_name = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'User';
+        // Verify first/last name presence for employee record
+        const finalFirstName = first_name || name.split(' ')[0];
+        const finalLastName = last_name || (name.split(' ').length > 1 ? name.split(' ').slice(1).join(' ') : 'User');
+        const finalPhone = phone || null;
 
         await client.query(`
-            INSERT INTO employees (user_id, email, first_name, last_name, full_name, employee_code)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        `, [newUser.id, email, first_name, last_name, name, employee_code]);
+            INSERT INTO employees (user_id, email, first_name, last_name, full_name, phone, employee_code, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'Inactive')
+        `, [newUser.id, email, finalFirstName, finalLastName, name, finalPhone, employee_code]);
 
         await client.query('COMMIT');
 
@@ -97,6 +115,7 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
+        const { email, emailOrId, identifier, password } = req.body;
         const loginId = (email || emailOrId || identifier || '').toLowerCase().trim();
 
         if (!loginId || !password) {

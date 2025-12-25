@@ -27,3 +27,20 @@ WHERE e.user_id = $1;
 `;
 
 module.exports = { getPersonalInfoQuery };
+
+const updatePersonalInfoQuery = `
+UPDATE employees
+SET 
+    first_name = COALESCE($2, first_name),
+    middle_name = COALESCE($3, middle_name),
+    last_name = COALESCE($4, last_name),
+    birth_date = COALESCE($5, birth_date),
+    gender = COALESCE($6, gender),
+    marital_status = COALESCE($7, marital_status),
+    phone = COALESCE($8, phone),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+`;
+
+module.exports = { getPersonalInfoQuery, updatePersonalInfoQuery };

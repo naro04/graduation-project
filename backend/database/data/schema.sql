@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS employees (
   position_id UUID REFERENCES positions(id),
   employment_type VARCHAR(50), -- Full-Time, Part-Time
   supervisor_id UUID, -- Self-reference for manager hierarchy
-  status VARCHAR(50) DEFAULT 'active' NOT NULL,
+  status VARCHAR(50) DEFAULT 'Inactive' NOT NULL,
   hired_at TIMESTAMP,
   terminated_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
