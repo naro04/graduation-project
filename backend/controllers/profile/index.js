@@ -1,4 +1,5 @@
 module.exports = {
+    getMe: require('./getMe'),
     getPersonalInfo: require('./getPersonalInfo'),
     getAccountSecurity: require('./updateAccountSecurity'),
     getJobInfo: require('./getJobInfo'),

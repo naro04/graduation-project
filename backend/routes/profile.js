@@ -16,7 +16,8 @@ const {
 router.use(protect);
 
 // router.use("/employees", getEmployees);
-router.use('/me', getMe);
+router.get('/me', getMe);
+router.patch('/me', updateProfile);
 router.use('/personal-info', getPersonalInfo);
 router.use('/account-security', getAccountSecurity);
 router.use('/job-info', getJobInfo);

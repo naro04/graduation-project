@@ -4,6 +4,7 @@ const updateLocationQuery = require('./updateLocation');
 const deleteLocationQuery = require('./deleteLocation');
 const getLocationEmployeesQuery = require('./getLocationEmployees');
 const getLocationActivitiesQuery = require('./getLocationActivities');
+const getLocationsWithStatsQuery = require('./getLocationsWithStats');
 
 module.exports = {
   getLocationsQuery,
@@ -11,6 +12,7 @@ module.exports = {
   updateLocationQuery,
   deleteLocationQuery,
   getLocationEmployeesQuery,
-  getLocationActivitiesQuery
+  getLocationActivitiesQuery,
+  getLocationsWithStatsQuery
 };
 

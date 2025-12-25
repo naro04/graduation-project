@@ -155,6 +155,10 @@ exports.register = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
+
+  console.log("I am here-------------------");
+
+
   try {
     const { email, emailOrId, identifier, password } = req.body;
     const loginId = (email || emailOrId || identifier || '')
@@ -187,8 +191,11 @@ exports.login = async (req, res) => {
     const permResult = await pool.query(retrieveUserPermissions, [user.id]);
     user.permissions = permResult.rows.map((r) => r.slug);
 
+    console.log('Login successful', user);
+
     createSendToken(user, 200, res);
   } catch (err) {
+    console.log("I am here-------------------", err);
     res
       .status(500)
       .json({

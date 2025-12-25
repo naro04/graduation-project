@@ -20,10 +20,7 @@ exports.updateProfile = async (req, res) => {
         }
         const employeeId = empRes.rows[0].id;
 
-        // 2. Extract & Normalize Data from Body
-        console.log("PROFILE: Update request for EMP:", employeeId);
-
-        // Destructure personal info and potential flat emergency fields
+        // 2. Extract & Normalize Data from Body        // Destructure personal info and potential flat emergency fields
         let {
             // Personal Info
             first_name, middle_name, last_name, birth_date,

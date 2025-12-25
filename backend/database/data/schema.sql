@@ -178,6 +178,40 @@ CREATE TABLE IF NOT EXISTS leave_requests (
 );
 
 -- ============================================
+-- LOCATIONS
+-- ============================================
+
+-- Location types table - stores location type information
+CREATE TABLE IF NOT EXISTS location_types (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'active' NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Locations table - stores location information
+CREATE TABLE IF NOT EXISTS locations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  address TEXT,
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  location_type TEXT,
+  status VARCHAR(50) DEFAULT 'active' NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Employee locations table - links employees to locations (many-to-many)
+CREATE TABLE IF NOT EXISTS employee_locations (
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  location_id UUID NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  PRIMARY KEY (employee_id, location_id)
+);
+
+-- ============================================
 -- ACTIVITIES
 -- ============================================
 
@@ -194,16 +228,21 @@ CREATE TABLE IF NOT EXISTS projects (
 -- Activities table - stores employee field activities
 CREATE TABLE IF NOT EXISTS activities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  employee_id UUID REFERENCES employees(id) ON DELETE CASCADE, -- Nullable for location activities
   project_id UUID REFERENCES projects(id), -- Link to project
   name TEXT NOT NULL, -- Activity title/name
-  activity_type TEXT NOT NULL,
-  description TEXT NOT NULL,
+  activity_type TEXT,
+  description TEXT,
+  location_id UUID REFERENCES locations(id) ON DELETE CASCADE, -- For location activities
   location_latitude DECIMAL(10, 8),
   location_longitude DECIMAL(11, 8),
   location_address TEXT,
-  start_time TIMESTAMP NOT NULL,
+  start_time TIMESTAMP,
   end_time TIMESTAMP,
+  start_date DATE, -- For location activities
+  end_date DATE, -- For location activities
+  activity_days INTEGER, -- Number of days for location activities
+  status VARCHAR(50) DEFAULT 'Active', -- Status for location activities
   
   -- Statuses
   implementation_status VARCHAR(50) DEFAULT 'Planned', -- 'Planned', 'Implemented', 'Cancelled'
@@ -215,27 +254,11 @@ CREATE TABLE IF NOT EXISTS activities (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- ============================================
--- LOCATIONS
--- ============================================
-
--- Locations table - stores location information
-CREATE TABLE IF NOT EXISTS locations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  address TEXT,
-  latitude DECIMAL(10, 8),
-  longitude DECIMAL(11, 8),
-  location_type TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- Employee locations table - links employees to locations (many-to-many)
-CREATE TABLE IF NOT EXISTS employee_locations (
+-- Activity employees table - links employees to activities (many-to-many for location activities)
+CREATE TABLE IF NOT EXISTS activity_employees (
+  activity_id UUID NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
   employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  location_id UUID NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
-  PRIMARY KEY (employee_id, location_id)
+  PRIMARY KEY (activity_id, employee_id)
 );
 
 -- ============================================

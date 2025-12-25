@@ -1450,6 +1450,7 @@ describe('Location Management Router', () => {
           start_date: '2025-12-19',
           end_date: '2025-12-20',
           activity_days: 2,
+          location_name: 'Test Location',
         };
 
         pool.query.mockImplementation((query, params) => {
@@ -1459,8 +1460,8 @@ describe('Location Management Router', () => {
           if (query.includes('SELECT DISTINCT p.slug')) {
             return Promise.resolve({ rows: [{ slug: 'manage_locations' }] });
           }
-          // Get existing activity query
-          if (query.includes('SELECT') && query.includes('activities') && query.includes('WHERE')) {
+          // Get existing activity query - match getActivityByIdQuery
+          if (query.includes('SELECT') && query.includes('activities') && query.includes('WHERE') && params && params[0] === 'activity-2') {
             return Promise.resolve({ rows: [existingActivity] });
           }
           // Update activity query
@@ -1468,10 +1469,10 @@ describe('Location Management Router', () => {
             return Promise.resolve({ rows: [updatedActivity] });
           }
           // Update employee assignments
-          if (query.includes('DELETE FROM') && query.includes('activity_employees') || query.includes('employee_activities')) {
+          if (query.includes('DELETE FROM') && (query.includes('activity_employees') || query.includes('employee_activities'))) {
             return Promise.resolve({ rowCount: 1 });
           }
-          if (query.includes('INSERT INTO') && query.includes('activity_employees') || query.includes('employee_activities')) {
+          if (query.includes('INSERT INTO') && (query.includes('activity_employees') || query.includes('employee_activities'))) {
             return Promise.resolve({ rows: [] });
           }
           return Promise.resolve({ rows: [] });
