@@ -3,10 +3,14 @@ const locationQueries = require('../database/data/queries/locations');
 
 exports.getAllLocations = async (req, res) => {
     try {
-        const { status, search } = req.query;
+        const { status, type, search, withStats } = req.query;
 
-        const result = await pool.query(locationQueries.getLocationsQuery, [
+        // Use stats query if withStats is true
+        const query = withStats === 'true' ? locationQueries.getLocationsWithStatsQuery : locationQueries.getLocationsQuery;
+        
+        const result = await pool.query(query, [
             status || null,
+            type || null,
             search || null
         ]);
 
@@ -21,7 +25,7 @@ exports.getAllLocations = async (req, res) => {
 
 exports.createLocation = async (req, res) => {
     try {
-        const { name, address, latitude, longitude, location_type } = req.body;
+        const { name, address, latitude, longitude, location_type, status } = req.body;
 
         if (!name) {
             return res.status(400).json({ message: 'Name is required' });
@@ -32,7 +36,8 @@ exports.createLocation = async (req, res) => {
             address || null,
             latitude || null,
             longitude || null,
-            location_type || null
+            location_type || null,
+            status || 'active'
         ]);
 
         res.status(201).json({
@@ -47,7 +52,7 @@ exports.createLocation = async (req, res) => {
 exports.updateLocation = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, address, latitude, longitude, location_type } = req.body;
+        const { name, address, latitude, longitude, location_type, status } = req.body;
 
         const result = await pool.query(locationQueries.updateLocationQuery, [
             name,
@@ -55,6 +60,7 @@ exports.updateLocation = async (req, res) => {
             latitude || null,
             longitude || null,
             location_type || null,
+            status || 'active',
             id
         ]);
 

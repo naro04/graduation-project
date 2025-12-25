@@ -24,6 +24,24 @@ exports.getAllEmployees = async (req, res) => {
     }
 };
 
+exports.getEmployeeById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(employeeQueries.getEmployeeByIdQuery, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ status: 'fail', message: 'Employee not found' });
+        }
+
+        res.status(200).json({
+            status: 'success',
+            data: result.rows[0]
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching employee', error: err.message });
+    }
+};
+
 exports.createEmployee = async (req, res) => {
     try {
         let {
