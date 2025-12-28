@@ -5,7 +5,7 @@ const createPermission = `
 `;
 
 const getPermissions = `
-  SELECT *, (resource || ':' || action) as slug FROM permissions ORDER BY resource;
+  SELECT *, (resource || ':' || action) as slug FROM permissions ORDER BY sort_order;
 `;
 
 const getPermissionById = `

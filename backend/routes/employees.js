@@ -13,6 +13,7 @@ router.route('/')
 router.route('/:id')
     .get(restrictTo('view_employees', 'manage_employees'), employeesController.getEmployeeById)
     .put(restrictTo('manage_employees'), employeesController.updateEmployee)
+    .patch(restrictTo('manage_employees'), employeesController.updateEmployee)
     .delete(restrictTo('manage_employees'), employeesController.deleteEmployee);
 
 module.exports = router;

@@ -218,7 +218,7 @@ WHERE slug IN (
 
 -- 8. SEED EMPLOYEES
 INSERT INTO employees (user_id, employee_code, first_name, last_name, full_name, email, department_id, position_id, employment_type, status, hired_at) VALUES
-((SELECT id FROM users WHERE email = 'admin@company.com'), 'EMP001', 'System', 'Admin', 'System Admin', 'admin@company.com', NULL, NULL, 'Full-Time', 'active', NOW() - INTERVAL '3 years'),
+((SELECT id FROM users WHERE email = 'admin@company.com'), 'EMP001', 'Firas', 'Alijla', 'Firas Alijla', 'admin@company.com', NULL, NULL, 'Full-Time', 'active', NOW() - INTERVAL '3 years'),
 ((SELECT id FROM users WHERE email = 'hr@company.com'), 'EMP002', 'Sarah', 'Connor', 'Sarah HR', 'hr@company.com', (SELECT id FROM departments WHERE name = 'Human Resources'), (SELECT id FROM positions WHERE title = 'HR Specialist'), 'Full-Time', 'active', NOW() - INTERVAL '2 years'),
 ((SELECT id FROM users WHERE email = 'eng_manager@company.com'), 'EMP003', 'Mike', 'Ross', 'Mike Engineering', 'eng_manager@company.com', (SELECT id FROM departments WHERE name = 'Engineering'), (SELECT id FROM positions WHERE title = 'Senior Software Engineer'), 'Full-Time', 'active', NOW() - INTERVAL '1 year'),
 ((SELECT id FROM users WHERE email = 'dev@company.com'), 'EMP004', 'John', 'Doe', 'John Dev', 'dev@company.com', (SELECT id FROM departments WHERE name = 'Engineering'), (SELECT id FROM positions WHERE title = 'Software Engineer'), 'Full-Time', 'active', NOW() - INTERVAL '6 months')

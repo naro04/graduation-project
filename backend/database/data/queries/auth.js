@@ -50,13 +50,20 @@ const getMe = `
     e.phone, e.birth_date, e.gender, e.marital_status, e.status, e.hired_at,
     d.name as department_name,
     pos.title as position_title,
-    r.name as role_name
+    r.name as role_name,
+    ec.name as ec_name,
+    ec.relationship as ec_relationship,
+    ec.phone as ec_phone,
+    ec.alternate_phone as ec_alternate_phone,
+    ec.address as ec_address,
+    ec.email as ec_email
   FROM users u
   LEFT JOIN employees e ON u.id = e.user_id
   LEFT JOIN departments d ON e.department_id = d.id
   LEFT JOIN positions pos ON e.position_id = pos.id
   LEFT JOIN user_roles ur ON u.id = ur.user_id
   LEFT JOIN roles r ON ur.role_id = r.id
+  LEFT JOIN emergency_contacts ec ON e.id = ec.employee_id
   WHERE u.id = $1;
 `;
 
