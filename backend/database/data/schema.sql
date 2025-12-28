@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS departments (
   name TEXT NOT NULL UNIQUE,
   description TEXT,
   status VARCHAR(50) DEFAULT 'active' NOT NULL,
+  is_reviewed BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

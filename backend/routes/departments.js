@@ -7,6 +7,8 @@ router.route('/')
     .get(protect, deptController.getAllDepartments)
     .post(protect, restrictTo('manage_departments'), deptController.createDepartment);
 
+router.post('/bulk-action', protect, restrictTo('manage_departments'), deptController.bulkAction);
+
 router.route('/:id')
     .get(protect, deptController.getDepartment)
     .put(protect, restrictTo('manage_departments'), deptController.updateDepartment)

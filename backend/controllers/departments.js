@@ -52,4 +52,34 @@ exports.getDepartment = async (req, res) => {
     } catch (err) {
         res.status(500).json({ message: 'Error fetching department', error: err.message });
     }
-}
+};
+
+exports.bulkAction = async (req, res) => {
+    try {
+        const { action, ids } = req.body;
+        if (!ids || !Array.isArray(ids)) {
+            return res.status(400).json({ message: 'Invalid or missing IDs' });
+        }
+
+        let result;
+        if (action === 'delete') {
+            result = await pool.query(deptQueries.bulkDeleteDepartments, [ids]);
+        } else if (action === 'review') {
+            result = await pool.query(deptQueries.bulkMarkAsReviewed, [ids]);
+        } else {
+            return res.status(400).json({ message: 'Invalid action' });
+        }
+
+        res.status(200).json({
+            status: 'success',
+            message: `Successfully performed ${action} on ${result.rowCount} items`,
+            data: result.rows
+        });
+    } catch (err) {
+        let message = 'Error performing bulk action';
+        if (err.code === '23503') {
+            message = 'Cannot delete departments that have linked employees or positions';
+        }
+        res.status(500).json({ message, error: err.message });
+    }
+};
