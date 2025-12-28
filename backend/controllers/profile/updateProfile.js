@@ -38,6 +38,12 @@ exports.updateProfile = async (req, res) => {
             'birth_date': birth_date_standard,
             'birthDate': birth_date_camel,
 
+            // Job Info
+            department_id, position_id, employment_type,
+            'departmentId': departmentId_camel,
+            'positionId': positionId_camel,
+            'employmentType': employmentType_camel,
+
             // Nested Emergency Contact Object/Array
             emergency_contact,
             emergencyContacts,
@@ -74,6 +80,41 @@ exports.updateProfile = async (req, res) => {
             marital_status || maritalStatus_camel || null,
             phone || null
         ]);
+
+        // 3b. Update Job Info (if provided)
+        const deptId = department_id || departmentId_camel;
+        const posId = position_id || positionId_camel;
+        const empType = employment_type || employmentType_camel;
+        const roleId = req.body.role_id || req.body.roleId;
+
+        if (deptId || posId || empType) {
+            let updateFields = [];
+            let values = [];
+            let idx = 1;
+
+            if (deptId) { updateFields.push(`department_id = $${idx++}`); values.push(deptId); }
+            if (posId) { updateFields.push(`position_id = $${idx++}`); values.push(posId); }
+            if (empType) { updateFields.push(`employment_type = $${idx++}`); values.push(empType); }
+
+            if (updateFields.length > 0) {
+                values.push(employeeId);
+                await client.query(`
+                    UPDATE employees 
+                    SET ${updateFields.join(', ')}, updated_at = NOW() 
+                    WHERE id = $${idx}
+                `, values);
+            }
+        }
+
+        // 3c. Update Role (if provided)
+        if (roleId) {
+            await client.query(`
+                DELETE FROM user_roles WHERE user_id = $1
+            `, [userId]);
+            await client.query(`
+                INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)
+            `, [userId, roleId]);
+        }
 
         // 4. Upsert Emergency Contact
         // Decide if we have emergency data (either nested or flat)

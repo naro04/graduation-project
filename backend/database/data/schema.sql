@@ -273,8 +273,12 @@ CREATE TABLE IF NOT EXISTS emergency_contacts (
   name TEXT NOT NULL,
   relationship TEXT NOT NULL,
   phone TEXT NOT NULL,
+  alternate_phone TEXT,
+  address TEXT,
+  email TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE(employee_id)
 );
 
 -- ============================================

@@ -1,5 +1,5 @@
 const getEmployeesQuery = `
-  SELECT 
+  SELECT DISTINCT ON (e.id)
     e.id,
     e.employee_code,
     e.first_name,
@@ -23,7 +23,7 @@ const getEmployeesQuery = `
     AND ($2::UUID IS NULL OR ur.role_id = $2::UUID)
     AND ($3::TEXT IS NULL OR e.status = $3)
     AND ($4::TEXT IS NULL OR (e.full_name ILIKE '%' || $4 || '%' OR e.employee_code ILIKE '%' || $4 || '%'))
-  ORDER BY e.created_at DESC;
+  ORDER BY e.id, e.created_at DESC;
 `;
 
 module.exports = { getEmployeesQuery };

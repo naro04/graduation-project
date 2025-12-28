@@ -10,6 +10,8 @@ router.route('/')
     .get(restrictTo('view_employees', 'manage_employees'), employeesController.getAllEmployees)
     .post(restrictTo('manage_employees'), employeesController.createEmployee);
 
+router.post('/bulk-action', restrictTo('manage_employees'), employeesController.bulkAction);
+
 router.route('/:id')
     .get(restrictTo('view_employees', 'manage_employees'), employeesController.getEmployeeById)
     .put(restrictTo('manage_employees'), employeesController.updateEmployee)

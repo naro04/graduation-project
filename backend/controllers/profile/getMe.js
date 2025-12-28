@@ -28,11 +28,20 @@ module.exports = async (req, res) => {
                 maritalStatus: data.marital_status,
                 status: data.status,
                 hiredAt: data.hired_at,
+                department_id: data.department_id,
+                position_id: data.position_id,
+                roleId: data.role_id,
+                role_id: data.role_id,
+                supervisorId: data.supervisor_id,
+                employmentType: data.employment_type,
                 department: {
                     name: data.department_name
                 },
                 position: {
                     title: data.position_title
+                },
+                supervisor: {
+                    name: data.supervisor_name
                 },
                 emergencyContacts: data.ec_name ? [{
                     name: data.ec_name,
