@@ -9,6 +9,7 @@ router.route('/roles')
     .post(protect, restrictTo('manage_roles'), rbacController.createRole); // 'manage_roles' is an example permission slug
 
 router.route('/roles/:id')
+    .get(protect, restrictTo('view_roles', 'manage_roles'), rbacController.getRoleById)
     .put(protect, restrictTo('manage_roles'), rbacController.updateRole)
     .delete(protect, restrictTo('manage_roles'), rbacController.deleteRole);
 
