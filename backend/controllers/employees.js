@@ -104,7 +104,7 @@ exports.updateEmployee = async (req, res) => {
         const { id } = req.params;
         let {
             first_name, last_name, full_name,
-            department_id, position_id, status
+            department_id, position_id, status, avatar_url
         } = req.body;
 
         if (!full_name && first_name && last_name) {
@@ -118,6 +118,7 @@ exports.updateEmployee = async (req, res) => {
             department_id || null,
             position_id || null,
             status,
+            avatar_url || null,
             id
         ]);
 

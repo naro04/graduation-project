@@ -7,8 +7,9 @@ const updateEmployeeQuery = `
     department_id = $4,
     position_id = $5,
     status = $6,
+    avatar_url = $7,
     updated_at = NOW()
-  WHERE id = $7
+  WHERE id = $8
   RETURNING *;
 `;
 

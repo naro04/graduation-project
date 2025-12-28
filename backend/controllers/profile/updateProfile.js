@@ -26,6 +26,11 @@ exports.updateProfile = async (req, res) => {
             first_name, middle_name, last_name, birth_date,
             gender, marital_status, phone,
 
+            'firstName': firstName_camel,
+            'lastName': lastName_camel,
+            'middleName': middleName_camel,
+            'maritalStatus': maritalStatus_camel,
+
             // Support alternative birth date field names
             'birth_of_date': birth_of_underscore,
             'birth_of-date': birth_of_dash,
@@ -33,8 +38,9 @@ exports.updateProfile = async (req, res) => {
             'birth_date': birth_date_standard,
             'birthDate': birth_date_camel,
 
-            // Nested Emergency Contact Object
+            // Nested Emergency Contact Object/Array
             emergency_contact,
+            emergencyContacts,
 
             // Flat Emergency Contact Fields (if not nested)
             name: ec_name_flat,
@@ -60,29 +66,31 @@ exports.updateProfile = async (req, res) => {
         // 3. Update Personal Info
         await client.query(updatePersonalInfoQuery, [
             employeeId,
-            first_name || null,
-            middle_name || null,
-            last_name || null,
+            first_name || firstName_camel || null,
+            middle_name || middleName_camel || null,
+            last_name || lastName_camel || null,
             finalBirthDate,
             gender || null,
-            marital_status || null,
+            marital_status || maritalStatus_camel || null,
             phone || null
         ]);
 
         // 4. Upsert Emergency Contact
         // Decide if we have emergency data (either nested or flat)
-        const hasNestedEC = emergency_contact && emergency_contact.name;
+        const ecFromArray = (emergencyContacts && emergencyContacts.length > 0) ? emergencyContacts[0] : null;
+        const hasNestedEC = (emergency_contact && emergency_contact.name) || (ecFromArray && ecFromArray.name);
         const hasFlatEC = ec_name_flat;
 
         if (hasNestedEC || hasFlatEC) {
-            const ecName = hasNestedEC ? emergency_contact.name : ec_name_flat;
-            const ecRel = hasNestedEC ? emergency_contact.relationship : ec_rel_flat;
-            const ecPhone = hasNestedEC ? emergency_contact.phone : ec_phone_flat;
-            const ecEmail = hasNestedEC ? (emergency_contact.email || null) : (ec_email_flat || null);
-            const ecAddress = hasNestedEC ? (emergency_contact.address || null) : (ec_address_flat || null);
+            const source = ecFromArray || emergency_contact || {};
+            const ecName = hasNestedEC ? source.name : ec_name_flat;
+            const ecRel = hasNestedEC ? source.relationship : ec_rel_flat;
+            const ecPhone = hasNestedEC ? source.phone : ec_phone_flat;
+            const ecEmail = hasNestedEC ? (source.email || null) : (ec_email_flat || null);
+            const ecAddress = hasNestedEC ? (source.address || null) : (ec_address_flat || null);
 
             const ecAltPhone = hasNestedEC
-                ? (emergency_contact.alternate_phone || emergency_contact['alternate-phone'] || null)
+                ? (source.alternate_phone || source['alternate-phone'] || source.altPhone || null)
                 : (ec_alt_phone_kebab_flat || ec_alt_phone_snake_flat || null);
 
             // Ensure table exists
