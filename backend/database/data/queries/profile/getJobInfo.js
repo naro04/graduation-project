@@ -1,8 +1,11 @@
 const getJobInfoQuery = `
 SELECT
   d.name as department,
+  d.id as department_id,
   p.title as position,
+  p.id as position_id,
   r.name as employee_type, -- Maps to Role (e.g. Super Admin)
+  r.id as role_id,
   s.full_name as supervisor,
   e.employment_type
 FROM employees e
