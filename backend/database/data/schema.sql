@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS positions (
   department_id UUID REFERENCES departments(id),
   description TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE(title, department_id)
 );
 
 -- Employees table - stores employee information
@@ -122,9 +123,10 @@ CREATE TABLE IF NOT EXISTS employees (
   avatar_url TEXT,
   department_id UUID REFERENCES departments(id),
   position_id UUID REFERENCES positions(id),
+  role_id UUID REFERENCES roles(id),
   employment_type VARCHAR(50), -- Full-Time, Part-Time
   supervisor_id UUID, -- Self-reference for manager hierarchy
-  status VARCHAR(50) DEFAULT 'Inactive' NOT NULL,
+  status VARCHAR(50) DEFAULT 'active' NOT NULL,
   hired_at TIMESTAMP,
   terminated_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -171,11 +173,25 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   start_date DATE NOT NULL,
   end_date DATE NOT NULL,
   reason TEXT,
+  document_url TEXT,
+  admin_notes TEXT,
   status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
   approved_by UUID REFERENCES employees(id),
   approved_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Leave balances table - tracks leave quotas and usage per employee
+CREATE TABLE IF NOT EXISTS leave_balances (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  leave_type VARCHAR(50) NOT NULL,
+  total_days INTEGER NOT NULL DEFAULT 0,
+  used_days INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE(employee_id, leave_type)
 );
 
 -- ============================================

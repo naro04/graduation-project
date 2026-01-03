@@ -38,6 +38,7 @@ SET
     gender = COALESCE($6, gender),
     marital_status = COALESCE($7, marital_status),
     phone = COALESCE($8, phone),
+    avatar_url = COALESCE($9, avatar_url),
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;

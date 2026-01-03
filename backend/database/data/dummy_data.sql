@@ -1,5 +1,5 @@
 -- ============================================
--- DUMMY DATA GENERATION
+-- DUMMY DATA (CORE + DEMO COMBINED)
 -- ============================================
 
 -- 1. SEED ROLES
@@ -13,39 +13,61 @@ ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
 
 -- 2. SEED DEPARTMENTS
 INSERT INTO departments (name, description, status) VALUES
-('Engineering', 'Software Development and IT Operations', 'active'),
-('Human Resources', 'Recruitment and Employee Relations', 'active'),
-('Operations', 'Field and Office Operations', 'active')
+('HR', 'Human Resources and Recruitment', 'active'),
+('Field Operations', 'Field activities and site management', 'active'),
+('Office', 'Administrative and office support', 'active'),
+('Project Management', 'Planning and coordination', 'active'),
+('Finance', 'Financial management and accounting', 'active'),
+('IT', 'Information Technology and Systems', 'active')
 ON CONFLICT (name) DO NOTHING;
 
--- 3. SEED POSITIONS (Simplified)
+-- 3. SEED POSITIONS (Strict Alignment)
 INSERT INTO positions (title, department_id, description) VALUES
-('Director', (SELECT id FROM departments WHERE name = 'Human Resources'), 'Top level management'),
-('HR Specialist', (SELECT id FROM departments WHERE name = 'Human Resources'), 'HR operations'),
-('Senior Lead', (SELECT id FROM departments WHERE name = 'Engineering'), 'Lead role'),
-('Coordinator', (SELECT id FROM departments WHERE name = 'Operations'), 'Field coordinator')
-ON CONFLICT DO NOTHING;
+-- Super Admin
+('System Administration', (SELECT id FROM departments WHERE name = 'IT'), 'Full system control'),
+
+-- HR Admin
+('HR Manager', (SELECT id FROM departments WHERE name = 'HR'), 'HR management'),
+
+-- Manager
+('Project Manager', (SELECT id FROM departments WHERE name = 'Project Management'), 'Project management'),
+('Team Leader', (SELECT id FROM departments WHERE name = 'Field Operations'), 'Team coordination'),
+('Field Supervisor', (SELECT id FROM departments WHERE name = 'Field Operations'), 'Field oversight'),
+
+-- Field Worker
+('Activity Facilitator', (SELECT id FROM departments WHERE name = 'Field Operations'), 'Activity implementation'),
+('Trainer', (SELECT id FROM departments WHERE name = 'Field Operations'), 'Field training'),
+('Social Worker', (SELECT id FROM departments WHERE name = 'Field Operations'), 'Case management'),
+
+-- Office Staff
+('Administrative Assistant', (SELECT id FROM departments WHERE name = 'Office'), 'Office support'),
+('Data Entry', (SELECT id FROM departments WHERE name = 'Office'), 'Data processing'),
+('Office Coordinator', (SELECT id FROM departments WHERE name = 'Office'), 'Office logistics')
+ON CONFLICT (title, department_id) DO NOTHING;
 
 -- 4. SEED USERS
 INSERT INTO users (email, password_hash, name) VALUES
-('admin@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Super Admin'),
-('hr@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'HR Admin Sarah'),
-('manager@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Manager Mike'),
-('field@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Field Worker John'),
-('office@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Office Staff Alice')
-ON CONFLICT (email) DO NOTHING;
+('admin@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Firas Alijla'),
+('hr@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Sarah Jean Connor'),
+('manager@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Mike David Ross'),
+('eng_manager@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSRbySeWiWpcYBO', 'Ameer Jamal'),
+('field@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'John Field'),
+('dev@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'John Michael Doe'),
+('office@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Alice Marie Smith')
+ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name;
 
--- 5. LINK USERS TO ROLES
+-- 5. LINK ROLES
 INSERT INTO user_roles (user_id, role_id) VALUES
 ((SELECT id FROM users WHERE email = 'admin@company.com'), (SELECT id FROM roles WHERE name = 'Super Admin')),
 ((SELECT id FROM users WHERE email = 'hr@company.com'), (SELECT id FROM roles WHERE name = 'HR Admin')),
 ((SELECT id FROM users WHERE email = 'manager@company.com'), (SELECT id FROM roles WHERE name = 'Manager')),
+((SELECT id FROM users WHERE email = 'eng_manager@company.com'), (SELECT id FROM roles WHERE name = 'Manager')),
 ((SELECT id FROM users WHERE email = 'field@company.com'), (SELECT id FROM roles WHERE name = 'Field Worker')),
+((SELECT id FROM users WHERE email = 'dev@company.com'), (SELECT id FROM roles WHERE name = 'Office Staff')),
 ((SELECT id FROM users WHERE email = 'office@company.com'), (SELECT id FROM roles WHERE name = 'Office Staff'))
 ON CONFLICT DO NOTHING;
 
--- 7. SEED PERMISSIONS (Legacy Compatible)
--- Re-inserting flat permission list valid for current backend/frontend
+-- 6. SEED PERMISSIONS
 INSERT INTO permissions (resource, action, permission_type, slug, display_name, sort_order) VALUES
 -- Menu Access
 ('Dashboard', 'access', 'menu_access', 'dashboard:access', 'access', 10),
@@ -81,8 +103,7 @@ INSERT INTO permissions (resource, action, permission_type, slug, display_name, 
 ('More', 'Help Center', 'menu_access', 'more:help_center', 'Help Center', 94),
 ('More', 'Support', 'menu_access', 'more:support', 'Support', 95),
 ('Log out', 'access', 'menu_access', 'log_out:access', 'access', 100),
-
--- ACTIONS
+-- Actions
 ('User Actions', 'View all employees', 'action', 'user_actions:view_all_employees', 'View all employees', 110),
 ('User Actions', 'Create employee', 'action', 'user_actions:create_employee', 'Create employee', 111),
 ('User Actions', 'Edit employee', 'action', 'user_actions:edit_employee', 'Edit employee', 112),
@@ -124,14 +145,11 @@ INSERT INTO permissions (resource, action, permission_type, slug, display_name, 
 ('System Actions', 'Access system logs', 'action', 'system_actions:access_system_logs', 'Access system logs', 173)
 ON CONFLICT (slug) DO NOTHING;
 
--- 8. LINK PERMISSIONS TO ROLES
-
--- Super Admin: ALL
+-- 7. LINK PERMISSIONS TO ROLES
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Admin'
 ON CONFLICT DO NOTHING;
 
--- HR Admin
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT (SELECT id FROM roles WHERE name = 'HR Admin'), id FROM permissions
 WHERE slug IN (
@@ -147,7 +165,6 @@ WHERE slug IN (
     'reports_actions:view/export_hr_reports', 'reports_actions:view/export_field_activites_reports', 'reports_actions:view/export_attendance,_leave_reports'
 ) ON CONFLICT DO NOTHING;
 
--- Manager
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT (SELECT id FROM roles WHERE name = 'Manager'), id FROM permissions
 WHERE slug IN (
@@ -163,79 +180,85 @@ WHERE slug IN (
     'reports_actions:view/export_attendance,_leave_reports', 'reports_actions:view/export_team_reports'
 ) ON CONFLICT DO NOTHING;
 
--- Field Worker
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT (SELECT id FROM roles WHERE name = 'Field Worker'), id FROM permissions
-WHERE slug IN (
-    'dashboard:access', 'attendance:my_attendance',
-    'activities:my_activities', 'activities:log_activity',
-    'leave_management:request_leave', 'leave_management:my_leave',
-    'more:my_profile', 'more:help_center', 'more:support', 'log_out:access',
-    'attendance_actions:view_my_attendance', 'attendance_actions:check-in/check-out',
-    'activity_actions:log_my_activity', 'activity_actions:view_my_activities',
-    'leave_actions:request_leave_for_self', 'leave_actions:view_my_leave_status'
-) ON CONFLICT DO NOTHING;
-
--- Office Staff
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT (SELECT id FROM roles WHERE name = 'Office Staff'), id FROM permissions
-WHERE slug IN (
-    'dashboard:access', 'attendance:my_attendance',
-    'leave_management:request_leave', 'leave_management:my_leave',
-    'more:my_profile', 'more:help_center', 'more:support', 'log_out:access',
-    'attendance_actions:view_my_attendance', 'attendance_actions:check-in/check-out',
-    'leave_actions:request_leave_for_self', 'leave_actions:view_my_leave_status'
-) ON CONFLICT DO NOTHING;
-
-
--- 8. SEED EMPLOYEES
--- 8. SEED EMPLOYEES
-INSERT INTO employees (user_id, employee_code, first_name, middle_name, last_name, full_name, email, phone, birth_date, gender, marital_status, department_id, position_id, employment_type, status, hired_at) VALUES
-((SELECT id FROM users WHERE email = 'admin@company.com'), 'EMP001', 'Firas', 'Ali', 'Alijla', 'Firas Alijla', 'admin@company.com', '+1234567890', '1990-01-01', 'Male', 'Single', NULL, NULL, 'Full-Time', 'active', NOW() - INTERVAL '3 years'),
-((SELECT id FROM users WHERE email = 'hr@company.com'), 'EMP002', 'Sarah', 'Jean', 'Connor', 'Sarah HR', 'hr@company.com', '+1987654321', '1985-05-15', 'Female', 'Married', (SELECT id FROM departments WHERE name = 'Human Resources'), (SELECT id FROM positions WHERE title = 'HR Specialist'), 'Full-Time', 'active', NOW() - INTERVAL '2 years'),
-((SELECT id FROM users WHERE email = 'eng_manager@company.com'), 'EMP003', 'Mike', 'David', 'Ross', 'Mike Engineering', 'eng_manager@company.com', '+1122334455', '1980-08-20', 'Male', 'Married', (SELECT id FROM departments WHERE name = 'Engineering'), (SELECT id FROM positions WHERE title = 'Senior Software Engineer'), 'Full-Time', 'active', NOW() - INTERVAL '1 year'),
-((SELECT id FROM users WHERE email = 'dev@company.com'), 'EMP004', 'John', 'Michael', 'Doe', 'John Dev', 'dev@company.com', '+1555666777', '1995-12-10', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'Engineering'), (SELECT id FROM positions WHERE title = 'Software Engineer'), 'Full-Time', 'active', NOW() - INTERVAL '6 months')
+-- 8. EMPLOYEES
+INSERT INTO employees (user_id, employee_code, first_name, middle_name, last_name, full_name, email, phone, birth_date, gender, marital_status, department_id, position_id, role_id, employment_type, status, hired_at) VALUES
+((SELECT id FROM users WHERE email = 'admin@company.com'), 'EMP001', 'Firas', 'Ali', 'Alijla', 'Firas Alijla', 'admin@company.com', '+1234567890', '1990-01-01', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'IT'), (SELECT id FROM positions WHERE title = 'System Administration'), (SELECT id FROM roles WHERE name = 'Super Admin'), 'Full-Time', 'active', NOW()),
+((SELECT id FROM users WHERE email = 'hr@company.com'), 'EMP002', 'Sarah', 'Jean', 'Connor', 'Sarah Jean Connor', 'hr@company.com', '+1987654321', '1985-05-15', 'Female', 'Married', (SELECT id FROM departments WHERE name = 'HR'), (SELECT id FROM positions WHERE title = 'HR Manager'), (SELECT id FROM roles WHERE name = 'HR Admin'), 'Full-Time', 'active', NOW() - INTERVAL '2 years'),
+((SELECT id FROM users WHERE email = 'manager@company.com'), 'EMP003', 'Mike', 'David', 'Ross', 'Mike David Ross', 'manager@company.com', '+1122334455', '1980-08-20', 'Male', 'Married', (SELECT id FROM departments WHERE name = 'Project Management'), (SELECT id FROM positions WHERE title = 'Project Manager'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'active', NOW() - INTERVAL '1 year'),
+((SELECT id FROM users WHERE email = 'dev@company.com'), 'EMP004', 'John', 'Michael', 'Doe', 'John Michael Doe', 'dev@company.com', '+1555666777', '1995-12-10', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'Office'), (SELECT id FROM positions WHERE title = 'Administrative Assistant'), (SELECT id FROM roles WHERE name = 'Office Staff'), 'Full-Time', 'active', NOW() - INTERVAL '6 months'),
+((SELECT id FROM users WHERE email = 'office@company.com'), 'EMP005', 'Alice', 'Marie', 'Smith', 'Alice Marie Smith', 'office@company.com', '+1555888999', '1992-03-25', 'Female', 'Single', (SELECT id FROM departments WHERE name = 'Office'), (SELECT id FROM positions WHERE title = 'Office Coordinator'), (SELECT id FROM roles WHERE name = 'Office Staff'), 'Full-Time', 'active', NOW() - INTERVAL '4 months'),
+((SELECT id FROM users WHERE email = 'eng_manager@company.com'), 'EMP006', 'Ameer', 'Jamal', 'Ross', 'Ameer Jamal', 'eng_manager@company.com', '+1122334466', '1982-04-12', 'Male', 'Married', (SELECT id FROM departments WHERE name = 'Field Operations'), (SELECT id FROM positions WHERE title = 'Team Leader'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'active', NOW() - INTERVAL '1.5 years'),
+((SELECT id FROM users WHERE email = 'field@company.com'), 'EMP007', 'John', 'Field', 'Walker', 'John Field', 'field@company.com', '+1555000111', '1988-11-30', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'Field Operations'), (SELECT id FROM positions WHERE title = 'Field Supervisor'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'active', NOW() - INTERVAL '8 months')
 ON CONFLICT (employee_code) DO UPDATE SET 
+    user_id = EXCLUDED.user_id,
+    first_name = EXCLUDED.first_name,
+    middle_name = EXCLUDED.middle_name,
+    last_name = EXCLUDED.last_name,
+    full_name = EXCLUDED.full_name,
+    email = EXCLUDED.email,
     phone = EXCLUDED.phone,
     birth_date = EXCLUDED.birth_date,
     gender = EXCLUDED.gender,
     marital_status = EXCLUDED.marital_status,
-    middle_name = EXCLUDED.middle_name;
+    department_id = EXCLUDED.department_id,
+    position_id = EXCLUDED.position_id,
+    role_id = EXCLUDED.role_id,
+    employment_type = EXCLUDED.employment_type,
+    status = EXCLUDED.status,
+    hired_at = EXCLUDED.hired_at;
 
 -- Supervisor Link
 UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE employee_code = 'EMP003') WHERE employee_code = 'EMP004';
 
--- 9. SEED EMERGENCY CONTACTS
-INSERT INTO emergency_contacts (employee_id, name, relationship, phone, email, address) VALUES
-((SELECT id FROM employees WHERE employee_code = 'EMP001'), 'Ali Alijla', 'Father', '+1234567899', 'ali@example.com', '123 Main St, City'),
-((SELECT id FROM employees WHERE employee_code = 'EMP002'), 'Kyle Reese', 'Husband', '+1987654322', 'kyle@example.com', '456 Oak Ave, Town'),
-((SELECT id FROM employees WHERE employee_code = 'EMP003'), 'Rachel Ross', 'Wife', '+1122334466', 'rachel@example.com', '789 Pine Ln, Village'),
-((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Harry Doe', 'Father', '+1555666778', 'harry@example.com', '321 Elm St, Hamlet')
+-- 9. EMERGENCY CONTACTS
+INSERT INTO emergency_contacts (employee_id, name, relationship, phone, alternate_phone, email, address) VALUES
+((SELECT id FROM employees WHERE employee_code = 'EMP001'), 'Ali Alijla', 'Father', '+1234567899', '+0004567899', 'ali@example.com', '123 Main St, City'),
+((SELECT id FROM employees WHERE employee_code = 'EMP002'), 'Kyle Reese', 'Husband', '+1987654322', '+1900054322', 'kyle@example.com', '456 Oak Ave, Town'),
+((SELECT id FROM employees WHERE employee_code = 'EMP003'), 'Rachel Ross', 'Wife', '+1122334466', '+1120004466', 'rachel@example.com', '789 Pine Ln, Village'),
+((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Harry Doe', 'Father', '+1555666778', '+155000666778', 'harry@example.com', '321 Elm St, Hamlet')
 ON CONFLICT (employee_id) DO UPDATE SET
     name = EXCLUDED.name,
     relationship = EXCLUDED.relationship,
-    phone = EXCLUDED.phone;
+    phone = EXCLUDED.phone,
+    alternate_phone = EXCLUDED.alternate_phone,
+    email = EXCLUDED.email,
+    address = EXCLUDED.address;
 
--- 10. SEED LOCATIONS
+-- 10. LOCATIONS
 INSERT INTO locations (name, address, latitude, longitude, location_type) VALUES
 ('Head Office', 'Gaza Office', 31.5000, 34.4667, 'Office'),
 ('School A', 'Hattin School', 31.5100, 34.4700, 'Field Site')
 ON CONFLICT DO NOTHING;
 
--- 10. SEED ATTENDANCE (Updated with GPS & Status)
+-- 11. ATTENDANCE
 INSERT INTO attendance (employee_id, check_in_time, check_out_time, location_latitude, location_longitude, location_address, distance_from_base, gps_status, daily_status, work_type, approval_status) VALUES
--- John Dev: Verified Present
 ((SELECT id FROM employees WHERE employee_code = 'EMP004'), '2025-12-07 08:00:00', '2025-12-07 16:02:00', 31.5000, 34.4667, 'Head Office', 0.00, 'Verified', 'Present', 'Office', 'approved'),
--- John Dev: Suspicious (150m away)
 ((SELECT id FROM employees WHERE employee_code = 'EMP004'), '2025-12-08 10:05:00', '2025-12-08 16:20:00', 31.5005, 34.4670, 'School A', 150.00, 'Suspicious', 'Late', 'Office', 'pending'),
--- Ameer Jamal (Mike): Verified
 ((SELECT id FROM employees WHERE employee_code = 'EMP003'), '2025-12-07 08:00:00', '2025-12-07 16:00:00', 31.5100, 34.4700, 'Hattin School', 51.00, 'Verified', 'Present', 'Field', 'approved');
 
--- 11. SEED ACTIVITIES (Updated with Project & Status)
-INSERT INTO activities (employee_id, project_id, name, activity_type, description, start_time, implementation_status, approval_status, approved_by) VALUES
--- Workshop A (Implemented & Approved)
-((SELECT id FROM employees WHERE employee_code = 'EMP003'), (SELECT id FROM projects WHERE name = 'Project X'), 'Workshop A', 'Workshop', 'Technical Workshop', NOW() - INTERVAL '5 days', 'Implemented', 'Approved', (SELECT id FROM employees WHERE employee_code = 'EMP001')),
--- Group Session A (Planned & rejected)
-((SELECT id FROM employees WHERE employee_code = 'EMP003'), (SELECT id FROM projects WHERE name = 'Project Y'), 'Group Session A', 'Group Session', 'Community Session', NOW() + INTERVAL '2 days', 'Planned', 'Rejected', (SELECT id FROM employees WHERE employee_code = 'EMP001')),
--- Workshop B (Planned & Pending)
-((SELECT id FROM employees WHERE employee_code = 'EMP002'), (SELECT id FROM projects WHERE name = 'Project Z'), 'Workshop B', 'Workshop', 'HR Training', NOW() + INTERVAL '5 days', 'Planned', 'Pending', NULL);
+-- 12. LEAVE REQUESTS
+INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, reason, status, created_at, admin_notes) VALUES
+((SELECT id FROM employees WHERE employee_code = 'EMP003'), 'Annual Leave', '2025-12-24', '2025-12-29', 'Family vacation during holidays', 'pending', '2025-12-14', NULL),
+((SELECT id FROM employees WHERE employee_code = 'EMP002'), 'Sick Leave', '2025-12-19', '2025-12-21', 'Catch cold', 'rejected', '2025-12-18', 'Denied - critical client meetings scheduled'),
+((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Annual Leave', '2025-12-17', '2025-12-19', 'Personal matters', 'approved', '2025-12-09', 'Approved - adequate coverage available'),
+((SELECT id FROM employees WHERE employee_code = 'EMP005'), 'Compensatory Time Off', '2026-01-01', '2026-01-05', 'Project completion bonus days', 'pending', '2026-01-01', NULL)
+ON CONFLICT DO NOTHING;
+
+-- 13. LEAVE BALANCES
+INSERT INTO leave_balances (employee_id, leave_type, total_days, used_days) VALUES
+((SELECT id FROM employees WHERE employee_code = 'EMP001'), 'Annual Leave', 20, 8),
+((SELECT id FROM employees WHERE employee_code = 'EMP001'), 'Sick Leave', 10, 2),
+((SELECT id FROM employees WHERE employee_code = 'EMP001'), 'Emergency Leave', 5, 1),
+((SELECT id FROM employees WHERE employee_code = 'EMP002'), 'Annual Leave', 20, 5),
+((SELECT id FROM employees WHERE employee_code = 'EMP003'), 'Annual Leave', 20, 10),
+((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Annual Leave', 20, 3),
+((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Sick Leave', 10, 0),
+((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Emergency Leave', 5, 0),
+((SELECT id FROM employees WHERE employee_code = 'EMP005'), 'Annual Leave', 20, 0),
+((SELECT id FROM employees WHERE employee_code = 'EMP005'), 'Sick Leave', 10, 0),
+((SELECT id FROM employees WHERE employee_code = 'EMP005'), 'Emergency Leave', 5, 0),
+((SELECT id FROM employees WHERE employee_code = 'EMP006'), 'Annual Leave', 20, 2),
+((SELECT id FROM employees WHERE employee_code = 'EMP007'), 'Annual Leave', 20, 4)
+ON CONFLICT (employee_id, leave_type) DO UPDATE SET 
+    total_days = EXCLUDED.total_days,
+    used_days = EXCLUDED.used_days;
