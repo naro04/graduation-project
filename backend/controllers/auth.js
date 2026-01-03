@@ -20,7 +20,7 @@ const createSendToken = (user, statusCode, res) => {
   const cookieOptions = {
     expires: new Date(
       Date.now() +
-        (parseInt(process.env.JWT_COOKIE_EXPIRES_IN) || 24) * 60 * 60 * 1000
+      (parseInt(process.env.JWT_COOKIE_EXPIRES_IN) || 24) * 60 * 60 * 1000
     ),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -54,11 +54,14 @@ exports.register = async (req, res) => {
 
     // 1. Handle Input Variations (Postman/Frontend differences)
     // Map kebab-case from request if present (as seen in user screenshot)
-    if (!first_name && req.body['first-name'])
-      first_name = req.body['first-name'];
+    if (!first_name && req.body.firstName) first_name = req.body.firstName;
+    if (!first_name && req.body['first-name']) first_name = req.body['first-name'];
+    if (!last_name && req.body.lastName) last_name = req.body.lastName;
     if (!last_name && req.body['last-name']) last_name = req.body['last-name'];
+    if (!confirm_password && req.body.confirmPassword) confirm_password = req.body.confirmPassword;
     if (!confirm_password && req.body['confirm-password'])
       confirm_password = req.body['confirm-password'];
+    if (!phone && req.body.phone) phone = req.body.phone;
 
     // Construct full name if not provided
     if (!name && first_name && last_name) {
@@ -122,10 +125,11 @@ exports.register = async (req, res) => {
         : 'User');
     const finalPhone = phone || null;
 
-    await client.query(
+    const empResult = await client.query(
       `
             INSERT INTO employees (user_id, email, first_name, last_name, full_name, phone, employee_code, status)
             VALUES ($1, $2, $3, $4, $5, $6, $7, 'Inactive')
+            RETURNING id
         `,
       [
         newUser.id,
@@ -138,6 +142,7 @@ exports.register = async (req, res) => {
       ]
     );
 
+    newUser.employee_id = empResult.rows[0].id;
     await client.query('COMMIT');
 
     createSendToken(newUser, 201, res);
@@ -173,7 +178,7 @@ exports.login = async (req, res) => {
 
     // Support both email and employee_code login for consistency
     const loginQuery = `
-            SELECT u.*, r.name as role_name, r.id as role_id
+            SELECT u.*, e.id as employee_id, r.name as role_name, r.id as role_id
             FROM users u 
             LEFT JOIN employees e ON u.id = e.user_id 
             LEFT JOIN user_roles ur ON u.id = ur.user_id

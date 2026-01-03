@@ -74,7 +74,8 @@ exports.createEmployee = async (req, res) => {
             department_id || null,
             position_id || null,
             status || 'active',
-            avatar_url || null
+            avatar_url || null,
+            role_id || null
         ]);
 
         const newEmployee = result.rows[0];
@@ -123,6 +124,7 @@ exports.updateEmployee = async (req, res) => {
                 position_id || null,
                 status,
                 avatar_url || null,
+                role_id || null,
                 id
             ]);
 

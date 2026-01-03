@@ -78,7 +78,8 @@ exports.updateProfile = async (req, res) => {
             finalBirthDate,
             gender || null,
             marital_status || maritalStatus_camel || null,
-            phone || null
+            phone || null,
+            req.body.avatarUrl || req.body.avatar_url || null
         ]);
 
         // 3b. Update Job Info (if provided)
@@ -162,7 +163,7 @@ exports.updateProfile = async (req, res) => {
     } catch (err) {
         if (client) await client.query('ROLLBACK');
         console.error('Update Profile Error:', err);
-        res.status(500).json({ message: "Internal server error during profile update", error: err.message });
+        res.status(500).json({ success: false, message: "Internal server error during profile update", error: err.message });
     } finally {
         if (client) client.release();
     }

@@ -13,10 +13,10 @@ module.exports = async (req, res) => {
             id: data.id,
             name: data.name,
             email: data.email,
-            avatarUrl: data.avatar_url,
+            avatarUrl: data.employee_avatar_url || data.avatar_url,
             roles: data.role_name ? [data.role_name] : [],
             employee: {
-                id: data.id, // Assuming 1:1 for profile or using user_id if needed
+                id: data.employee_id,
                 employeeCode: data.employee_code,
                 firstName: data.first_name,
                 middleName: data.middle_name,
