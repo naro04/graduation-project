@@ -200,12 +200,12 @@ exports.login = async (req, res) => {
 
     createSendToken(user, 200, res);
   } catch (err) {
-    console.log("I am here-------------------", err);
+    console.error("Login error:", err);
     res
       .status(500)
       .json({
         message: 'Internal server error during login',
-        error: err.message
+        error: err.message || err.toString()
       });
   }
 };

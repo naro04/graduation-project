@@ -15,6 +15,7 @@ const locationActivitiesRouter = require('./locationActivities');
 const gpsVerificationRouter = require('./gpsVerification');
 const attendanceRouter = require('./attendance');
 const leaveRouter = require('./leaves');
+const uploadsRouter = require('./uploads');
 
 router.use('/profile', profileRouter);
 router.use('/users', userRouter);
@@ -30,6 +31,7 @@ router.use('/location-activities', locationActivitiesRouter);
 router.use('/gps-verifications', gpsVerificationRouter);
 router.use('/attendance', attendanceRouter);
 router.use('/leaves', leaveRouter);
+router.use('/uploads', uploadsRouter);
 router.use('/', dashboard);
 
 module.exports = router;

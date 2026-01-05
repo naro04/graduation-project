@@ -1,7 +1,7 @@
 const updateLocationActivityQuery = `
   UPDATE activities
-  SET name = $1, location_id = $2, start_date = $3, end_date = $4, activity_days = $5, updated_at = CURRENT_TIMESTAMP
-  WHERE id = $6
+  SET name = $1, activity_type = $2, employee_id = $3, location_id = $4, start_date = $5, end_date = $6, activity_days = $7, description = $8, images = $9, updated_at = CURRENT_TIMESTAMP
+  WHERE id = $10
   RETURNING *;
 `;
 
