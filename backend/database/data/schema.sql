@@ -298,6 +298,63 @@ CREATE TABLE IF NOT EXISTS emergency_contacts (
 );
 
 -- ============================================
+-- USER PREFERENCES
+-- ============================================
+
+-- User notification settings table
+CREATE TABLE IF NOT EXISTS user_notification_settings (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    -- Attendance
+    attendance_check_in_out_email BOOLEAN DEFAULT TRUE,
+    attendance_check_in_out_in_app BOOLEAN DEFAULT TRUE,
+    attendance_late_arrival_email BOOLEAN DEFAULT TRUE,
+    attendance_late_arrival_in_app BOOLEAN DEFAULT TRUE,
+    attendance_early_departure_email BOOLEAN DEFAULT TRUE,
+    attendance_early_departure_in_app BOOLEAN DEFAULT TRUE,
+    -- Leaves
+    leave_new_request_email BOOLEAN DEFAULT TRUE,
+    leave_new_request_in_app BOOLEAN DEFAULT TRUE,
+    leave_request_approved_email BOOLEAN DEFAULT TRUE,
+    leave_request_approved_in_app BOOLEAN DEFAULT TRUE,
+    leave_request_rejected_email BOOLEAN DEFAULT TRUE,
+    leave_request_rejected_in_app BOOLEAN DEFAULT TRUE,
+    -- Activities
+    activity_new_assigned_email BOOLEAN DEFAULT TRUE,
+    activity_new_assigned_in_app BOOLEAN DEFAULT TRUE,
+    activity_completed_email BOOLEAN DEFAULT TRUE,
+    activity_completed_in_app BOOLEAN DEFAULT TRUE,
+    activity_overdue_email BOOLEAN DEFAULT TRUE,
+    activity_overdue_in_app BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- API keys table
+CREATE TABLE IF NOT EXISTS api_keys (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    api_key TEXT NOT NULL UNIQUE,
+    permissions TEXT[] DEFAULT '{read}',
+    status VARCHAR(50) DEFAULT 'Active',
+    last_used_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Support tickets table
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL,
+    category TEXT NOT NULL,
+    message TEXT NOT NULL,
+    attachment_url TEXT,
+    status VARCHAR(50) DEFAULT 'In Progress',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ============================================
 -- INDEXES (for better query performance)
 -- ============================================
 
