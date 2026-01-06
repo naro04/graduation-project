@@ -16,6 +16,10 @@ const gpsVerificationRouter = require('./gpsVerification');
 const attendanceRouter = require('./attendance');
 const leaveRouter = require('./leaves');
 const uploadsRouter = require('./uploads');
+const notificationSettingsRouter = require('./notificationSettings');
+const apiKeyRouter = require('./apiKey');
+const helpRouter = require('./help');
+const supportRouter = require('./support');
 
 router.use('/profile', profileRouter);
 router.use('/users', userRouter);
@@ -32,6 +36,10 @@ router.use('/gps-verifications', gpsVerificationRouter);
 router.use('/attendance', attendanceRouter);
 router.use('/leaves', leaveRouter);
 router.use('/uploads', uploadsRouter);
+router.use('/notifications', notificationSettingsRouter);
+router.use('/api-keys', apiKeyRouter);
+router.use('/help', helpRouter);
+router.use('/support', supportRouter);
 router.use('/', dashboard);
 
 module.exports = router;
