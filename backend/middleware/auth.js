@@ -31,6 +31,9 @@ const protect = async (req, res, next) => {
         const permResult = await pool.query(retrieveUserPermissions, [user.id]);
         user.permissions = permResult.rows.map(row => row.slug);
 
+        // Prefer employee avatar over user avatar
+        user.avatar_url = user.employee_avatar_url || user.avatar_url;
+
         req.user = user;
         next();
     } catch (error) {

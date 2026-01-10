@@ -48,7 +48,7 @@ exports.getActivityById = async (req, res) => {
 
 exports.createLocationActivity = async (req, res) => {
     try {
-        const { name, activity_type, responsible_employee_id, location_id, employee_ids, activity_days, dates, description, images } = req.body;
+        const { name, activity_type, responsible_employee_id, location_id, employee_ids, activity_days, dates, description } = req.body;
 
         if (!name) {
             return res.status(400).json({ message: 'Activity name is required' });
@@ -83,8 +83,7 @@ exports.createLocationActivity = async (req, res) => {
             end_date,
             activity_days || dates.length,
             'Active',
-            description || null,
-            images || null
+            description || null
         ]);
 
         const activity = activityResult.rows[0];
@@ -117,7 +116,7 @@ exports.createLocationActivity = async (req, res) => {
 exports.updateLocationActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
-        const { name, activity_type, responsible_employee_id, location_id, employee_ids, activity_days, dates, description, images } = req.body;
+        const { name, activity_type, responsible_employee_id, location_id, employee_ids, activity_days, dates, description } = req.body;
 
         console.log('Update activity request:', {
             activity_id,
@@ -162,7 +161,6 @@ exports.updateLocationActivity = async (req, res) => {
             end_date,
             final_activity_days,
             description !== undefined ? description : existingActivity.description,
-            images !== undefined ? images : existingActivity.images,
             activity_id
         ]);
 

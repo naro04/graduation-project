@@ -2,6 +2,7 @@ const updateCheckOutQuery = `
   UPDATE attendance
   SET 
     check_out_time = CURRENT_TIMESTAMP,
+    check_out_method = $2,
     daily_status = CASE 
       WHEN daily_status = 'Present' THEN 'Present'
       WHEN daily_status = 'Late' THEN 'Late'
