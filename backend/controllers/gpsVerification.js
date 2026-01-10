@@ -15,9 +15,47 @@ exports.getGPSVerifications = async (req, res) => {
             offset
         ]);
 
+        // Get assigned location coordinates for each record
+        const records = await Promise.all(result.rows.map(async (row) => {
+            // Get the closest assigned location for this employee
+            const locationsResult = await pool.query(gpsQueries.getEmployeeLocationsQuery, [row.employee_id]);
+            let assignedLocation = null;
+            
+            if (locationsResult.rows.length > 0) {
+                // Find the closest assigned location
+                if (row.location_latitude && row.location_longitude) {
+                    let minDistance = Infinity;
+                    for (const loc of locationsResult.rows) {
+                        if (loc.latitude && loc.longitude) {
+                            const dist = calculateDistance(
+                                row.location_latitude,
+                                row.location_longitude,
+                                loc.latitude,
+                                loc.longitude
+                            );
+                            if (dist < minDistance) {
+                                minDistance = dist;
+                                assignedLocation = loc;
+                            }
+                        }
+                    }
+                } else {
+                    assignedLocation = locationsResult.rows[0];
+                }
+            }
+
+            return {
+                ...row,
+                location_name: row.location_address || assignedLocation?.name || '-',
+                assigned_latitude: assignedLocation?.latitude || null,
+                assigned_longitude: assignedLocation?.longitude || null,
+                assigned_location_name: assignedLocation?.name || null
+            };
+        }));
+
         res.status(200).json({
             status: 'success',
-            data: result.rows,
+            data: records,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -25,6 +63,7 @@ exports.getGPSVerifications = async (req, res) => {
             }
         });
     } catch (err) {
+        console.error('Error fetching GPS verifications:', err);
         res.status(500).json({ message: 'Error fetching GPS verifications', error: err.message });
     }
 };
@@ -34,12 +73,20 @@ exports.getGPSStats = async (req, res) => {
         const { date } = req.query;
 
         const result = await pool.query(gpsQueries.getGPSStatsQuery, [date || null]);
+        const stats = result.rows[0] || {};
 
         res.status(200).json({
             status: 'success',
-            data: result.rows[0]
+            data: {
+                total_count: stats.total_logs || 0,
+                verified_count: stats.verified_logs || 0,
+                suspicious_count: stats.suspicious_logs || 0,
+                rejected_count: stats.rejected_logs || 0,
+                not_verified_count: stats.not_verified_logs || 0
+            }
         });
     } catch (err) {
+        console.error('Error fetching GPS stats:', err);
         res.status(500).json({ message: 'Error fetching GPS stats', error: err.message });
     }
 };

@@ -22,7 +22,6 @@ const getAllActivitiesQuery = `
     a.implementation_status,
     a.approval_status as approval,
     a.description,
-    a.images,
     COUNT(DISTINCT ae.employee_id) as employee_count,
     ARRAY_AGG(DISTINCT emp.first_name || ' ' || emp.last_name) FILTER (WHERE emp.id IS NOT NULL) as team,
     a.created_at,
@@ -39,7 +38,7 @@ const getAllActivitiesQuery = `
            e.first_name, e.last_name, a.location_id, l.name, a.location_address,
            a.location_latitude, a.location_longitude, l.latitude, l.longitude, a.start_date, a.end_date, 
            a.activity_days, a.status, a.implementation_status, a.approval_status, 
-           a.description, a.images, a.created_at, a.updated_at
+           a.description, a.created_at, a.updated_at
   ORDER BY a.start_date DESC, a.created_at DESC;
 `;
 

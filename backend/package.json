@@ -9,6 +9,7 @@
     "db:reset": "node database/data/refresh_db.js",
     "db:build": "node database/data/build_schema.js",
     "db:seed": "node database/data/seed_data.js",
+    "db:migrate": "node database/migrations/run_migration.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

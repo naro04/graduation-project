@@ -1,19 +1,28 @@
 const express = require('express');
 const router = express.Router();
 const attendanceController = require('../controllers/attendance');
-const { protect } = require('../middleware/auth');
+const { protect, restrictTo } = require('../middleware/auth');
 
-// All routes require authentication (no specific permission needed - employees can manage their own attendance)
+// All routes require authentication
 router.use(protect);
 
-// Get my attendance records
+// Get my attendance records (all authenticated users)
 router.get('/my-attendance', attendanceController.getMyAttendance);
+
+// Get daily attendance for all employees (HR/Admin view)
+router.get('/daily', attendanceController.getDailyAttendance);
+
+// Get available locations for manual selection (GPS fallback)
+router.get('/locations', attendanceController.getLocationsForCheckIn);
 
 // Check-in
 router.post('/check-in', attendanceController.checkIn);
 
 // Check-out
 router.post('/check-out', attendanceController.checkOut);
+
+// Delete attendance record
+router.delete('/:id', attendanceController.deleteAttendance);
 
 module.exports = router;
 
