@@ -151,6 +151,10 @@ CREATE TABLE IF NOT EXISTS attendance (
   distance_from_base DECIMAL(10, 2), -- Distance in meters from assigned location
   gps_status VARCHAR(50) DEFAULT 'Not Verified', -- 'Verified', 'Suspicious', 'Not Verified', 'Rejected'
   
+  -- Check-in/Check-out method tracking
+  check_in_method VARCHAR(20) DEFAULT 'GPS', -- 'GPS' or 'Manual'
+  check_out_method VARCHAR(20), -- 'GPS' or 'Manual'
+  
   -- Attendance details
   daily_status VARCHAR(50), -- 'Present', 'Late', 'Absent', 'Missing Check-out'
   work_type VARCHAR(50) DEFAULT 'Office', -- 'Office', 'Remote', 'Field'

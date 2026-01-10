@@ -32,6 +32,7 @@ const findUserById = `
   SELECT 
     u.id, u.name, u.email, u.avatar_url,
     e.id as employee_id,
+    e.avatar_url as employee_avatar_url,
     r.name as role_name,
     r.id as role_id
   FROM users u
