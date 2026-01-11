@@ -139,3 +139,35 @@ exports.getMyLeaveStats = async (req, res) => {
         res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 };
+/**
+ * Get leave reports with distribution and trends
+ */
+exports.getLeaveReports = async (req, res) => {
+    try {
+        const { dateFrom, dateTo, type, status, search } = req.query;
+
+        const [distributionRes, trendRes, recordsRes] = await Promise.all([
+            pool.query(leaveQueries.getLeaveDistributionQuery),
+            pool.query(leaveQueries.getLeaveTrendQuery),
+            pool.query(leaveQueries.getDetailedLeaveReportQuery, [
+                dateFrom || null,
+                dateTo || null,
+                type && type !== 'All Leave Type' ? type : null,
+                status && status !== 'All Status' ? status : null,
+                search || null
+            ])
+        ]);
+
+        res.status(200).json({
+            success: true,
+            records: recordsRes.rows,
+            stats: {
+                distribution: distributionRes.rows,
+                trend: trendRes.rows
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching leave reports:', error);
+        res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+    }
+};

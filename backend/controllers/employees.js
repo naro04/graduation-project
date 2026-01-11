@@ -1,5 +1,6 @@
 const pool = require('../database/connection');
 const employeeQueries = require('../database/data/queries/employees');
+const activityQueries = require('../database/data/queries/locationActivities'); // Might need this for activity counts later
 
 exports.getAllEmployees = async (req, res) => {
     try {
@@ -190,8 +191,6 @@ exports.bulkAction = async (req, res) => {
         if (action === 'delete') {
             result = await pool.query(`DELETE FROM employees WHERE id = ANY($1::UUID[]) RETURNING *`, [ids]);
         } else if (action === 'review') {
-            // For employees, "review" might just be a placeholder or update is_reviewed if we add it
-            // For now, let's just update status to 'active' or something similar if needed
             return res.status(400).json({ status: 'fail', message: 'Review action not implemented for employees' });
         } else {
             return res.status(400).json({ status: 'fail', message: 'Invalid action' });
@@ -208,5 +207,36 @@ exports.bulkAction = async (req, res) => {
             message = 'Cannot delete employees linked to other records (e.g. attendance, activities)';
         }
         res.status(500).json({ message, error: err.message });
+    }
+};
+
+exports.getHRReports = async (req, res) => {
+    try {
+        let { departmentId, status, search } = req.query;
+
+        // Ensure departmentId is null if it's not a valid UUID or is 'All Departments'
+        if (departmentId === 'All Departments' || !departmentId) {
+            departmentId = null;
+        }
+
+        const recordsResult = await pool.query(employeeQueries.getDetailedHRReportQuery, [
+            departmentId,
+            status && status !== 'All Status' ? status : null,
+            search || null
+        ]);
+
+        const distributionResult = await pool.query(employeeQueries.getEmployeeDistributionQuery);
+        const correlationResult = await pool.query(employeeQueries.getAttendanceLeaveCorrelationQuery);
+
+        res.status(200).json({
+            status: 'success',
+            records: recordsResult.rows,
+            stats: {
+                distribution: distributionResult.rows,
+                correlation: correlationResult.rows
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching HR reports', error: err.message });
     }
 };

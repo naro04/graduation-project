@@ -72,4 +72,9 @@ const leaveQueries = {
     `
 };
 
-module.exports = leaveQueries;
+const getLeaveReports = require('./getLeaveReports');
+
+module.exports = {
+    ...leaveQueries,
+    ...getLeaveReports
+};

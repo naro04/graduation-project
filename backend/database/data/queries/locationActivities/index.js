@@ -6,8 +6,10 @@ const updateLocationActivityQuery = require('./updateLocationActivity');
 const deleteLocationActivityQuery = require('./deleteLocationActivity');
 const assignEmployeesToActivityQuery = require('./assignEmployeesToActivity');
 const removeEmployeesFromActivityQuery = require('./removeEmployeesFromActivity');
+const getActivityReports = require('./getActivityReports');
 
 module.exports = {
+  ...getActivityReports,
   createLocationActivityQuery,
   getActivityEmployeesQuery,
   getActivityByIdQuery,

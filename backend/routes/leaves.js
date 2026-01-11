@@ -8,6 +8,9 @@ router.use(auth.protect);
 // GET /api/v1/leaves - Get all leaves with stats and filters
 router.get('/', leaveController.getLeaves);
 
+// GET /api/v1/leaves/reports - Get leave reports
+router.get('/reports', auth.restrictTo('reports:leave_reports', 'manage_employees'), leaveController.getLeaveReports);
+
 // POST /api/v1/leaves - Create a new leave request
 router.post('/', leaveController.createLeave);
 

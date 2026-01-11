@@ -172,7 +172,7 @@ exports.updateLocationActivity = async (req, res) => {
         if (employee_ids && Array.isArray(employee_ids)) {
             console.log('Updating employee assignments for activity:', activity_id);
             console.log('Employee IDs to assign:', employee_ids);
-            
+
             // Remove existing assignments
             const deleteResult = await pool.query(activityQueries.removeEmployeesFromActivityQuery, [activity_id]);
             console.log('Removed existing assignments:', deleteResult.rowCount);
@@ -292,4 +292,33 @@ exports.rejectActivity = async (req, res) => {
         res.status(500).json({ message: 'Error rejecting activity', error: err.message });
     }
 };
+
+exports.getActivityReports = async (req, res) => {
+    try {
+        const { from, to, type, status, search } = req.query;
+
+        const recordsResult = await pool.query(activityQueries.getActivityReportsQuery, [
+            from || null,
+            to || null,
+            type && type !== 'All Type' ? type : null,
+            status && status !== 'All Status' ? status : null,
+            search || null
+        ]);
+
+        const trendResult = await pool.query(activityQueries.getCompletionTrendQuery);
+        const participantsResult = await pool.query(activityQueries.getParticipantsByTypeQuery);
+
+        res.status(200).json({
+            status: 'success',
+            records: recordsResult.rows,
+            stats: {
+                completionTrend: trendResult.rows,
+                participantsByType: participantsResult.rows
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching activity reports', error: err.message });
+    }
+};
+
 

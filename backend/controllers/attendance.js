@@ -12,19 +12,41 @@ const getEmployeeByUserId = async (userId) => {
 };
 
 /**
+ * Attendance Logic Definitions (updated):
+ * Present: Check-in by 08:15 AM at the latest AND Check-out after 04:00 PM
+ * Late: Check-in after 08:15 AM
+ * Early Leave: Check-out before 04:00 PM
+ * Missing Check-out: Employee finished shift but no check-out recorded
+ * In Progress: Currently within working hours (checked in, not checked out)
+ * Absent: No login and no approved leave
+ */
+const CHECKIN_CUTOFF_HOUR = 8;
+const CHECKIN_CUTOFF_MINUTE = 15;
+const CHECKOUT_MINIMUM_HOUR = 16; // 4:00 PM
+
+/**
  * Determine daily status based on check-in time
- * Assuming 9:00 AM is the cutoff for being on time
+ * Present if check-in by 08:15 AM, Late if after
  */
 const getDailyStatus = (checkInTime) => {
     const hour = new Date(checkInTime).getHours();
     const minute = new Date(checkInTime).getMinutes();
     const checkInMinutes = hour * 60 + minute;
-    const onTimeMinutes = 9 * 60; // 9:00 AM
+    const onTimeMinutes = CHECKIN_CUTOFF_HOUR * 60 + CHECKIN_CUTOFF_MINUTE; // 8:15 AM
     
     if (checkInMinutes > onTimeMinutes) {
         return 'Late';
     }
     return 'Present';
+};
+
+/**
+ * Determine if checkout is early
+ */
+const isEarlyCheckout = (checkOutTime) => {
+    if (!checkOutTime) return false;
+    const hour = new Date(checkOutTime).getHours();
+    return hour < CHECKOUT_MINIMUM_HOUR;
 };
 
 /**
@@ -435,6 +457,169 @@ exports.getDailyAttendance = async (req, res) => {
     } catch (err) {
         console.error('Error fetching daily attendance:', err);
         res.status(500).json({ message: 'Error fetching daily attendance', error: err.message });
+    }
+};
+
+/**
+ * Get attendance reports with date range and statistics for charts
+ */
+exports.getAttendanceReports = async (req, res) => {
+    try {
+        const { from, to, location, status, search } = req.query;
+        
+        // Default to last 7 days if no date range provided
+        const endDate = to || new Date().toISOString().split('T')[0];
+        const startDate = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        // Get all attendance records in the date range
+        const attendanceQuery = `
+            SELECT 
+                a.id,
+                a.employee_id,
+                e.full_name as employee_name,
+                e.employee_code,
+                e.avatar_url,
+                a.check_in_time,
+                a.check_out_time,
+                a.work_type as attendance_type,
+                a.location_address as location,
+                a.daily_status,
+                a.gps_status,
+                a.check_in_method,
+                a.check_out_method,
+                DATE(a.check_in_time) as attendance_date
+            FROM attendance a
+            JOIN employees e ON a.employee_id = e.id
+            WHERE DATE(a.check_in_time) BETWEEN $1 AND $2
+            ORDER BY a.check_in_time DESC
+        `;
+        
+        const result = await pool.query(attendanceQuery, [startDate, endDate]);
+
+        // Get total active employees
+        const totalEmployeesResult = await pool.query('SELECT COUNT(*) as total FROM employees WHERE status = $1', ['active']);
+        const totalEmployees = parseInt(totalEmployeesResult.rows[0]?.total || 0);
+
+        // Calculate final status for each record
+        const records = result.rows.map(row => {
+            let finalStatus = row.daily_status || 'Present';
+            const checkOutTime = row.check_out_time;
+            const checkInTime = row.check_in_time;
+            
+            // Determine status based on logic
+            if (!checkOutTime) {
+                // Check if shift is over (assuming 8-hour shift from check-in or past 5 PM)
+                const now = new Date();
+                const checkIn = new Date(checkInTime);
+                const hoursElapsed = (now - checkIn) / (1000 * 60 * 60);
+                const currentHour = now.getHours();
+                
+                if (hoursElapsed > 9 || currentHour >= 17) {
+                    finalStatus = 'Missing Check-out';
+                } else {
+                    finalStatus = 'In Progress';
+                }
+            } else if (isEarlyCheckout(checkOutTime)) {
+                finalStatus = row.daily_status === 'Late' ? 'Late' : 'Early Leave';
+            }
+            
+            return {
+                id: row.id,
+                employeeId: row.employee_id,
+                employeeName: row.employee_name,
+                employeeCode: row.employee_code,
+                avatarUrl: row.avatar_url,
+                checkInAt: row.check_in_time,
+                checkOutAt: row.check_out_time,
+                attendanceType: row.attendance_type || 'Office',
+                location: row.location || '-',
+                status: finalStatus,
+                gpsStatus: row.gps_status,
+                checkInMethod: row.check_in_method,
+                checkOutMethod: row.check_out_method,
+                date: row.attendance_date
+            };
+        });
+
+        // Apply filters
+        let filteredRecords = records;
+        if (location && location !== 'All Locations') {
+            filteredRecords = filteredRecords.filter(r => r.location.includes(location));
+        }
+        if (status && status !== 'All Status') {
+            filteredRecords = filteredRecords.filter(r => r.status === status);
+        }
+        if (search) {
+            const searchLower = search.toLowerCase();
+            filteredRecords = filteredRecords.filter(r => 
+                r.employeeName.toLowerCase().includes(searchLower) ||
+                r.employeeCode.toLowerCase().includes(searchLower)
+            );
+        }
+
+        // Calculate statistics for pie chart
+        const presentCount = filteredRecords.filter(r => r.status === 'Present').length;
+        const lateCount = filteredRecords.filter(r => r.status === 'Late').length;
+        const absentCount = filteredRecords.filter(r => r.status === 'Absent').length;
+        const missingCheckoutCount = filteredRecords.filter(r => r.status === 'Missing Check-out').length;
+        const earlyLeaveCount = filteredRecords.filter(r => r.status === 'Early Leave').length;
+        const inProgressCount = filteredRecords.filter(r => r.status === 'In Progress').length;
+
+        // Calculate daily attendance for bar chart (last 7 days)
+        const dailyStats = {};
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        
+        // Initialize last 7 days
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dayName = days[date.getDay()];
+            dailyStats[dayName] = { present: 0, late: 0, absent: 0 };
+        }
+
+        // Fill in data from records
+        filteredRecords.forEach(record => {
+            const recordDate = new Date(record.date);
+            const dayName = days[recordDate.getDay()];
+            if (dailyStats[dayName]) {
+                if (record.status === 'Present') {
+                    dailyStats[dayName].present++;
+                } else if (record.status === 'Late') {
+                    dailyStats[dayName].late++;
+                } else if (record.status === 'Absent') {
+                    dailyStats[dayName].absent++;
+                }
+            }
+        });
+
+        // Get unique locations for filter dropdown
+        const locationsResult = await pool.query('SELECT DISTINCT name FROM locations WHERE status = $1', ['active']);
+        const locations = locationsResult.rows.map(r => r.name);
+
+        res.status(200).json({
+            status: 'success',
+            records: filteredRecords,
+            stats: {
+                total: filteredRecords.length,
+                present: presentCount,
+                late: lateCount,
+                absent: absentCount,
+                missingCheckout: missingCheckoutCount,
+                earlyLeave: earlyLeaveCount,
+                inProgress: inProgressCount,
+                // Percentages for pie chart
+                presentPercent: filteredRecords.length > 0 ? Math.round((presentCount / filteredRecords.length) * 100) : 0,
+                latePercent: filteredRecords.length > 0 ? Math.round((lateCount / filteredRecords.length) * 100) : 0,
+                absentPercent: filteredRecords.length > 0 ? Math.round((absentCount / filteredRecords.length) * 100) : 0,
+                missingCheckoutPercent: filteredRecords.length > 0 ? Math.round((missingCheckoutCount / filteredRecords.length) * 100) : 0
+            },
+            dailyStats: dailyStats,
+            locations: locations,
+            dateRange: { from: startDate, to: endDate }
+        });
+    } catch (err) {
+        console.error('Error fetching attendance reports:', err);
+        res.status(500).json({ message: 'Error fetching attendance reports', error: err.message });
     }
 };
 
