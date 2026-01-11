@@ -1,38 +1,29 @@
+const fs = require('fs');
+const path = require('path');
 const pool = require('../connection');
 
-const runMigration = async () => {
+const runMigrations = async () => {
     try {
-        console.log('Running migration: Adding check_in_method and check_out_method columns...');
+        console.log('Starting database migrations...');
 
-        // Add check_in_method column if it doesn't exist
-        await pool.query(`
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'attendance' AND column_name = 'check_in_method'
-                ) THEN
-                    ALTER TABLE attendance ADD COLUMN check_in_method VARCHAR(20) DEFAULT 'GPS';
-                END IF;
-            END $$;
-        `);
-        console.log('✓ check_in_method column added/verified');
+        const migrationsDir = __dirname;
+        const files = fs.readdirSync(migrationsDir)
+            .filter(file => file.endsWith('.sql'))
+            .sort();
 
-        // Add check_out_method column if it doesn't exist
-        await pool.query(`
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'attendance' AND column_name = 'check_out_method'
-                ) THEN
-                    ALTER TABLE attendance ADD COLUMN check_out_method VARCHAR(20);
-                END IF;
-            END $$;
-        `);
-        console.log('✓ check_out_method column added/verified');
+        for (const file of files) {
+            console.log(`Running migration: ${file}...`);
+            const filePath = path.join(migrationsDir, file);
+            const sql = fs.readFileSync(filePath, 'utf8');
 
-        console.log('Migration completed successfully!');
+            await pool.query(sql);
+            console.log(`✓ Migration ${file} completed successfully`);
+        }
+
+        // Backward compatibility for the hardcoded columns if they aren't in a file yet
+        // (Though better to move them to a file)
+
+        console.log('All migrations completed successfully!');
         process.exit(0);
     } catch (error) {
         console.error('Migration failed:', error.message);
@@ -40,5 +31,5 @@ const runMigration = async () => {
     }
 };
 
-runMigration();
+runMigrations();
 

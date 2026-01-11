@@ -10,6 +10,8 @@ router.route('/')
     .get(restrictTo('manage_locations'), activityController.getAllActivities)
     .post(restrictTo('manage_locations'), activityController.createLocationActivity);
 
+router.get('/reports', restrictTo('manage_locations'), activityController.getActivityReports);
+
 router.get('/:activity_id/employees', restrictTo('manage_locations'), activityController.getActivityEmployees);
 
 router.patch('/:activity_id/approve', restrictTo('manage_locations'), activityController.approveActivity);
