@@ -207,8 +207,8 @@ ON CONFLICT (employee_code) DO UPDATE SET
     status = EXCLUDED.status,
     hired_at = EXCLUDED.hired_at;
 
--- Supervisor Link
-UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE employee_code = 'EMP003') WHERE employee_code = 'EMP004';
+-- Supervisor Links
+UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE employee_code = 'EMP003') WHERE employee_code IN ('EMP004', 'EMP005', 'EMP006', 'EMP007');
 
 -- 9. EMERGENCY CONTACTS
 INSERT INTO emergency_contacts (employee_id, name, relationship, phone, alternate_phone, email, address) VALUES

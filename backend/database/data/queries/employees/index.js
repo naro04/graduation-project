@@ -3,6 +3,7 @@ const { getEmployeeByIdQuery } = require('./getEmployeeById');
 const { createEmployeeQuery } = require('./createEmployee');
 const { updateEmployeeQuery } = require('./updateEmployee');
 const { deleteEmployeeQuery } = require('./deleteEmployee');
+const { getTeamMembersQuery } = require('./getTeamMembers');
 const getHRReports = require('./getHRReports');
 
 module.exports = {
@@ -11,5 +12,6 @@ module.exports = {
     createEmployeeQuery,
     updateEmployeeQuery,
     deleteEmployeeQuery,
+    getTeamMembersQuery,
     ...getHRReports
 };

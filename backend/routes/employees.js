@@ -7,17 +7,19 @@ const { protect, restrictTo } = require('../middleware/auth');
 router.use(protect);
 
 router.route('/')
-    .get(restrictTo('view_employees', 'manage_employees'), employeesController.getAllEmployees)
-    .post(restrictTo('manage_employees'), employeesController.createEmployee);
+    .get(restrictTo('user_management:employees', 'user_actions:view_all_employees', 'manage_employees'), employeesController.getAllEmployees)
+    .post(restrictTo('user_management:employees', 'user_actions:create_employee', 'manage_employees'), employeesController.createEmployee);
 
 router.get('/reports', restrictTo('reports:hr_reports', 'manage_employees'), employeesController.getHRReports);
 
-router.post('/bulk-action', restrictTo('manage_employees'), employeesController.bulkAction);
+router.get('/team/members', employeesController.getTeamMembers);
+
+router.post('/bulk-action', restrictTo('user_management:employees', 'user_actions:disable/delete_employee', 'manage_employees'), employeesController.bulkAction);
 
 router.route('/:id')
-    .get(restrictTo('view_employees', 'manage_employees'), employeesController.getEmployeeById)
-    .put(restrictTo('manage_employees'), employeesController.updateEmployee)
-    .patch(restrictTo('manage_employees'), employeesController.updateEmployee)
-    .delete(restrictTo('manage_employees'), employeesController.deleteEmployee);
+    .get(restrictTo('user_management:employees', 'user_actions:view_all_employees', 'manage_employees'), employeesController.getEmployeeById)
+    .put(restrictTo('user_management:employees', 'user_actions:edit_employee', 'manage_employees'), employeesController.updateEmployee)
+    .patch(restrictTo('user_management:employees', 'user_actions:edit_employee', 'manage_employees'), employeesController.updateEmployee)
+    .delete(restrictTo('user_management:employees', 'user_actions:disable/delete_employee', 'manage_employees'), employeesController.deleteEmployee);
 
 module.exports = router;

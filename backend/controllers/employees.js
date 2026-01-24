@@ -210,6 +210,23 @@ exports.bulkAction = async (req, res) => {
     }
 };
 
+exports.getTeamMembers = async (req, res) => {
+    try {
+        const managerEmployeeId = req.user.employee_id;
+
+        if (!managerEmployeeId) {
+            return res.status(404).json({ message: 'Manager employee record not found' });
+        }
+
+        const result = await pool.query(employeeQueries.getTeamMembersQuery, [managerEmployeeId]);
+
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('Error fetching team members:', err);
+        res.status(500).json({ message: 'Error fetching team members', error: err.message });
+    }
+};
+
 exports.getHRReports = async (req, res) => {
     try {
         let { departmentId, status, search } = req.query;
