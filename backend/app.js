@@ -3,6 +3,7 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const path = require("path");
 const routes = require('./routes');
+const setupSwagger = require('./swagger');
 
 const app = express();
 
@@ -57,6 +58,9 @@ app.use((req, res, next) => {
 
 // Serve uploaded files statically
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Swagger Documentation
+setupSwagger(app);
 
 app.use('/api/v1/', routes);
 

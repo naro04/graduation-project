@@ -5,11 +5,11 @@ const { protect, restrictTo } = require('../middleware/auth');
 
 // Roles
 router.route('/roles')
-    .get(protect, restrictTo('view_roles', 'manage_roles'), rbacController.getAllRoles)
+    .get(protect, restrictTo('user_management:roles_&_permissions', 'manage_roles'), rbacController.getAllRoles)
     .post(protect, restrictTo('manage_roles'), rbacController.createRole); // 'manage_roles' is an example permission slug
 
 router.route('/roles/:id')
-    .get(protect, restrictTo('view_roles', 'manage_roles'), rbacController.getRoleById)
+    .get(protect, restrictTo('user_management:roles_&_permissions', 'manage_roles'), rbacController.getRoleById)
     .put(protect, restrictTo('manage_roles'), rbacController.updateRole)
     .delete(protect, restrictTo('manage_roles'), rbacController.deleteRole);
 
