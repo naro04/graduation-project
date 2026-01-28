@@ -15,6 +15,8 @@ SELECT
   e.marital_status,
   e.email,
   e.phone,
+  e.city,
+  e.country,
   e.avatar_url,
   p.title as position,
   r.name as role

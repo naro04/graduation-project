@@ -10,7 +10,7 @@ router.get('/me', protect, authController.getMe);
 
 // Password reset routes
 router.post('/forgot-password', authController.forgotPassword);
-router.post('/reset-password', authController.resetPassword);
+router.patch('/reset-password', authController.resetPassword);
 
 // Google Auth route
 router.post('/google', authController.googleAuth);

@@ -7,8 +7,6 @@ const setupSwagger = require('./swagger');
 
 const app = express();
 
-// app.use(compression());
-// app.disable('x-powered-by');
 app.set('port', process.env.PORT || 5000);
 
 // CORS configuration - more permissive for development

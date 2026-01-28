@@ -1,10 +1,7 @@
-const express = require("express");
-const router = express.Router();
 const pool = require("../../database/connection");
 const { getPersonalInfoQuery } = require("../../database/data/queries/profile");
-const { updateProfile } = require("./updateProfile");
 
-router.get("/", async (req, res) => {
+module.exports = async (req, res) => {
     const id = req.user.id;
 
     try {
@@ -18,8 +15,4 @@ router.get("/", async (req, res) => {
     } catch (err) {
         res.status(500).json({ message: "Error fetching personal info", error: err.message });
     }
-});
-
-router.put("/", updateProfile);
-
-module.exports = router;
+};

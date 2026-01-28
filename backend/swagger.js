@@ -157,6 +157,18 @@ const paths = {
       responses: { 200: { description: 'Success' } }
     }
   },
+  '/profile/work-schedule': {
+    get: {
+      tags: ['Profile'],
+      summary: 'Get work schedule (Routine + Assignments)',
+      responses: { 
+        200: { 
+          description: 'Success',
+          content: { 'application/json': { schema: { type: 'object', properties: { routine: { type: 'array' }, assignments: { type: 'array' } } } } }
+        } 
+      }
+    }
+  },
   '/profile/account-security': {
     get: {
       tags: ['Profile'],
@@ -336,6 +348,12 @@ const paths = {
     put: {
       tags: ['Employees'],
       summary: 'Update employee',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Success' } }
+    },
+    patch: {
+      tags: ['Employees'],
+      summary: 'Partial update employee',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { 200: { description: 'Success' } }
     },
@@ -605,6 +623,14 @@ const paths = {
       responses: { 200: { description: 'Success' } }
     }
   },
+  '/attendance/{id}': {
+    delete: {
+      tags: ['Attendance'],
+      summary: 'Delete attendance record',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Success' } }
+    }
+  },
 
   // --- Leaves ---
   '/leaves': {
@@ -686,6 +712,14 @@ const paths = {
     post: {
       tags: ['GPS Verifications'],
       summary: 'Verify GPS for attendance record',
+      parameters: [{ name: 'attendance_id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Success' } }
+    }
+  },
+  '/gps-verifications/{attendance_id}/status': {
+    put: {
+      tags: ['GPS Verifications'],
+      summary: 'Update GPS verification status',
       parameters: [{ name: 'attendance_id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { 200: { description: 'Success' } }
     }
@@ -812,7 +846,7 @@ const paths = {
   }
 };
 
-// --- DATA SCHEMAS (Defined at the end for clarity) ---
+// --- DATA SCHEMAS ---
 const schemas = {
   Error: {
     type: 'object',
@@ -1067,14 +1101,14 @@ support_tickets (id, user_id, subject, category, message, status)
         bearerFormat: 'JWT',
       },
     },
-    schemas: schemas // Referenced from the object above
+    schemas: schemas
   },
   security: [
     {
       bearerAuth: [],
     },
   ],
-  paths: paths // Referenced from the object above
+  paths: paths
 };
 
 function setupSwagger(app) {
@@ -1085,70 +1119,9 @@ function setupSwagger(app) {
     },
     customSiteTitle: "HR System API Documentation"
   }));
-  console.log('Swagger documentation available at http://localhost:5000/api-docs');
+  app.get('/api-docs-json', (req, res) => res.json(swaggerSpec));
+  console.log('✅ Swagger Documentation: http://localhost:5000/api-docs');
+  console.log('✅ Swagger JSON: http://localhost:5000/api-docs-json');
 }
 
 module.exports = setupSwagger;
-
-/**
- * ============================================================================
- * DATABASE SCHEMA REFERENCE (SQL)
- * ============================================================================
- * 
- * -- USERS --
- * id UUID PRIMARY KEY
- * email VARCHAR(255) UNIQUE
- * password_hash TEXT
- * name TEXT
- * avatar_url TEXT
- * 
- * -- EMPLOYEES --
- * id UUID PRIMARY KEY
- * user_id UUID REFERENCES users(id)
- * employee_code TEXT UNIQUE
- * first_name TEXT
- * last_name TEXT
- * full_name TEXT
- * email TEXT
- * phone TEXT
- * department_id UUID REFERENCES departments(id)
- * position_id UUID REFERENCES positions(id)
- * role_id UUID REFERENCES roles(id)
- * supervisor_id UUID
- * status VARCHAR(50) DEFAULT 'active'
- * hired_at TIMESTAMP
- * 
- * -- DEPARTMENTS --
- * id UUID PRIMARY KEY
- * name TEXT UNIQUE
- * status VARCHAR(50) DEFAULT 'active'
- * 
- * -- POSITIONS --
- * id UUID PRIMARY KEY
- * title TEXT
- * department_id UUID REFERENCES departments(id)
- * 
- * -- ATTENDANCE --
- * id UUID PRIMARY KEY
- * employee_id UUID REFERENCES employees(id)
- * check_in_time TIMESTAMP
- * check_out_time TIMESTAMP
- * gps_status VARCHAR(50)
- * approval_status VARCHAR(50)
- * 
- * -- LEAVE REQUESTS --
- * id UUID PRIMARY KEY
- * employee_id UUID REFERENCES employees(id)
- * leave_type VARCHAR(50)
- * start_date DATE
- * end_date DATE
- * status VARCHAR(50) DEFAULT 'pending'
- * 
- * -- LOCATIONS --
- * id UUID PRIMARY KEY
- * name TEXT
- * latitude DECIMAL
- * longitude DECIMAL
- * status VARCHAR(50) DEFAULT 'active'
- * ============================================================================
- */

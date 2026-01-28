@@ -25,6 +25,7 @@ exports.updateProfile = async (req, res) => {
             // Personal Info
             first_name, middle_name, last_name, birth_date,
             gender, marital_status, phone,
+            city, country,
 
             'firstName': firstName_camel,
             'lastName': lastName_camel,
