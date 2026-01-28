@@ -51,7 +51,7 @@ const getMe = `
     u.id, u.name, u.email, u.avatar_url,
     e.id as employee_id,
     e.employee_code, e.first_name, e.middle_name, e.last_name, e.full_name,
-    e.phone, e.birth_date, e.gender, e.marital_status, e.status, e.hired_at, e.avatar_url as employee_avatar_url,
+    e.phone, e.birth_date, e.gender, e.marital_status, e.status, e.hired_at, e.city, e.country, e.avatar_url as employee_avatar_url,
     e.department_id, e.position_id, e.supervisor_id, e.employment_type,
     d.name as department_name,
     pos.title as position_title,
