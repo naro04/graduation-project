@@ -1,9 +1,7 @@
-const express = require("express");
-const router = express.Router();
 const pool = require("../../database/connection");
 const { getJobInfoQuery } = require("../../database/data/queries/profile");
 
-router.get("/", async (req, res) => {
+module.exports = async (req, res) => {
     const id = req.user.id;
 
     try {
@@ -17,6 +15,4 @@ router.get("/", async (req, res) => {
     } catch (err) {
         res.status(500).json({ message: "Error fetching job info", error: err.message });
     }
-});
-
-module.exports = router;
+};

@@ -1,5 +1,6 @@
 const pool = require("../../database/connection");
 const { getMe } = require("../../database/data/queries/auth");
+const { getLocationQuery, getWorkScheduleQuery } = require("../../database/data/queries/profile");
 
 module.exports = async (req, res) => {
     try {
@@ -9,6 +10,15 @@ module.exports = async (req, res) => {
         }
 
         const data = rows[0];
+
+        // Fetch additional info: Locations and Work Schedule
+        const [locationsRes, scheduleRes] = await Promise.all([
+            pool.query(getLocationQuery, [req.user.id]),
+            pool.query(getWorkScheduleQuery, [req.user.id])
+        ]);
+
+        const primaryLocation = locationsRes.rows.find(l => l.is_primary) || locationsRes.rows[0];
+
         const formattedResponse = {
             id: data.id,
             name: data.name,
@@ -28,6 +38,9 @@ module.exports = async (req, res) => {
                 maritalStatus: data.marital_status,
                 status: data.status,
                 hiredAt: data.hired_at,
+                city: data.city,
+                country: data.country,
+                location: data.country && data.city ? `${data.country}, ${data.city}` : (primaryLocation ? primaryLocation.address : null),
                 department_id: data.department_id,
                 position_id: data.position_id,
                 roleId: data.role_id,
@@ -50,12 +63,15 @@ module.exports = async (req, res) => {
                     altPhone: data.ec_alternate_phone,
                     address: data.ec_address,
                     email: data.ec_email
-                }] : []
+                }] : [],
+                locations: locationsRes.rows,
+                workSchedules: scheduleRes.rows
             }
         };
 
         res.status(200).json(formattedResponse);
     } catch (err) {
+        console.error('getMe error:', err);
         res.status(500).json({ message: "Error fetching profile", error: err.message });
     }
 };
