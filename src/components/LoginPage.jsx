@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { login } from "../services/auth.js";
 
 // Logo images
 const LogoDesktop = new URL("../images/LogoDesktop.png", import.meta.url).href;
@@ -10,7 +12,54 @@ const Rectangle13 = new URL("../images/Shapes/Rectangle 13.png", import.meta.url
 const Polygon1 = new URL("../images/Shapes/Polygon 1.png", import.meta.url).href;
 const Ellipse1 = new URL("../images/Shapes/Ellipse 1.png", import.meta.url).href;
 
+// Icons
+const EyeIcon = new URL("../images/icons/eye.png", import.meta.url).href;
+
 const LoginPage = () => {
+  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    // Validation
+    if (!email.trim()) {
+      setError("Please enter your email or ID");
+      return;
+    }
+    if (!password.trim()) {
+      setError("Please enter your password");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      console.log('🚀 Attempting login with:', { email: email.trim(), rememberMe });
+      const response = await login(email.trim(), password, rememberMe);
+      console.log('✅ Login successful:', response);
+      
+      // Success - redirect to dashboard
+      navigate("/dashboard");
+    } catch (err) {
+      console.error('❌ Login failed:', {
+        message: err.message,
+        status: err.status,
+        data: err.data,
+        fullError: err
+      });
+      setError(err.message || "Login failed. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full" style={{ fontFamily: 'Inter, sans-serif' }}>
       {/* Mobile Version */}
@@ -37,19 +86,42 @@ const LoginPage = () => {
         </p>
 
         {/* Form */}
-        <div className="w-full max-w-[347px] flex flex-col gap-[14px]">
+        <form onSubmit={handleSubmit} className="w-full max-w-[347px] flex flex-col gap-[14px]">
+          {/* Error Message */}
+          {error && (
+            <div 
+              className="w-full px-[16px] py-[12px] rounded-[8px] mb-[8px]"
+              style={{ 
+                backgroundColor: '#FEE2E2',
+                border: '1px solid #FCA5A5',
+                color: '#DC2626'
+              }}
+            >
+              <p className="text-[12px] font-medium">{error}</p>
+            </div>
+          )}
+
           {/* Email Address */}
           <div>
             <label className="block text-[14px] font-medium text-black mb-[3px]">
-              Email Address
+              Email or ID
             </label>
             <input 
               type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your Email or ID"
               className="w-full h-[48px] rounded-[8px] px-[16px] outline-none"
               style={{ 
                 border: '1px solid rgba(28, 137, 154, 0.7)',
-                backgroundColor: 'transparent'
+                backgroundColor: 'transparent',
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '12px',
+                fontWeight: 400,
+                color: '#000000',
+                textAlign: 'left'
               }}
+              disabled={isLoading}
             />
           </div>
 
@@ -58,39 +130,101 @@ const LoginPage = () => {
             <label className="block text-[14px] font-medium text-black mb-[3px]">
               Password
             </label>
-            <input 
-              type="password"
-              className="w-full h-[48px] rounded-[8px] px-[16px] outline-none"
-              style={{ 
-                border: '1px solid rgba(28, 137, 154, 0.7)',
-                backgroundColor: 'transparent'
-              }}
-            />
+            <div className="relative">
+              <input 
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter your Password"
+                    className="w-full h-[48px] rounded-[8px] px-[16px] pr-[48px] outline-none"
+                    style={{ 
+                      border: '1px solid rgba(28, 137, 154, 0.7)',
+                      backgroundColor: 'transparent',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '12px',
+                      fontWeight: 400,
+                      color: '#000000',
+                      textAlign: 'left'
+                    }}
+                    disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-[16px] top-1/2 -translate-y-1/2 w-[20px] h-[20px] flex items-center justify-center"
+              >
+                <svg 
+                  className="w-[20px] h-[20px] text-gray-500" 
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  {showPassword ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  )}
+                </svg>
+              </button>
+            </div>
           </div>
 
-          {/* Remember Me */}
-          <div className="flex items-center gap-[11px] mt-[11px]">
-            <div 
-              className="w-[16px] h-[16px] rounded-[4px] flex-shrink-0"
-              style={{ border: '1px solid rgba(28, 137, 154, 0.7)' }}
-            />
-            <span 
+          {/* Remember Me and Forgot Password */}
+          <div className="flex items-center justify-between mt-[11px]">
+            <div className="flex items-center gap-[11px]">
+              <button
+                type="button"
+                onClick={() => setRememberMe(!rememberMe)}
+                className="w-[16px] h-[16px] rounded-[4px] flex-shrink-0 flex items-center justify-center"
+                style={{ 
+                  border: '1px solid rgba(28, 137, 154, 0.7)',
+                  backgroundColor: rememberMe ? '#00564F' : 'transparent'
+                }}
+                disabled={isLoading}
+              >
+                {rememberMe && (
+                  <svg className="w-[12px] h-[12px] text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+              <span 
+                className="text-[14px] font-medium"
+                style={{ color: 'rgba(0, 0, 0, 0.7)' }}
+              >
+                Remember me
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/forgot-password")}
               className="text-[14px] font-medium"
-              style={{ color: 'rgba(0, 0, 0, 0.7)' }}
+              style={{ 
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 500,
+                fontSize: '14px',
+                lineHeight: '100%',
+                letterSpacing: '0%',
+                color: '#000000',
+                textAlign: 'center'
+              }}
+              disabled={isLoading}
             >
-              Remember me
-            </span>
+              Forgot Password ?
+            </button>
           </div>
 
           {/* Sign In Button */}
           <button 
-            className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px]"
+            type="submit"
+            disabled={isLoading}
+            className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px] transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ 
               backgroundColor: '#00564F',
               border: '1px solid rgba(28, 137, 154, 0.7)'
             }}
           >
-            SIGN IN
+            {isLoading ? "SIGNING IN..." : "SIGN IN"}
           </button>
 
           {/* Sign Up Link */}
@@ -99,13 +233,14 @@ const LoginPage = () => {
               Don't have an account?
             </p>
             <button 
+              onClick={() => navigate("/register")}
               className="text-[14px] font-medium mt-[4px]"
               style={{ color: '#00564F' }}
             >
               SIGN UP
             </button>
           </div>
-        </div>
+        </form>
 
         {/* Decorative Shapes for Mobile - with opacity */}
         <img 
@@ -198,7 +333,8 @@ const LoginPage = () => {
             
             {/* Sign Up Button */}
             <button 
-              className="w-[260px] h-[48px] rounded-[8px] text-white text-[16px] font-semibold"
+              onClick={() => navigate("/register")}
+              className="w-[260px] h-[48px] rounded-[8px] text-white text-[16px] font-semibold transition-opacity hover:opacity-90"
               style={{ 
                 border: '1.5px solid rgba(255, 255, 255, 0.7)',
                 backgroundColor: 'transparent'
@@ -278,19 +414,42 @@ const LoginPage = () => {
             </p>
 
             {/* Form */}
-            <div className="flex flex-col gap-[14px]">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-[14px]">
+              {/* Error Message */}
+              {error && (
+                <div 
+                  className="w-full px-[16px] py-[12px] rounded-[8px] mb-[8px]"
+                  style={{ 
+                    backgroundColor: '#FEE2E2',
+                    border: '1px solid #FCA5A5',
+                    color: '#DC2626'
+                  }}
+                >
+                  <p className="text-[12px] font-medium">{error}</p>
+                </div>
+              )}
+
               {/* Email Address */}
               <div>
                 <label className="block text-[14px] font-medium text-black mb-[3px]">
-                  Email Address
+                  Email or ID
                 </label>
                 <input 
                   type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your Email or ID"
                   className="w-full h-[48px] rounded-[8px] px-[16px] outline-none"
                   style={{ 
                     border: '1px solid rgba(28, 137, 154, 0.7)',
-                    backgroundColor: 'transparent'
+                    backgroundColor: 'transparent',
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '12px',
+                    fontWeight: 400,
+                    color: '#000000',
+                    textAlign: 'left'
                   }}
+                  disabled={isLoading}
                 />
               </div>
 
@@ -299,41 +458,96 @@ const LoginPage = () => {
                 <label className="block text-[14px] font-medium text-black mb-[3px]">
                   Password
                 </label>
-                <input 
-                  type="password"
-                  className="w-full h-[48px] rounded-[8px] px-[16px] outline-none"
-                  style={{ 
-                    border: '1px solid rgba(28, 137, 154, 0.7)',
-                    backgroundColor: 'transparent'
-                  }}
-                />
+                <div className="relative">
+                  <input 
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter your Password"
+                    className="w-full h-[48px] rounded-[8px] px-[16px] pr-[48px] outline-none"
+                    style={{ 
+                      border: '1px solid rgba(28, 137, 154, 0.7)',
+                      backgroundColor: 'transparent',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '12px',
+                      fontWeight: 400,
+                      color: '#000000',
+                      textAlign: 'left'
+                    }}
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-[16px] top-1/2 -translate-y-1/2 w-[20px] h-[20px] flex items-center justify-center"
+                  >
+                    <img 
+                      src={EyeIcon} 
+                      alt="Toggle password visibility" 
+                      className="w-[20px] h-[20px] object-contain"
+                    />
+                  </button>
+                </div>
               </div>
 
-              {/* Remember Me */}
-              <div className="flex items-center gap-[11px] mt-[11px]">
-                <div 
-                  className="w-[16px] h-[16px] rounded-[4px]"
-                  style={{ border: '1px solid rgba(28, 137, 154, 0.7)' }}
-                />
-                <span 
+              {/* Remember Me and Forgot Password */}
+              <div className="flex items-center justify-between mt-[11px]">
+                <div className="flex items-center gap-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setRememberMe(!rememberMe)}
+                    className="w-[16px] h-[16px] rounded-[4px] flex items-center justify-center"
+                    style={{ 
+                      border: '1px solid rgba(28, 137, 154, 0.7)',
+                      backgroundColor: rememberMe ? '#00564F' : 'transparent'
+                    }}
+                    disabled={isLoading}
+                  >
+                    {rememberMe && (
+                      <svg className="w-[12px] h-[12px] text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                  <span 
+                    className="text-[14px] font-medium"
+                    style={{ color: 'rgba(0, 0, 0, 0.7)' }}
+                  >
+                    Remember me
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate("/forgot-password")}
                   className="text-[14px] font-medium"
-                  style={{ color: 'rgba(0, 0, 0, 0.7)' }}
+                  style={{ 
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    lineHeight: '100%',
+                    letterSpacing: '0%',
+                    color: '#000000',
+                    textAlign: 'center'
+                  }}
+                  disabled={isLoading}
                 >
-                  Remember me
-                </span>
+                  Forgot Password ?
+                </button>
               </div>
 
               {/* Sign In Button */}
               <button 
-                className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px]"
+                type="submit"
+                disabled={isLoading}
+                className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px] transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ 
                   backgroundColor: '#00564F',
                   border: '1px solid rgba(28, 137, 154, 0.7)'
                 }}
               >
-                SIGN IN
+                {isLoading ? "SIGNING IN..." : "SIGN IN"}
               </button>
-            </div>
+            </form>
           </div>
         </div>
       </div>
