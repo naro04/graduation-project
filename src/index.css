@@ -12,3 +12,88 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* Prevent scrollbar on API Keys white container */
+.api-keys-white-container,
+.api-keys-white-container * {
+  overflow: visible !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+/* Prevent scrollbar on user dropdown menu */
+.user-dropdown-no-scroll {
+  overflow: visible !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+.user-dropdown-no-scroll * {
+  overflow: visible !important;
+}
+
+/* Hide scrollbar on user dropdown menu */
+.user-dropdown-no-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.user-dropdown-no-scroll {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* More specific selector to override any Tailwind classes */
+div.user-dropdown-no-scroll,
+div.user-dropdown-no-scroll *,
+.absolute.right-0.top-full.user-dropdown-no-scroll,
+.absolute.right-0.top-full.user-dropdown-no-scroll * {
+  overflow: visible !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+div.user-dropdown-no-scroll::-webkit-scrollbar,
+.absolute.right-0.top-full.user-dropdown-no-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+div.user-dropdown-no-scroll {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Force hide scrollbar on all user dropdown menus */
+[class*="user-dropdown-no-scroll"] {
+  overflow: visible !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  max-height: none !important;
+  height: auto !important;
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+[class*="user-dropdown-no-scroll"]::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+[class*="user-dropdown-no-scroll"]::-webkit-scrollbar-track {
+  display: none !important;
+  background: transparent !important;
+}
+
+[class*="user-dropdown-no-scroll"]::-webkit-scrollbar-thumb {
+  display: none !important;
+  background: transparent !important;
+}
