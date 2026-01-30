@@ -530,6 +530,26 @@ const paths = {
       responses: { 200: { description: 'Success' } }
     }
   },
+  '/location-activities/team': {
+    get: {
+      tags: ['Activities'],
+      summary: 'Get team activities (Manager)',
+      description: 'Get activities for employees supervised by the logged-in manager',
+      parameters: [
+        { name: 'date', in: 'query', schema: { type: 'string', format: 'date' }, description: 'Filter by date' },
+        { name: 'status', in: 'query', schema: { type: 'string' }, description: 'Filter by implementation status' },
+        { name: 'approvalStatus', in: 'query', schema: { type: 'string' }, description: 'Filter by approval status' },
+        { name: 'type', in: 'query', schema: { type: 'string' }, description: 'Filter by activity type' },
+        { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by activity name' }
+      ],
+      responses: { 
+        200: { 
+          description: 'Success',
+          content: { 'application/json': { schema: { type: 'object', properties: { activities: { type: 'array', items: { $ref: '#/components/schemas/Activity' } }, stats: { type: 'object' } } } } }
+        } 
+      }
+    }
+  },
   '/location-activities/{activity_id}': {
     get: {
       tags: ['Activities'],
@@ -609,6 +629,25 @@ const paths = {
       responses: { 200: { description: 'Success' } }
     }
   },
+  '/attendance/team': {
+    get: {
+      tags: ['Attendance'],
+      summary: 'Get team attendance (Manager)',
+      description: 'Get attendance records for employees supervised by the logged-in manager',
+      parameters: [
+        { name: 'date', in: 'query', schema: { type: 'string', format: 'date' }, description: 'Filter by date' },
+        { name: 'location', in: 'query', schema: { type: 'string' }, description: 'Filter by location' },
+        { name: 'status', in: 'query', schema: { type: 'string' }, description: 'Filter by status' },
+        { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by employee name' }
+      ],
+      responses: { 
+        200: { 
+          description: 'Success',
+          content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Attendance' } }, stats: { type: 'object' } } } } }
+        } 
+      }
+    }
+  },
   '/attendance/reports': {
     get: {
       tags: ['Attendance'],
@@ -663,6 +702,24 @@ const paths = {
       tags: ['Leaves'],
       summary: 'Get my leave requests',
       responses: { 200: { description: 'Success' } }
+    }
+  },
+  '/leaves/team': {
+    get: {
+      tags: ['Leaves'],
+      summary: 'Get team leave requests (Manager)',
+      description: 'Get leave requests for employees supervised by the logged-in manager',
+      parameters: [
+        { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by employee name' },
+        { name: 'type', in: 'query', schema: { type: 'string' }, description: 'Filter by leave type' },
+        { name: 'status', in: 'query', schema: { type: 'string' }, description: 'Filter by status' }
+      ],
+      responses: { 
+        200: { 
+          description: 'Success',
+          content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/LeaveRequest' } }, stats: { type: 'object' } } } } }
+        } 
+      }
     }
   },
   '/leaves/my-stats': {
@@ -793,6 +850,20 @@ const paths = {
         content: { 'application/json': { schema: { type: 'object', properties: { subject: { type: 'string' }, message: { type: 'string' }, priority: { type: 'string' } } } } }
       },
       responses: { 201: { description: 'Ticket created' } }
+    }
+  },
+
+  // --- Projects ---
+  '/projects': {
+    get: {
+      tags: ['Projects'],
+      summary: 'Get all active projects',
+      responses: { 
+        200: { 
+          description: 'Success',
+          content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string' }, data: { type: 'array', items: { $ref: '#/components/schemas/Project' } } } } } }
+        } 
+      }
     }
   },
 
@@ -1090,8 +1161,8 @@ support_tickets (id, user_id, subject, category, message, status)
   },
   servers: [
     {
-      url: 'http://localhost:5000/api/v1',
-      description: 'Development server',
+      url: `${process.env.API_URL || 'http://localhost:5000'}/api/v1`,
+      description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server',
     },
   ],
   components: {
@@ -1121,8 +1192,9 @@ function setupSwagger(app) {
     customSiteTitle: "HR System API Documentation"
   }));
   app.get('/api-docs-json', (req, res) => res.json(swaggerSpec));
-  console.log('✅ Swagger Documentation: http://localhost:5000/api-docs');
-  console.log('✅ Swagger JSON: http://localhost:5000/api-docs-json');
+  const baseUrl = process.env.API_URL || 'http://localhost:5000';
+  console.log(`✅ Swagger Documentation: ${baseUrl}/api-docs`);
+  console.log(`✅ Swagger JSON: ${baseUrl}/api-docs-json`);
 }
 
 module.exports = setupSwagger;

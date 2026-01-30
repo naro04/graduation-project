@@ -8,6 +8,9 @@ router.use(auth.protect);
 // GET /api/v1/leaves - Get all leaves with stats and filters
 router.get('/', leaveController.getLeaves);
 
+// GET /api/v1/leaves/team - Get team leave requests for manager/supervisor
+router.get('/team', leaveController.getTeamLeaves);
+
 // GET /api/v1/leaves/reports - Get leave reports
 router.get('/reports', auth.restrictTo('reports:leave_reports', 'manage_employees'), leaveController.getLeaveReports);
 

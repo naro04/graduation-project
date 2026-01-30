@@ -10,6 +10,9 @@ router.route('/')
     .get(restrictTo('manage_locations'), activityController.getAllActivities)
     .post(restrictTo('manage_locations'), activityController.createLocationActivity);
 
+// Team activities for manager/supervisor view
+router.get('/team', activityController.getTeamActivities);
+
 router.get('/reports', restrictTo('manage_locations'), activityController.getActivityReports);
 
 router.get('/:activity_id/employees', restrictTo('manage_locations'), activityController.getActivityEmployees);
