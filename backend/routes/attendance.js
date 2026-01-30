@@ -12,6 +12,9 @@ router.get('/my-attendance', attendanceController.getMyAttendance);
 // Get daily attendance for all employees (HR/Admin view)
 router.get('/daily', attendanceController.getDailyAttendance);
 
+// Get team attendance for manager/supervisor view
+router.get('/team', attendanceController.getTeamAttendance);
+
 // Get attendance reports with date range and statistics
 router.get('/reports', attendanceController.getAttendanceReports);
 

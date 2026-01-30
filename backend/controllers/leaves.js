@@ -140,6 +140,78 @@ exports.getMyLeaveStats = async (req, res) => {
     }
 };
 /**
+ * Get team leave requests for manager/supervisor view
+ * Shows leave requests only for employees where supervisor_id = logged-in user's employee_id
+ */
+exports.getTeamLeaves = async (req, res) => {
+    try {
+        const { search, type, status } = req.query;
+        const userId = req.user.id;
+
+        // Get the manager's employee_id
+        const managerResult = await pool.query('SELECT id FROM employees WHERE user_id = $1', [userId]);
+        if (managerResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Manager employee record not found' });
+        }
+        const managerEmployeeId = managerResult.rows[0].id;
+
+        // Get team members count
+        const teamCountResult = await pool.query(
+            'SELECT COUNT(*) as total FROM employees WHERE supervisor_id = $1 AND status = $2',
+            [managerEmployeeId, 'active']
+        );
+
+        // Get leave requests for team members only
+        const leavesQuery = `
+            SELECT 
+                lr.*,
+                e.full_name as employee_name,
+                e.avatar_url as employee_avatar,
+                p.title as position_name,
+                d.name as department_name,
+                (lr.end_date - lr.start_date + 1) as total_days
+            FROM leave_requests lr
+            JOIN employees e ON lr.employee_id = e.id
+            LEFT JOIN positions p ON e.position_id = p.id
+            LEFT JOIN departments d ON e.department_id = d.id
+            WHERE e.supervisor_id = $1
+              AND ($2::text IS NULL OR e.full_name ILIKE '%' || $2 || '%')
+              AND ($3::text IS NULL OR lr.leave_type = $3)
+              AND ($4::text IS NULL OR lr.status = $4)
+            ORDER BY lr.created_at DESC;
+        `;
+        
+        const leavesResult = await pool.query(leavesQuery, [
+            managerEmployeeId,
+            search || null,
+            type || null,
+            status || null
+        ]);
+
+        // Calculate stats for team leaves only
+        const statsQuery = `
+            SELECT 
+                COUNT(*) FILTER (WHERE lr.status = 'pending') as pending_count,
+                COUNT(*) FILTER (WHERE lr.status = 'approved') as approved_count,
+                COUNT(*) FILTER (WHERE lr.status = 'rejected') as rejected_count
+            FROM leave_requests lr
+            JOIN employees e ON lr.employee_id = e.id
+            WHERE e.supervisor_id = $1;
+        `;
+        const statsResult = await pool.query(statsQuery, [managerEmployeeId]);
+
+        res.status(200).json({
+            success: true,
+            data: leavesResult.rows,
+            stats: statsResult.rows[0] || { pending_count: 0, approved_count: 0, rejected_count: 0 }
+        });
+    } catch (error) {
+        console.error('Error fetching team leaves:', error);
+        res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+    }
+};
+
+/**
  * Get leave reports with distribution and trends
  */
 exports.getLeaveReports = async (req, res) => {

@@ -624,6 +624,118 @@ exports.getAttendanceReports = async (req, res) => {
 };
 
 /**
+ * Get team attendance for manager/supervisor view
+ * Shows attendance only for employees where supervisor_id = logged-in user's employee_id
+ */
+exports.getTeamAttendance = async (req, res) => {
+    try {
+        const { date, location, status, search } = req.query;
+        const targetDate = date || new Date().toISOString().split('T')[0];
+        const userId = req.user.id;
+
+        // Get the manager's employee_id
+        const managerResult = await pool.query('SELECT id FROM employees WHERE user_id = $1', [userId]);
+        if (managerResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Manager employee record not found' });
+        }
+        const managerEmployeeId = managerResult.rows[0].id;
+
+        // Get team members (employees where supervisor_id = manager's employee_id)
+        const teamMembersResult = await pool.query(
+            'SELECT id, full_name, employee_code FROM employees WHERE supervisor_id = $1 AND status = $2',
+            [managerEmployeeId, 'active']
+        );
+        const teamMemberIds = teamMembersResult.rows.map(e => e.id);
+        const totalTeamMembers = teamMembersResult.rows.length;
+
+        if (totalTeamMembers === 0) {
+            return res.status(200).json({
+                status: 'success',
+                records: [],
+                stats: {
+                    presentToday: 0,
+                    absentToday: 0,
+                    lateArrivals: 0
+                }
+            });
+        }
+
+        // Get attendance records for the specified date for team members only
+        const attendanceQuery = `
+            SELECT 
+                a.id,
+                a.employee_id,
+                e.full_name as employee_name,
+                e.employee_code,
+                e.avatar_url,
+                a.check_in_time,
+                a.check_out_time,
+                a.work_type as attendance_type,
+                a.location_address as location,
+                a.daily_status as status,
+                a.gps_status
+            FROM attendance a
+            JOIN employees e ON a.employee_id = e.id
+            WHERE DATE(a.check_in_time) = $1
+              AND e.supervisor_id = $2
+            ORDER BY a.check_in_time DESC
+        `;
+        
+        const result = await pool.query(attendanceQuery, [targetDate, managerEmployeeId]);
+
+        // Calculate stats
+        const presentCount = result.rows.filter(r => r.status === 'Present' || r.status === 'Late').length;
+        const lateCount = result.rows.filter(r => r.status === 'Late').length;
+        const absentCount = Math.max(0, totalTeamMembers - presentCount);
+
+        // Format records for frontend
+        const records = result.rows.map(row => ({
+            id: row.id,
+            employeeId: row.employee_id,
+            employeeName: row.employee_name,
+            employeeCode: row.employee_code,
+            avatarUrl: row.avatar_url,
+            checkInAt: row.check_in_time,
+            checkOutAt: row.check_out_time,
+            attendanceType: row.attendance_type || 'Office',
+            location: row.location || '-',
+            status: row.check_out_time ? row.status : (row.status === 'Present' || row.status === 'Late' ? 'In progress' : row.status),
+            gpsStatus: row.gps_status,
+            gpsVerified: row.gps_status === 'Verified' || row.gps_status === 'Suspicious'
+        }));
+
+        // Apply filters
+        let filteredRecords = records;
+        if (location && location !== 'All Locations') {
+            filteredRecords = filteredRecords.filter(r => r.location === location);
+        }
+        if (status && status !== 'All Status') {
+            filteredRecords = filteredRecords.filter(r => r.status === status);
+        }
+        if (search) {
+            const searchLower = search.toLowerCase();
+            filteredRecords = filteredRecords.filter(r => 
+                r.employeeName.toLowerCase().includes(searchLower) ||
+                r.employeeCode.toLowerCase().includes(searchLower)
+            );
+        }
+
+        res.status(200).json({
+            status: 'success',
+            records: filteredRecords,
+            stats: {
+                presentToday: presentCount,
+                absentToday: absentCount,
+                lateArrivals: lateCount
+            }
+        });
+    } catch (err) {
+        console.error('Error fetching team attendance:', err);
+        res.status(500).json({ message: 'Error fetching team attendance', error: err.message });
+    }
+};
+
+/**
  * Delete attendance record
  */
 exports.deleteAttendance = async (req, res) => {
