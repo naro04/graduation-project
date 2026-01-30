@@ -15,7 +15,7 @@ const getActivityByIdQuery = `
   LEFT JOIN activity_employees ae ON a.id = ae.activity_id
   LEFT JOIN employees emp ON ae.employee_id = emp.id
   WHERE a.id = $1
-  GROUP BY a.id, l.name, p.name, e.first_name, e.last_name;
+  GROUP BY a.id, l.name, p.name, e.first_name, e.last_name, a.images;
 `;
 
 module.exports = getActivityByIdQuery;

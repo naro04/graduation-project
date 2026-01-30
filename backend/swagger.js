@@ -992,7 +992,8 @@ const schemas = {
       location_id: { type: 'string', format: 'uuid' },
       status: { type: 'string' },
       implementation_status: { type: 'string' },
-      approval_status: { type: 'string' }
+      approval_status: { type: 'string' },
+      images: { type: 'array', items: { type: 'string' } }
     }
   },
   EmergencyContact: {

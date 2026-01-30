@@ -48,7 +48,7 @@ exports.getActivityById = async (req, res) => {
 
 exports.createLocationActivity = async (req, res) => {
     try {
-        const { name, activity_type, responsible_employee_id, location_id, employee_ids, activity_days, dates, description } = req.body;
+        const { name, activity_type, responsible_employee_id, location_id, project_id, employee_ids, activity_days, dates, description, images } = req.body;
 
         if (!name) {
             return res.status(400).json({ message: 'Activity name is required' });
@@ -74,6 +74,21 @@ exports.createLocationActivity = async (req, res) => {
         const end_date = dates[dates.length - 1];
 
         // Create activity
+        let final_project_id = project_id;
+        
+        // If project_id is provided as a string (name), try to find or create the project
+        if (project_id && typeof project_id === 'string' && project_id.length > 0) {
+            // Check if it's a valid UUID. If not, it's a name.
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(project_id)) {
+                const projectResult = await pool.query(
+                    'INSERT INTO projects (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id',
+                    [project_id]
+                );
+                final_project_id = projectResult.rows[0].id;
+            }
+        }
+
         const activityResult = await pool.query(activityQueries.createLocationActivityQuery, [
             name,
             activity_type || 'Workshop',
@@ -83,7 +98,9 @@ exports.createLocationActivity = async (req, res) => {
             end_date,
             activity_days || dates.length,
             'Active',
-            description || null
+            description || null,
+            final_project_id || null,
+            images || []
         ]);
 
         const activity = activityResult.rows[0];
@@ -116,7 +133,7 @@ exports.createLocationActivity = async (req, res) => {
 exports.updateLocationActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
-        const { name, activity_type, responsible_employee_id, location_id, employee_ids, activity_days, dates, description } = req.body;
+        const { name, activity_type, responsible_employee_id, location_id, project_id, employee_ids, activity_days, dates, description, images } = req.body;
 
         console.log('Update activity request:', {
             activity_id,
@@ -124,12 +141,14 @@ exports.updateLocationActivity = async (req, res) => {
             activity_type,
             responsible_employee_id,
             location_id,
+            project_id,
             employee_ids,
             employee_ids_type: typeof employee_ids,
             employee_ids_isArray: Array.isArray(employee_ids),
             employee_ids_length: employee_ids?.length,
             activity_days,
-            dates
+            dates,
+            images
         });
 
         // Check if activity exists and get its end_date
@@ -152,6 +171,20 @@ exports.updateLocationActivity = async (req, res) => {
         const final_activity_days = dates ? dates.length : (activity_days || existingActivity.activity_days);
 
         // Update activity
+        let final_project_id = project_id;
+        
+        // If project_id is provided as a string (name), try to find or create the project
+        if (project_id && typeof project_id === 'string' && project_id.length > 0) {
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(project_id)) {
+                const projectResult = await pool.query(
+                    'INSERT INTO projects (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id',
+                    [project_id]
+                );
+                final_project_id = projectResult.rows[0].id;
+            }
+        }
+
         const updateResult = await pool.query(activityQueries.updateLocationActivityQuery, [
             name || existingActivity.name,
             activity_type || existingActivity.activity_type || 'Workshop',
@@ -161,6 +194,8 @@ exports.updateLocationActivity = async (req, res) => {
             end_date,
             final_activity_days,
             description !== undefined ? description : existingActivity.description,
+            final_project_id || existingActivity.project_id || null,
+            images || existingActivity.images || [],
             activity_id
         ]);
 

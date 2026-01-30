@@ -21,6 +21,7 @@ const apiKeyRouter = require('./apiKey');
 const helpRouter = require('./help');
 const supportRouter = require('./support');
 const systemSettingsRouter = require('./systemSettings');
+const projectsRouter = require('./projects');
 
 router.use('/profile', profileRouter);
 router.use('/users', userRouter);
@@ -42,6 +43,7 @@ router.use('/api-keys', apiKeyRouter);
 router.use('/help', helpRouter);
 router.use('/support', supportRouter);
 router.use('/system-settings', systemSettingsRouter);
+router.use('/projects', projectsRouter);
 router.use('/', dashboard);
 
 module.exports = router;
