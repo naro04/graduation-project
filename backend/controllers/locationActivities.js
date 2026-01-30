@@ -328,6 +328,101 @@ exports.rejectActivity = async (req, res) => {
     }
 };
 
+/**
+ * Get team activities for manager/supervisor view
+ * Shows activities where the responsible employee or team members are under the manager's supervision
+ */
+exports.getTeamActivities = async (req, res) => {
+    try {
+        const { date } = req.query;
+        const userId = req.user.id;
+
+        // Get the manager's employee_id
+        const managerResult = await pool.query('SELECT id FROM employees WHERE user_id = $1', [userId]);
+        if (managerResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Manager employee record not found' });
+        }
+        const managerEmployeeId = managerResult.rows[0].id;
+
+        // Get team members IDs (employees where supervisor_id = manager's employee_id)
+        const teamMembersResult = await pool.query(
+            'SELECT id FROM employees WHERE supervisor_id = $1',
+            [managerEmployeeId]
+        );
+        const teamMemberIds = teamMembersResult.rows.map(e => e.id);
+
+        if (teamMemberIds.length === 0) {
+            return res.status(200).json({
+                status: 'success',
+                activities: [],
+                stats: { planned: 0, implemented: 0, approved: 0, pending: 0 }
+            });
+        }
+
+        // Get activities where:
+        // 1. The responsible employee is in the team, OR
+        // 2. Any team member is in the activity_employees table
+        const activitiesQuery = `
+            SELECT DISTINCT
+                a.id,
+                a.name,
+                a.activity_type as type,
+                a.project_id,
+                p.name as project,
+                a.employee_id,
+                e.first_name || ' ' || e.last_name as responsible_employee,
+                a.location_id,
+                l.name as location,
+                COALESCE(a.location_address, l.address) as location_address,
+                COALESCE(a.location_latitude, l.latitude) as latitude,
+                COALESCE(a.location_longitude, l.longitude) as longitude,
+                a.start_date,
+                a.end_date,
+                a.start_date as date,
+                a.activity_days as duration,
+                a.status,
+                a.implementation_status,
+                a.approval_status,
+                a.description,
+                a.images,
+                a.created_at,
+                a.updated_at
+            FROM activities a
+            LEFT JOIN projects p ON a.project_id = p.id
+            LEFT JOIN employees e ON a.employee_id = e.id
+            LEFT JOIN locations l ON a.location_id = l.id
+            LEFT JOIN activity_employees ae ON a.id = ae.activity_id
+            WHERE (
+                a.employee_id = ANY($1::uuid[])
+                OR ae.employee_id = ANY($1::uuid[])
+            )
+            ${date ? "AND DATE(a.start_date) = $2" : ""}
+            ORDER BY a.start_date DESC, a.created_at DESC
+        `;
+
+        const queryParams = date ? [teamMemberIds, date] : [teamMemberIds];
+        const result = await pool.query(activitiesQuery, queryParams);
+
+        // Calculate stats
+        const activities = result.rows;
+        const stats = {
+            planned: activities.filter(a => a.implementation_status === 'Planned').length,
+            implemented: activities.filter(a => a.implementation_status === 'Implemented').length,
+            approved: activities.filter(a => a.approval_status === 'Approved').length,
+            pending: activities.filter(a => a.approval_status === 'Pending').length
+        };
+
+        res.status(200).json({
+            status: 'success',
+            activities: activities,
+            stats: stats
+        });
+    } catch (err) {
+        console.error('Error fetching team activities:', err);
+        res.status(500).json({ message: 'Error fetching team activities', error: err.message });
+    }
+};
+
 exports.getActivityReports = async (req, res) => {
     try {
         const { from, to, type, status, search } = req.query;
