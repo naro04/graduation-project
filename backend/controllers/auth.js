@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const pool = require('../database/connection');
 const {
   createUser,
@@ -12,36 +13,43 @@ const {
 } = require('../database/data/queries/auth');
 
 const sendEmail = async (options) => {
-  // 1) Create a transporter
-  // Supports both Gmail and Outlook SMTP
+  // Use Resend if API key is set (for Railway/cloud platforms)
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'HR System <onboarding@resend.dev>',
+      to: options.email,
+      subject: options.subject,
+      text: options.message,
+      html: options.html
+    });
+    
+    return;
+  }
+
+  // Fallback to SMTP (for local development)
   const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
   const emailPort = parseInt(process.env.EMAIL_PORT) || 587;
   const isSecure = emailPort === 465;
   
-  // Outlook uses smtp-mail.outlook.com or smtp.office365.com
-  const isOutlook = emailHost.includes('outlook') || emailHost.includes('office365');
-  
   const transporter = nodemailer.createTransport({
     host: emailHost,
     port: emailPort,
-    secure: isSecure, // true for 465, false for other ports
+    secure: isSecure,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
     },
-    // Both Gmail and Outlook require TLS if not using secure port
     ...(isSecure ? {} : { requireTLS: true }),
-    // Add connection timeout settings for Railway
-    connectionTimeout: 20000, // 20 seconds
+    connectionTimeout: 20000,
     greetingTimeout: 20000,
     socketTimeout: 20000,
-    // Additional options for better connection handling
     tls: {
-      rejectUnauthorized: false // Allow self-signed certificates if needed
+      rejectUnauthorized: false
     }
   });
 
-  // 2) Define the email options
   const mailOptions = {
     from: `HR System <${process.env.EMAIL_FROM}>`,
     to: options.email,
@@ -50,7 +58,6 @@ const sendEmail = async (options) => {
     html: options.html
   };
 
-  // 3) Actually send the email
   await transporter.sendMail(mailOptions);
 };
 
