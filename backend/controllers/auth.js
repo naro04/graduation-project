@@ -15,17 +15,23 @@ const {
 const sendEmail = async (options) => {
   // Use Resend if API key is set (for Railway/cloud platforms)
   if (process.env.RESEND_API_KEY) {
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'HR System <onboarding@resend.dev>',
-      to: options.email,
-      subject: options.subject,
-      text: options.message,
-      html: options.html
-    });
-    
-    return;
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      
+      const result = await resend.emails.send({
+        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+        to: options.email,
+        subject: options.subject,
+        text: options.message,
+        html: options.html
+      });
+      
+      console.log('✅ Resend email sent successfully:', result);
+      return;
+    } catch (err) {
+      console.error('❌ Resend error:', err);
+      throw err;
+    }
   }
 
   // Fallback to SMTP (for local development)
@@ -309,25 +315,28 @@ exports.forgotPassword = async (req, res) => {
     `;
 
     try {
+      console.log('📧 Sending email via:', process.env.RESEND_API_KEY ? 'Resend' : 'SMTP');
       await sendEmail({
         email: user.email,
         subject: 'Your password reset token (valid for 10 min)',
         message,
         html
       });
+      console.log('✅ Email sent successfully to:', user.email);
 
       res.status(200).json({
         status: 'success',
         message: 'Password reset link sent to email'
       });
     } catch (err) {
-      console.error('Error sending email:', err);
+      console.error('❌ Error sending email:', err);
       console.error('Email config check:', {
+        resendKey: process.env.RESEND_API_KEY ? 'set' : 'missing',
+        emailFrom: process.env.EMAIL_FROM,
         host: process.env.EMAIL_HOST,
         port: process.env.EMAIL_PORT,
         user: process.env.EMAIL_USER ? 'set' : 'missing',
-        pass: process.env.EMAIL_PASS ? 'set' : 'missing',
-        from: process.env.EMAIL_FROM
+        pass: process.env.EMAIL_PASS ? 'set' : 'missing'
       });
       // If email fails, clear the token
       await pool.query(
