@@ -30,6 +30,11 @@ const sendEmail = async (options) => {
       return;
     } catch (err) {
       console.error('❌ Resend error:', err);
+      console.error('❌ Resend error details:', {
+        message: err.message,
+        status: err.statusCode,
+        response: err.response?.data
+      });
       throw err;
     }
   }
