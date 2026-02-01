@@ -272,8 +272,12 @@ exports.forgotPassword = async (req, res) => {
     const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     const user = userResult.rows[0];
 
+    console.log('🔍 Password reset request for:', email);
+    console.log('👤 User found:', user ? 'Yes' : 'No');
+
     if (!user) {
       // For security, don't reveal if user exists. Just return success.
+      console.log('⚠️ User not found, returning success message (security)');
       return res.status(200).json({ 
         status: 'success', 
         message: 'If an account with that email exists, a password reset link has been sent.' 
