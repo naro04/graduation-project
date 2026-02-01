@@ -74,6 +74,12 @@ const requireActiveStatus = (req, res, next) => {
 
     // Check if user has employee record
     if (!req.user || !req.user.employee_id) {
+        console.log('⚠️ requireActiveStatus: User missing employee_id', {
+            userId: req.user?.id,
+            userEmail: req.user?.email,
+            roleName: req.user?.role_name,
+            employeeId: req.user?.employee_id
+        });
         return res.status(403).json({ 
             message: 'Employee record not found. Please contact administrator.' 
         });
