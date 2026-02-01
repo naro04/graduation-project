@@ -6,6 +6,8 @@ exports.getAllEmployees = async (req, res) => {
     try {
         const { departmentId, roleId, status, search } = req.query;
 
+        console.log('📋 Fetching employees with filters:', { departmentId, roleId, status, search });
+        
         // departmentId and roleId should be mapped to the query parameters
         // We pass them to the query in order: [departmentId, roleId, status, search]
         const result = await pool.query(employeeQueries.getEmployeesQuery, [
@@ -15,12 +17,15 @@ exports.getAllEmployees = async (req, res) => {
             search || null
         ]);
 
+        console.log(`✅ Found ${result.rows.length} employees`);
+
         res.status(200).json({
             status: 'success',
             results: result.rows.length,
             data: result.rows
         });
     } catch (err) {
+        console.error('❌ Error fetching employees:', err);
         res.status(500).json({ message: 'Error fetching employees', error: err.message });
     }
 };
