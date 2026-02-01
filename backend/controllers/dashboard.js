@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { protect } = require("../middleware/auth");
 const pool = require("../database/connection");
 const {
     getTotalEmployees,
@@ -11,7 +12,8 @@ const {
     getUserMetrics
 } = require("../database/data/queries/dashboardQueries");
 
-router.get("/dashboard", async (req, res) => {
+// Dashboard is accessible to all authenticated users (including inactive)
+router.get("/dashboard", protect, async (req, res) => {
     try {
         // Execute all queries in parallel for performance
         const results = await Promise.all([

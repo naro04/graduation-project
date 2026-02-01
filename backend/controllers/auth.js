@@ -13,13 +13,24 @@ const {
 
 const sendEmail = async (options) => {
   // 1) Create a transporter
+  // Supports both Gmail and Outlook SMTP
+  const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const emailPort = parseInt(process.env.EMAIL_PORT) || 587;
+  const isSecure = emailPort === 465;
+  
+  // Outlook uses smtp-mail.outlook.com or smtp.office365.com
+  const isOutlook = emailHost.includes('outlook') || emailHost.includes('office365');
+  
   const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
+    host: emailHost,
+    port: emailPort,
+    secure: isSecure, // true for 465, false for other ports
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
-    }
+    },
+    // Both Gmail and Outlook require TLS if not using secure port
+    ...(isSecure ? {} : { requireTLS: true })
   });
 
   // 2) Define the email options
@@ -181,6 +192,7 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
+    console.log('🔐 Login attempt:', req.body.email || req.body.emailOrId || req.body.identifier);
     const { email, emailOrId, identifier, password, rememberMe } = req.body;
     const loginId = (email || emailOrId || identifier || '')
       .toLowerCase()
@@ -212,7 +224,8 @@ exports.login = async (req, res) => {
 
     createSendToken(user, 200, res, rememberMe);
   } catch (err) {
-    console.error("Login error:", err);
+    console.error("❌ Login error:", err.message);
+    console.error("❌ Full error:", err);
     res
       .status(500)
       .json({
@@ -400,11 +413,11 @@ exports.googleAuth = async (req, res) => {
         await pool.query(assignRole, [user.id, defaultRole.rows[0].id]);
       }
 
-      // Create employee record
+      // Create employee record with Inactive status
       const employee_code = `EMP-G-${Date.now()}`;
       await pool.query(
         'INSERT INTO employees (user_id, email, first_name, last_name, full_name, employee_code, status, avatar_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [user.id, email, name.split(' ')[0], name.split(' ').slice(1).join(' ') || 'User', name, employee_code, 'Active', picture]
+        [user.id, email, name.split(' ')[0], name.split(' ').slice(1).join(' ') || 'User', name, employee_code, 'Inactive', picture]
       );
     }
 

@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { requireActiveStatus } = require('../middleware/auth');
 
 const profileRouter = require('./profile');
 const userRouter = require('./users');
@@ -23,27 +24,30 @@ const supportRouter = require('./support');
 const systemSettingsRouter = require('./systemSettings');
 const projectsRouter = require('./projects');
 
+// Routes that don't require active status (accessible to inactive users)
 router.use('/profile', profileRouter);
-router.use('/users', userRouter);
 router.use('/auth', authRouter);
-router.use('/rbac', rbacRouter);
-router.use('/departments', deptRouter);
-router.use('/employees', employeeRouter);
-router.use('/positions', posRouter);
-router.use('/location-types', locationTypesRouter);
-router.use('/locations', locationsRouter);
-router.use('/location-assignments', locationAssignmentsRouter);
-router.use('/location-activities', locationActivitiesRouter);
-router.use('/gps-verifications', gpsVerificationRouter);
-router.use('/attendance', attendanceRouter);
-router.use('/leaves', leaveRouter);
-router.use('/uploads', uploadsRouter);
-router.use('/notifications', notificationSettingsRouter);
-router.use('/api-keys', apiKeyRouter);
-router.use('/help', helpRouter);
-router.use('/support', supportRouter);
-router.use('/system-settings', systemSettingsRouter);
-router.use('/projects', projectsRouter);
-router.use('/', dashboard);
+router.use('/', dashboard); // Dashboard is accessible to inactive users
+
+// Routes that require active status (restricted for inactive users)
+router.use('/users', requireActiveStatus, userRouter);
+router.use('/rbac', requireActiveStatus, rbacRouter);
+router.use('/departments', requireActiveStatus, deptRouter);
+router.use('/employees', requireActiveStatus, employeeRouter);
+router.use('/positions', requireActiveStatus, posRouter);
+router.use('/location-types', requireActiveStatus, locationTypesRouter);
+router.use('/locations', requireActiveStatus, locationsRouter);
+router.use('/location-assignments', requireActiveStatus, locationAssignmentsRouter);
+router.use('/location-activities', requireActiveStatus, locationActivitiesRouter);
+router.use('/gps-verifications', requireActiveStatus, gpsVerificationRouter);
+router.use('/attendance', requireActiveStatus, attendanceRouter);
+router.use('/leaves', requireActiveStatus, leaveRouter);
+router.use('/uploads', requireActiveStatus, uploadsRouter);
+router.use('/notifications', requireActiveStatus, notificationSettingsRouter);
+router.use('/api-keys', requireActiveStatus, apiKeyRouter);
+router.use('/help', requireActiveStatus, helpRouter);
+router.use('/support', requireActiveStatus, supportRouter);
+router.use('/system-settings', requireActiveStatus, systemSettingsRouter);
+router.use('/projects', requireActiveStatus, projectsRouter);
 
 module.exports = router;
