@@ -30,7 +30,15 @@ const sendEmail = async (options) => {
       pass: process.env.EMAIL_PASS
     },
     // Both Gmail and Outlook require TLS if not using secure port
-    ...(isSecure ? {} : { requireTLS: true })
+    ...(isSecure ? {} : { requireTLS: true }),
+    // Add connection timeout settings for Railway
+    connectionTimeout: 20000, // 20 seconds
+    greetingTimeout: 20000,
+    socketTimeout: 20000,
+    // Additional options for better connection handling
+    tls: {
+      rejectUnauthorized: false // Allow self-signed certificates if needed
+    }
   });
 
   // 2) Define the email options
@@ -307,6 +315,13 @@ exports.forgotPassword = async (req, res) => {
       });
     } catch (err) {
       console.error('Error sending email:', err);
+      console.error('Email config check:', {
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT,
+        user: process.env.EMAIL_USER ? 'set' : 'missing',
+        pass: process.env.EMAIL_PASS ? 'set' : 'missing',
+        from: process.env.EMAIL_FROM
+      });
       // If email fails, clear the token
       await pool.query(
         'UPDATE users SET password_reset_token = NULL, password_reset_expires = NULL WHERE id = $1',
