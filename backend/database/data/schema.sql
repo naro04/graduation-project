@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS location_types (
 -- Locations table - stores location information
 CREATE TABLE IF NOT EXISTS locations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE,
   address TEXT,
   latitude DECIMAL(10, 8),
   longitude DECIMAL(11, 8),
