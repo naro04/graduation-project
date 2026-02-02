@@ -5,21 +5,21 @@ const { protect, restrictTo } = require('../middleware/auth');
 
 // Roles
 router.route('/roles')
-    .get(protect, restrictTo('user_management:roles_&_permissions', 'manage_roles'), rbacController.getAllRoles)
-    .post(protect, restrictTo('manage_roles'), rbacController.createRole); // 'manage_roles' is an example permission slug
+    .get(restrictTo('user_management:roles_&_permissions', 'manage_roles'), rbacController.getAllRoles)
+    .post(restrictTo('manage_roles'), rbacController.createRole); // 'manage_roles' is an example permission slug
 
 router.route('/roles/:id')
-    .get(protect, restrictTo('user_management:roles_&_permissions', 'manage_roles'), rbacController.getRoleById)
-    .put(protect, restrictTo('manage_roles'), rbacController.updateRole)
-    .delete(protect, restrictTo('manage_roles'), rbacController.deleteRole);
+    .get(restrictTo('user_management:roles_&_permissions', 'manage_roles'), rbacController.getRoleById)
+    .put(restrictTo('manage_roles'), rbacController.updateRole)
+    .delete(restrictTo('manage_roles'), rbacController.deleteRole);
 
 // Permissions
 router.route('/permissions')
-    .get(protect, restrictTo('view_permissions', 'manage_permissions'), rbacController.getAllPermissions)
-    .post(protect, restrictTo('manage_permissions'), rbacController.createPermission);
+    .get(restrictTo('view_permissions', 'manage_permissions'), rbacController.getAllPermissions)
+    .post(restrictTo('manage_permissions'), rbacController.createPermission);
 
 router.route('/permissions/:id')
-    .put(protect, restrictTo('manage_permissions'), rbacController.updatePermission)
-    .delete(protect, restrictTo('manage_permissions'), rbacController.deletePermission);
+    .put(restrictTo('manage_permissions'), rbacController.updatePermission)
+    .delete(restrictTo('manage_permissions'), rbacController.deletePermission);
 
 module.exports = router;
