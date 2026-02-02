@@ -90,9 +90,9 @@ async function setupDatabase() {
 
         console.log('\n🎉 Database setup complete!');
         console.log('\n📝 Initial Demo Accounts:');
-        console.log('   Email: admin@company.com    Password: password123 (Super Admin)');
-        console.log('   Email: hr@company.com       Password: password123 (HR Admin)');
-        console.log('   Email: manager@company.com  Password: password123 (Manager)');
+        console.log('   Email: hrsystem.project26@gmail.com    Password: password123 (Super Admin)');
+        console.log('   Email: hr@company.com                  Password: password123 (HR Admin)');
+        console.log('   Email: manager@company.com             Password: password123 (Manager)');
 
     } catch (err) {
         console.error('❌ Critical Error during setup:', err.message);
