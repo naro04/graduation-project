@@ -2,7 +2,6 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-const { Resend } = require('resend');
 const pool = require('../database/connection');
 const {
   createUser,
@@ -13,37 +12,10 @@ const {
 } = require('../database/data/queries/auth');
 
 const sendEmail = async (options) => {
-  // Use Resend if API key is set (for Railway/cloud platforms)
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      
-      const result = await resend.emails.send({
-        from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
-        to: options.email,
-        subject: options.subject,
-        text: options.message,
-        html: options.html
-      });
-      
-      console.log('✅ Resend email sent successfully:', result);
-      return;
-    } catch (err) {
-      console.error('❌ Resend error:', err);
-      console.error('❌ Resend error details:', {
-        message: err.message,
-        status: err.statusCode,
-        response: err.response?.data
-      });
-      throw err;
-    }
-  }
-
-  // Fallback to SMTP (for local development)
   const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
   const emailPort = parseInt(process.env.EMAIL_PORT) || 587;
   const isSecure = emailPort === 465;
-  
+
   const transporter = nodemailer.createTransport({
     host: emailHost,
     port: emailPort,
@@ -52,24 +24,28 @@ const sendEmail = async (options) => {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
     },
-    ...(isSecure ? {} : { requireTLS: true }),
-    connectionTimeout: 20000,
-    greetingTimeout: 20000,
-    socketTimeout: 20000,
+    // For Gmail SMTP
     tls: {
       rejectUnauthorized: false
     }
   });
 
   const mailOptions = {
-    from: `HR System <${process.env.EMAIL_FROM}>`,
+    from: `"HR System" <${process.env.EMAIL_USER}>`,
     to: options.email,
     subject: options.subject,
     text: options.message,
     html: options.html
   };
 
-  await transporter.sendMail(mailOptions);
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email sent successfully:', info.messageId);
+    return info;
+  } catch (err) {
+    console.error('❌ Nodemailer error:', err);
+    throw err;
+  }
 };
 
 const signToken = (id) => {
@@ -80,10 +56,10 @@ const signToken = (id) => {
 
 const createSendToken = (user, statusCode, res, rememberMe = false) => {
   const token = signToken(user.id);
-  
+
   // Set cookie expiration: 30 days if rememberMe is true, else based on env or default 24h
   const cookieExpiresInDays = rememberMe ? 30 : (parseInt(process.env.JWT_COOKIE_EXPIRES_IN) || 24 / 24);
-  
+
   const cookieOptions = {
     expires: new Date(
       Date.now() +
@@ -278,9 +254,9 @@ exports.forgotPassword = async (req, res) => {
     if (!user) {
       // For security, don't reveal if user exists. Just return success.
       console.log('⚠️ User not found, returning success message (security)');
-      return res.status(200).json({ 
-        status: 'success', 
-        message: 'If an account with that email exists, a password reset link has been sent.' 
+      return res.status(200).json({
+        status: 'success',
+        message: 'If an account with that email exists, a password reset link has been sent.'
       });
     }
 
@@ -305,9 +281,9 @@ exports.forgotPassword = async (req, res) => {
     // Point this to your FRONTEND URL (e.g., localhost:5173)
     const frontendURL = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetURL = `${frontendURL}/reset-password?token=${resetToken}`;
-    
+
     const message = `Forgot your password? Reset it here: ${resetURL}.\nIf you didn't forget your password, please ignore this email!`;
-    
+
     const html = `
       <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
         <h2 style="color: #333; text-align: center;">Password Reset Request</h2>
@@ -324,7 +300,7 @@ exports.forgotPassword = async (req, res) => {
     `;
 
     try {
-      console.log('📧 Sending email via:', process.env.RESEND_API_KEY ? 'Resend' : 'SMTP');
+      console.log('📧 Sending email via Nodemailer (SMTP)...');
       await sendEmail({
         email: user.email,
         subject: 'Your password reset token (valid for 10 min)',
@@ -340,10 +316,9 @@ exports.forgotPassword = async (req, res) => {
     } catch (err) {
       console.error('❌ Error sending email:', err);
       console.error('Email config check:', {
-        resendKey: process.env.RESEND_API_KEY ? 'set' : 'missing',
-        emailFrom: process.env.EMAIL_FROM,
-        host: process.env.EMAIL_HOST,
-        port: process.env.EMAIL_PORT,
+        emailFrom: process.env.EMAIL_USER,
+        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        port: process.env.EMAIL_PORT || 587,
         user: process.env.EMAIL_USER ? 'set' : 'missing',
         pass: process.env.EMAIL_PASS ? 'set' : 'missing'
       });
@@ -363,7 +338,7 @@ exports.forgotPassword = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const { token, password, confirmPassword } = req.body;
-    
+
     if (!token || !password || !confirmPassword) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
@@ -415,7 +390,7 @@ const client_google = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 exports.googleAuth = async (req, res) => {
   try {
     const { googleToken } = req.body;
-    
+
     if (!googleToken) {
       return res.status(400).json({ message: 'Google token is required' });
     }
@@ -440,7 +415,7 @@ exports.googleAuth = async (req, res) => {
       // Since it's Google Auth, we can use a random password or just mark it as social
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const hashedPassword = await bcrypt.hash(randomPassword, 12);
-      
+
       const newUserResult = await pool.query(
         'INSERT INTO users (name, email, password_hash, avatar_url) VALUES ($1, $2, $3, $4) RETURNING *',
         [name, email, hashedPassword, picture]
