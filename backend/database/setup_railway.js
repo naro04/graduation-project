@@ -31,6 +31,14 @@ async function setupDatabase() {
                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'locations_name_key') THEN
                         ALTER TABLE locations ADD CONSTRAINT locations_name_key UNIQUE (name);
                     END IF;
+
+                    -- Add missing columns to employees table
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'city') THEN
+                        ALTER TABLE employees ADD COLUMN city TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'country') THEN
+                        ALTER TABLE employees ADD COLUMN country TEXT;
+                    END IF;
                 END $$;
             `);
             console.log('✅ Schema patches applied!\n');
@@ -69,7 +77,18 @@ async function setupDatabase() {
         }
         console.log('✅ Migrations completed!\n');
 
-        console.log('🎉 Database setup complete!');
+        // 4. Verification
+        console.log('🔄 Step 4: Verifying seeded data...');
+        const verifyResult = await pool.query(`
+            SELECT u.email, r.name as role, e.employee_code 
+            FROM users u 
+            LEFT JOIN user_roles ur ON u.id = ur.user_id 
+            LEFT JOIN roles r ON ur.role_id = r.id 
+            LEFT JOIN employees e ON u.id = e.user_id;
+        `);
+        console.table(verifyResult.rows);
+
+        console.log('\n🎉 Database setup complete!');
         console.log('\n📝 Initial Demo Accounts:');
         console.log('   Email: admin@company.com    Password: password123 (Super Admin)');
         console.log('   Email: hr@company.com       Password: password123 (HR Admin)');

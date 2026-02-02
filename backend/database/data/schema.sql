@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS employees (
   role_id UUID REFERENCES roles(id),
   employment_type VARCHAR(50), -- Full-Time, Part-Time
   supervisor_id UUID, -- Self-reference for manager hierarchy
+  city TEXT,
+  country TEXT,
   status VARCHAR(50) DEFAULT 'active' NOT NULL,
   hired_at TIMESTAMP,
   terminated_at TIMESTAMP,
