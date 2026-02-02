@@ -228,7 +228,7 @@ ON CONFLICT (employee_id) DO UPDATE SET
 INSERT INTO locations (name, address, latitude, longitude, location_type) VALUES
 ('Head Office', 'Gaza Office', 31.5000, 34.4667, 'Office'),
 ('School A', 'Hattin School', 31.5100, 34.4700, 'Field Site')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (name) DO NOTHING;
 
 -- 11. ATTENDANCE
 INSERT INTO attendance (employee_id, check_in_time, check_out_time, location_latitude, location_longitude, location_address, distance_from_base, gps_status, daily_status, work_type, approval_status) VALUES

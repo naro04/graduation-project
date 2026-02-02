@@ -27,7 +27,12 @@ CREATE TABLE IF NOT EXISTS work_schedules (
     UNIQUE(employee_id, day_of_week)
 );
 
--- 4. Seed test data for the admin user (EMP001)
+-- 4. Clean up any duplicate locations by name before proceeding
+DELETE FROM locations a 
+USING locations b 
+WHERE a.id < b.id AND a.name = b.name;
+
+-- 5. Seed test data for the admin user (EMP001)
 DO $$
 DECLARE
     emp_id UUID;
@@ -44,7 +49,9 @@ BEGIN
         contact_person_phone = '0597560309',
         opening_time = '08:00:00',
         closing_time = '16:00:00'
-    WHERE name = 'Head Office' RETURNING id INTO loc_id_office;
+    WHERE name = 'Head Office';
+    
+    SELECT id INTO loc_id_office FROM locations WHERE name = 'Head Office' LIMIT 1;
 
     UPDATE locations SET 
         location_code = '123456',
@@ -53,7 +60,9 @@ BEGIN
         contact_person_phone = '0597894562',
         opening_time = '11:00:00',
         closing_time = '15:00:00'
-    WHERE name = 'School A' RETURNING id INTO loc_id_school;
+    WHERE name = 'School A';
+    
+    SELECT id INTO loc_id_school FROM locations WHERE name = 'School A' LIMIT 1;
 
     -- Update assignments
     DELETE FROM employee_locations WHERE employee_id = emp_id;
