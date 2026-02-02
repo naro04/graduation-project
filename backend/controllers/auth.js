@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const pool = require('../database/connection');
 const {
   createUser,
@@ -12,40 +12,28 @@ const {
 } = require('../database/data/queries/auth');
 
 const sendEmail = async (options) => {
-  // Railway SMTP Fix: Explicitly use port 587 and secure: false
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // Must be false for port 587
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    },
-    tls: {
-      rejectUnauthorized: false
-    }
-  });
-
-  const mailOptions = {
-    from: `"HR System" <${process.env.EMAIL_USER}>`,
-    to: options.email,
-    subject: options.subject,
-    text: options.message,
-    html: options.html
-  };
-
   try {
-    console.log('📨 Sending password reset email via Gmail SMTP...');
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent successfully:', info.messageId);
-    return info;
-  } catch (err) {
-    console.error('❌ Nodemailer Error:', {
-      message: err.message,
-      code: err.code,
-      command: err.command,
-      response: err.response
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    console.log('📨 Sending email via Resend API (HTTPS)...');
+
+    const { data, error } = await resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to: options.email,
+      subject: options.subject,
+      text: options.message,
+      html: options.html
     });
+
+    if (error) {
+      console.error('❌ Resend API Error:', error);
+      throw new Error(`Resend Error: ${error.message}`);
+    }
+
+    console.log('✅ Resend email sent successfully:', data.id);
+    return data;
+  } catch (err) {
+    console.error('❌ Resend API Exception:', err.message);
     throw err;
   }
 };
@@ -302,7 +290,7 @@ exports.forgotPassword = async (req, res) => {
     `;
 
     try {
-      console.log('📧 Sending email via Nodemailer (SMTP)...');
+      console.log('📧 Sending email via Resend API (HTTPS)...');
       await sendEmail({
         email: user.email,
         subject: 'Your password reset token (valid for 10 min)',
@@ -318,11 +306,8 @@ exports.forgotPassword = async (req, res) => {
     } catch (err) {
       console.error('❌ Error sending email:', err);
       console.error('Email config check:', {
-        emailFrom: process.env.EMAIL_USER,
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-        port: process.env.EMAIL_PORT || 587,
-        user: process.env.EMAIL_USER ? 'set' : 'missing',
-        pass: process.env.EMAIL_PASS ? 'set' : 'missing'
+        resendKey: process.env.RESEND_API_KEY ? 'set' : 'missing',
+        emailFrom: 'onboarding@resend.dev'
       });
       // If email fails, clear the token
       await pool.query(
