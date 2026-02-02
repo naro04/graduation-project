@@ -4,7 +4,6 @@ const employeesController = require('../controllers/employees');
 const { protect, restrictTo } = require('../middleware/auth');
 
 // All employee routes are protected and restricted to users with manage_employees permission
-router.use(protect);
 
 router.route('/')
     .get(restrictTo('user_management:employees', 'user_actions:view_all_employees', 'manage_employees'), employeesController.getAllEmployees)
