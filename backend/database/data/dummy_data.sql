@@ -56,7 +56,9 @@ INSERT INTO users (email, password_hash, name) VALUES
 ('office@company.com', '$2b$12$.ZFkaD240sNkvIq5Y47Fvuzzslr0ssQs2PFkSDpSRbySeWiWpcYBO', 'Alice Marie Smith')
 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name;
 
--- 5. LINK ROLES
+-- 5. LINK ROLES (Cleanup first to avoid duplicates or ghost links)
+DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE email IN ('admin@company.com', 'hr@company.com', 'manager@company.com', 'eng_manager@company.com', 'field@company.com', 'dev@company.com', 'office@company.com'));
+
 INSERT INTO user_roles (user_id, role_id) VALUES
 ((SELECT id FROM users WHERE email = 'admin@company.com'), (SELECT id FROM roles WHERE name = 'Super Admin')),
 ((SELECT id FROM users WHERE email = 'hr@company.com'), (SELECT id FROM roles WHERE name = 'HR Admin')),
@@ -180,15 +182,19 @@ WHERE slug IN (
     'reports_actions:view/export_attendance,_leave_reports', 'reports_actions:view/export_team_reports'
 ) ON CONFLICT DO NOTHING;
 
--- 8. EMPLOYEES
-INSERT INTO employees (user_id, employee_code, first_name, middle_name, last_name, full_name, email, phone, birth_date, gender, marital_status, department_id, position_id, role_id, employment_type, status, hired_at) VALUES
-((SELECT id FROM users WHERE email = 'admin@company.com'), 'EMP001', 'Firas', 'Ali', 'Alijla', 'Firas Alijla', 'admin@company.com', '+1234567890', '1990-01-01', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'IT'), (SELECT id FROM positions WHERE title = 'System Administration'), (SELECT id FROM roles WHERE name = 'Super Admin'), 'Full-Time', 'active', NOW()),
-((SELECT id FROM users WHERE email = 'hr@company.com'), 'EMP002', 'Sarah', 'Jean', 'Connor', 'Sarah Jean Connor', 'hr@company.com', '+1987654321', '1985-05-15', 'Female', 'Married', (SELECT id FROM departments WHERE name = 'HR'), (SELECT id FROM positions WHERE title = 'HR Manager'), (SELECT id FROM roles WHERE name = 'HR Admin'), 'Full-Time', 'active', NOW() - INTERVAL '2 years'),
-((SELECT id FROM users WHERE email = 'manager@company.com'), 'EMP003', 'Mike', 'David', 'Ross', 'Mike David Ross', 'manager@company.com', '+1122334455', '1980-08-20', 'Male', 'Married', (SELECT id FROM departments WHERE name = 'Project Management'), (SELECT id FROM positions WHERE title = 'Project Manager'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'active', NOW() - INTERVAL '1 year'),
-((SELECT id FROM users WHERE email = 'dev@company.com'), 'EMP004', 'John', 'Michael', 'Doe', 'John Michael Doe', 'dev@company.com', '+1555666777', '1995-12-10', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'Office'), (SELECT id FROM positions WHERE title = 'Administrative Assistant'), (SELECT id FROM roles WHERE name = 'Office Staff'), 'Full-Time', 'active', NOW() - INTERVAL '6 months'),
-((SELECT id FROM users WHERE email = 'office@company.com'), 'EMP005', 'Alice', 'Marie', 'Smith', 'Alice Marie Smith', 'office@company.com', '+1555888999', '1992-03-25', 'Female', 'Single', (SELECT id FROM departments WHERE name = 'Office'), (SELECT id FROM positions WHERE title = 'Office Coordinator'), (SELECT id FROM roles WHERE name = 'Office Staff'), 'Full-Time', 'active', NOW() - INTERVAL '4 months'),
-((SELECT id FROM users WHERE email = 'eng_manager@company.com'), 'EMP006', 'Ameer', 'Jamal', 'Ross', 'Ameer Jamal', 'eng_manager@company.com', '+1122334466', '1982-04-12', 'Male', 'Married', (SELECT id FROM departments WHERE name = 'Field Operations'), (SELECT id FROM positions WHERE title = 'Team Leader'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'active', NOW() - INTERVAL '1.5 years'),
-((SELECT id FROM users WHERE email = 'field@company.com'), 'EMP007', 'John', 'Field', 'Walker', 'John Field', 'field@company.com', '+1555000111', '1988-11-30', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'Field Operations'), (SELECT id FROM positions WHERE title = 'Field Supervisor'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'active', NOW() - INTERVAL '8 months')
+-- 8. EMPLOYEES (Cleanup linked users first to ensure fresh assignment)
+-- We don't delete employees, just unlink users to avoid FK issues while allowing re-linking
+UPDATE employees SET user_id = NULL WHERE user_id IN (SELECT id FROM users WHERE email IN ('admin@company.com', 'hr@company.com', 'manager@company.com', 'eng_manager@company.com', 'field@company.com', 'dev@company.com', 'office@company.com'));
+
+-- Now insert/update employees and re-link
+INSERT INTO employees (user_id, employee_code, first_name, middle_name, last_name, full_name, email, phone, birth_date, gender, marital_status, department_id, position_id, role_id, employment_type, city, country, status, hired_at) VALUES
+((SELECT id FROM users WHERE email = 'admin@company.com'), 'EMP001', 'Firas', 'Ali', 'Alijla', 'Firas Alijla', 'admin@company.com', '+1234567890', '1990-01-01', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'IT'), (SELECT id FROM positions WHERE title = 'System Administration'), (SELECT id FROM roles WHERE name = 'Super Admin'), 'Full-Time', 'Ramallah', 'Palestine', 'active', NOW()),
+((SELECT id FROM users WHERE email = 'hr@company.com'), 'EMP002', 'Sarah', 'Jean', 'Connor', 'Sarah Jean Connor', 'hr@company.com', '+1987654321', '1985-05-15', 'Female', 'Married', (SELECT id FROM departments WHERE name = 'HR'), (SELECT id FROM positions WHERE title = 'HR Manager'), (SELECT id FROM roles WHERE name = 'HR Admin'), 'Full-Time', 'Gaza', 'Palestine', 'active', NOW() - INTERVAL '2 years'),
+((SELECT id FROM users WHERE email = 'manager@company.com'), 'EMP003', 'Mike', 'David', 'Ross', 'Mike David Ross', 'manager@company.com', '+1122334455', '1980-08-20', 'Male', 'Married', (SELECT id FROM departments WHERE name = 'Project Management'), (SELECT id FROM positions WHERE title = 'Project Manager'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'Jerusalem', 'Palestine', 'active', NOW() - INTERVAL '1 year'),
+((SELECT id FROM users WHERE email = 'dev@company.com'), 'EMP004', 'John', 'Michael', 'Doe', 'John Michael Doe', 'dev@company.com', '+1555666777', '1995-12-10', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'Office'), (SELECT id FROM positions WHERE title = 'Administrative Assistant'), (SELECT id FROM roles WHERE name = 'Office Staff'), 'Full-Time', 'Nablus', 'Palestine', 'active', NOW() - INTERVAL '6 months'),
+((SELECT id FROM users WHERE email = 'office@company.com'), 'EMP005', 'Alice', 'Marie', 'Smith', 'Alice Marie Smith', 'office@company.com', '+1555888999', '1992-03-25', 'Female', 'Single', (SELECT id FROM departments WHERE name = 'Office'), (SELECT id FROM positions WHERE title = 'Office Coordinator'), (SELECT id FROM roles WHERE name = 'Office Staff'), 'Full-Time', 'Bethlehem', 'Palestine', 'active', NOW() - INTERVAL '4 months'),
+((SELECT id FROM users WHERE email = 'eng_manager@company.com'), 'EMP006', 'Ameer', 'Jamal', 'Ross', 'Ameer Jamal', 'eng_manager@company.com', '+1122334466', '1982-04-12', 'Male', 'Married', (SELECT id FROM departments WHERE name = 'Field Operations'), (SELECT id FROM positions WHERE title = 'Team Leader'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'Hebron', 'Palestine', 'active', NOW() - INTERVAL '1.5 years'),
+((SELECT id FROM users WHERE email = 'field@company.com'), 'EMP007', 'John', 'Field', 'Walker', 'John Field', 'field@company.com', '+1555000111', '1988-11-30', 'Male', 'Single', (SELECT id FROM departments WHERE name = 'Field Operations'), (SELECT id FROM positions WHERE title = 'Field Supervisor'), (SELECT id FROM roles WHERE name = 'Manager'), 'Full-Time', 'Jenin', 'Palestine', 'active', NOW() - INTERVAL '8 months')
 ON CONFLICT (employee_code) DO UPDATE SET 
     user_id = EXCLUDED.user_id,
     first_name = EXCLUDED.first_name,
@@ -204,6 +210,8 @@ ON CONFLICT (employee_code) DO UPDATE SET
     position_id = EXCLUDED.position_id,
     role_id = EXCLUDED.role_id,
     employment_type = EXCLUDED.employment_type,
+    city = EXCLUDED.city,
+    country = EXCLUDED.country,
     status = EXCLUDED.status,
     hired_at = EXCLUDED.hired_at;
 
