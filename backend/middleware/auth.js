@@ -74,14 +74,15 @@ const requireActiveStatus = (req, res, next) => {
 
     // Check if user has employee record
     if (!req.user || !req.user.employee_id) {
-        console.log('⚠️ requireActiveStatus: User missing employee_id', {
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            roleName: req.user?.role_name,
-            employeeId: req.user?.employee_id
+        console.log('⚠️ requireActiveStatus: User missing employee_id. User Object:', {
+            id: req.user?.id,
+            email: req.user?.email,
+            role_name: req.user?.role_name,
+            employee_id: req.user?.employee_id,
+            full_user: req.user
         });
-        return res.status(403).json({ 
-            message: 'Employee record not found. Please contact administrator.' 
+        return res.status(403).json({
+            message: 'Employee record not found. Please contact administrator.'
         });
     }
 
@@ -90,7 +91,7 @@ const requireActiveStatus = (req, res, next) => {
 
     // If status is 'Inactive', block access to this route
     if (employeeStatus && employeeStatus.toLowerCase() === 'inactive') {
-        return res.status(403).json({ 
+        return res.status(403).json({
             message: 'Your account is inactive. Please contact administrator to activate your account.',
             status: 'inactive'
         });
