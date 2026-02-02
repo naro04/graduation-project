@@ -12,19 +12,15 @@ const {
 } = require('../database/data/queries/auth');
 
 const sendEmail = async (options) => {
-  const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
-  const emailPort = parseInt(process.env.EMAIL_PORT) || 587;
-  const isSecure = emailPort === 465;
-
+  // Railway SMTP Fix: Explicitly use port 587 and secure: false
   const transporter = nodemailer.createTransport({
-    host: emailHost,
-    port: emailPort,
-    secure: isSecure,
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // Must be false for port 587
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
     },
-    // For Gmail SMTP
     tls: {
       rejectUnauthorized: false
     }
@@ -39,11 +35,17 @@ const sendEmail = async (options) => {
   };
 
   try {
+    console.log('📨 Sending password reset email via Gmail SMTP...');
     const info = await transporter.sendMail(mailOptions);
     console.log('✅ Email sent successfully:', info.messageId);
     return info;
   } catch (err) {
-    console.error('❌ Nodemailer error:', err);
+    console.error('❌ Nodemailer Error:', {
+      message: err.message,
+      code: err.code,
+      command: err.command,
+      response: err.response
+    });
     throw err;
   }
 };
