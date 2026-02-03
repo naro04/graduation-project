@@ -7,7 +7,7 @@ exports.getAllEmployees = async (req, res) => {
         const { departmentId, roleId, status, search } = req.query;
 
         console.log('📋 Fetching employees with filters:', { departmentId, roleId, status, search });
-        
+
         // departmentId and roleId should be mapped to the query parameters
         // We pass them to the query in order: [departmentId, roleId, status, search]
         const result = await pool.query(employeeQueries.getEmployeesQuery, [
@@ -25,8 +25,8 @@ exports.getAllEmployees = async (req, res) => {
             data: result.rows
         });
     } catch (err) {
-        console.error('❌ Error fetching employees:', err);
-        res.status(500).json({ message: 'Error fetching employees', error: err.message });
+        console.error('Error fetching employees:', err);
+        res.status(500).json({ message: 'An error occurred while fetching employees. Please try again.' });
     }
 };
 
@@ -44,7 +44,8 @@ exports.getEmployeeById = async (req, res) => {
             data: result.rows[0]
         });
     } catch (err) {
-        res.status(500).json({ message: 'Error fetching employee', error: err.message });
+        console.error('Error fetching employee:', err);
+        res.status(500).json({ message: 'An error occurred while fetching employee details. Please try again.' });
     }
 };
 
@@ -97,12 +98,12 @@ exports.createEmployee = async (req, res) => {
             data: newEmployee
         });
     } catch (err) {
-        res.status(500).json({
-            status: 'error',
-            message: 'Error creating employee',
-            error: err.message,
-            detail: err.detail // Useful for the user to see unique constraint violations etc.
-        });
+        console.error('Error creating employee:', err);
+        let message = 'An error occurred while creating the employee. Please try again.';
+        if (err.code === '23505') {
+            message = 'Employee code already exists.';
+        }
+        res.status(500).json({ message });
     }
 };
 
@@ -157,12 +158,8 @@ exports.updateEmployee = async (req, res) => {
             client.release();
         }
     } catch (err) {
-        res.status(500).json({
-            status: 'error',
-            message: 'Error updating employee',
-            error: err.message,
-            detail: err.detail
-        });
+        console.error('Error updating employee:', err);
+        res.status(500).json({ message: 'An error occurred while updating the employee. Please try again.' });
     }
 };
 
@@ -180,7 +177,8 @@ exports.deleteEmployee = async (req, res) => {
             message: 'Employee deleted successfully'
         });
     } catch (err) {
-        res.status(500).json({ message: 'Error deleting employee', error: err.message });
+        console.error('Error deleting employee:', err);
+        res.status(500).json({ message: 'An error occurred while deleting the employee. Please try again.' });
     }
 };
 
@@ -207,11 +205,12 @@ exports.bulkAction = async (req, res) => {
             data: result.rows
         });
     } catch (err) {
-        let message = 'Error performing bulk action';
+        console.error('Error performing bulk action:', err);
+        let message = 'An error occurred while performing the bulk action.';
         if (err.code === '23503') {
-            message = 'Cannot delete employees linked to other records (e.g. attendance, activities)';
+            message = 'Cannot delete employees linked to other records (e.g., attendance, activities).';
         }
-        res.status(500).json({ message, error: err.message });
+        res.status(500).json({ message });
     }
 };
 
@@ -264,7 +263,7 @@ exports.getTeamMembers = async (req, res) => {
         res.status(200).json(result.rows);
     } catch (err) {
         console.error('Error fetching team members:', err);
-        res.status(500).json({ message: 'Error fetching team members', error: err.message });
+        res.status(500).json({ message: 'An error occurred while fetching team members. Please try again.' });
     }
 };
 
@@ -295,6 +294,7 @@ exports.getHRReports = async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ message: 'Error fetching HR reports', error: err.message });
+        console.error('Error fetching HR reports:', err);
+        res.status(500).json({ message: 'An error occurred while fetching HR reports. Please try again.' });
     }
 };

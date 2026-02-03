@@ -8,8 +8,17 @@ const {
   findUserByEmail,
   assignRole,
   retrieveUserPermissions,
-  findRoleByName
+  findRoleByName,
+  findUserById
 } = require('../database/data/queries/auth');
+
+const validateEmail = (email) => {
+  return String(email)
+    .toLowerCase()
+    .match(
+      /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+    );
+};
 
 const sendEmail = async (options) => {
   try {
@@ -100,11 +109,23 @@ exports.register = async (req, res) => {
     }
 
     if (!name || !email || !password) {
-      return res
-        .status(400)
-        .json({
-          message: 'First name, last name, email, and password are required'
-        });
+      return res.status(400).json({
+        message: 'Please fill in all required fields'
+      });
+    }
+
+    if (!req.body.privacyPolicyAgreement) {
+      return res.status(400).json({
+        message: 'You must agree to the privacy policy to continue.'
+      });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({ message: 'Please provide a valid email address' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters long' });
     }
 
     if (confirm_password && password !== confirm_password) {
@@ -113,7 +134,7 @@ exports.register = async (req, res) => {
 
     const existingUser = await client.query(findUserByEmail, [email]);
     if (existingUser.rows.length > 0) {
-      return res.status(400).json({ message: 'Email already in use' });
+      return res.status(400).json({ message: 'Email already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -170,13 +191,9 @@ exports.register = async (req, res) => {
 
     createSendToken(newUser, 201, res);
   } catch (err) {
-    await client.query('ROLLBACK');
-    res
-      .status(500)
-      .json({
-        message: 'Internal server error during registration',
-        error: err.message
-      });
+    if (client) await client.query('ROLLBACK');
+    console.error('Registration error:', err);
+    res.status(500).json({ message: 'An error occurred during registration. Please try again.' });
   } finally {
     client.release();
   }
@@ -216,14 +233,8 @@ exports.login = async (req, res) => {
 
     createSendToken(user, 200, res, rememberMe);
   } catch (err) {
-    console.error("❌ Login error:", err.message);
-    console.error("❌ Full error:", err);
-    res
-      .status(500)
-      .json({
-        message: 'Internal server error during login',
-        error: err.message || err.toString()
-      });
+    console.error("Login error:", err);
+    res.status(500).json({ message: 'An error occurred during login. Please try again.' });
   }
 };
 
@@ -243,10 +254,9 @@ exports.forgotPassword = async (req, res) => {
 
     if (!user) {
       // For security, don't reveal if user exists. Just return success.
-      console.log('⚠️ User not found, returning success message (security)');
       return res.status(200).json({
         status: 'success',
-        message: 'If an account with that email exists, a password reset link has been sent.'
+        message: 'If this email is registered and allowed to reset passwords, you will receive a reset email shortly.'
       });
     }
 
@@ -301,7 +311,7 @@ exports.forgotPassword = async (req, res) => {
 
       res.status(200).json({
         status: 'success',
-        message: 'Password reset link sent to email'
+        message: 'If this email is registered and allowed to reset passwords, you will receive a reset email shortly.'
       });
     } catch (err) {
       console.error('❌ Error sending email:', err);
@@ -314,11 +324,17 @@ exports.forgotPassword = async (req, res) => {
         'UPDATE users SET password_reset_token = NULL, password_reset_expires = NULL WHERE id = $1',
         [user.id]
       );
-      return res.status(500).json({ message: 'There was an error sending the email. Try again later!' });
+      return res.status(200).json({
+        status: 'success',
+        message: 'If this email is registered and allowed to reset passwords, you will receive a reset email shortly.'
+      });
     }
   } catch (err) {
     console.error('Forgot password error:', err);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(200).json({
+      status: 'success',
+      message: 'If this email is registered and allowed to reset passwords, you will receive a reset email shortly.'
+    });
   }
 };
 
@@ -332,6 +348,10 @@ exports.resetPassword = async (req, res) => {
 
     if (password !== confirmPassword) {
       return res.status(400).json({ message: 'Passwords do not match' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters long' });
     }
 
     // 1. Find user with token that hasn't expired
@@ -359,7 +379,7 @@ exports.resetPassword = async (req, res) => {
     });
   } catch (err) {
     console.error('Reset password error:', err);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'An error occurred while resetting your password. Please try again.' });
   }
 };
 
@@ -375,6 +395,7 @@ const { OAuth2Client } = require('google-auth-library');
 const client_google = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 exports.googleAuth = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { googleToken } = req.body;
 
@@ -382,8 +403,6 @@ exports.googleAuth = async (req, res) => {
       return res.status(400).json({ message: 'Google token is required' });
     }
 
-    // 1. Fetch user info using the access token
-    // Since we are getting an access_token from the frontend, we use it to call Google's userinfo API
     const response = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${googleToken}`);
     const payload = await response.json();
 
@@ -393,41 +412,49 @@ exports.googleAuth = async (req, res) => {
 
     const { sub: googleId, email, name, picture } = payload;
 
-    // 2. Check if user already exists
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    await client.query('BEGIN');
+
+    const userResult = await client.query('SELECT * FROM users WHERE email = $1', [email]);
     let user = userResult.rows[0];
 
     if (!user) {
-      // 3. Create new user if they don't exist
-      // Since it's Google Auth, we can use a random password or just mark it as social
+      // Create new user
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const hashedPassword = await bcrypt.hash(randomPassword, 12);
 
-      const newUserResult = await pool.query(
+      const newUserResult = await client.query(
         'INSERT INTO users (name, email, password_hash, avatar_url) VALUES ($1, $2, $3, $4) RETURNING *',
         [name, email, hashedPassword, picture]
       );
       user = newUserResult.rows[0];
 
-      // Assign default role
-      const defaultRole = await pool.query(findRoleByName, ['Office Staff']);
+      // Assign default role ('Office Staff')
+      const defaultRole = await client.query(findRoleByName, ['Office Staff']);
       if (defaultRole.rows.length > 0) {
-        await pool.query(assignRole, [user.id, defaultRole.rows[0].id]);
+        await client.query(assignRole, [user.id, defaultRole.rows[0].id]);
       }
 
       // Create employee record with Inactive status
       const employee_code = `EMP-G-${Date.now()}`;
-      await pool.query(
+      await client.query(
         'INSERT INTO employees (user_id, email, first_name, last_name, full_name, employee_code, status, avatar_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
         [user.id, email, name.split(' ')[0], name.split(' ').slice(1).join(' ') || 'User', name, employee_code, 'Inactive', picture]
       );
     }
 
-    // 4. Send token
-    createSendToken(user, 200, res);
+    await client.query('COMMIT');
+
+    // Fetch full user data including roles and employee status
+    const fullUserResult = await pool.query(findUserById, [user.id]);
+    const fullUser = fullUserResult.rows[0];
+
+    createSendToken(fullUser, 200, res);
   } catch (err) {
+    if (client) await client.query('ROLLBACK');
     console.error('Google auth error:', err);
-    res.status(500).json({ message: 'Google authentication failed. Please ensure GOOGLE_CLIENT_ID is set correctly in .env.' });
+    res.status(500).json({ message: 'Google authentication failed' });
+  } finally {
+    if (client) client.release();
   }
 };
 

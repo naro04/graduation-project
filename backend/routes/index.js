@@ -2,7 +2,6 @@ const router = require('express').Router();
 const { protect, requireActiveStatus } = require('../middleware/auth');
 
 const profileRouter = require('./profile');
-const userRouter = require('./users');
 const dashboard = require('../controllers/dashboard');
 const authRouter = require('./auth');
 const rbacRouter = require('./rbac');
@@ -40,7 +39,6 @@ router.use('/more/support', supportRouter);
 // Then require active status for everything else
 router.use(requireActiveStatus);
 
-router.use('/users', userRouter);
 router.use('/rbac', rbacRouter);
 router.use('/departments', deptRouter);
 router.use('/employees', employeeRouter);
