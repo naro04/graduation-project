@@ -20,7 +20,7 @@ exports.getLeaves = async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching leaves:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+        res.status(500).json({ success: false, message: 'An error occurred while fetching leave requests. Please try again.' });
     }
 };
 
@@ -44,8 +44,8 @@ exports.createLeave = async (req, res) => {
             data: result.rows[0]
         });
     } catch (error) {
-        console.error('Error creating leave:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+        console.error('Error creating leave request:', error);
+        res.status(500).json({ success: false, message: 'An error occurred while creating your leave request. Please try again.' });
     }
 };
 
@@ -80,7 +80,7 @@ exports.updateLeaveStatus = async (req, res) => {
         });
     } catch (error) {
         console.error('Error updating leave status:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+        res.status(500).json({ success: false, message: 'An error occurred while updating the leave status. Please try again.' });
     }
 };
 
@@ -104,7 +104,7 @@ exports.bulkDeleteLeaves = async (req, res) => {
         });
     } catch (error) {
         console.error('Error bulk deleting leaves:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+        res.status(500).json({ success: false, message: 'An error occurred while deleting leave requests. Please try again.' });
     }
 };
 
@@ -119,8 +119,8 @@ exports.getMyLeaves = async (req, res) => {
             data: result.rows
         });
     } catch (error) {
-        console.error('Error fetching my leaves:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+        console.error('Error fetching personal leaves:', error);
+        res.status(500).json({ success: false, message: 'An error occurred while fetching your leave requests. Please try again.' });
     }
 };
 
@@ -135,8 +135,8 @@ exports.getMyLeaveStats = async (req, res) => {
             data: result.rows
         });
     } catch (error) {
-        console.error('Error fetching my leave stats:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+        console.error('Error fetching personal leave stats:', error);
+        res.status(500).json({ success: false, message: 'An error occurred while fetching your leave statistics. Please try again.' });
     }
 };
 /**
@@ -180,7 +180,7 @@ exports.getTeamLeaves = async (req, res) => {
               AND ($4::text IS NULL OR lr.status = $4)
             ORDER BY lr.created_at DESC;
         `;
-        
+
         const leavesResult = await pool.query(leavesQuery, [
             managerEmployeeId,
             search || null,
@@ -207,7 +207,7 @@ exports.getTeamLeaves = async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching team leaves:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+        res.status(500).json({ success: false, message: 'An error occurred while fetching team leave requests. Please try again.' });
     }
 };
 
@@ -240,6 +240,6 @@ exports.getLeaveReports = async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching leave reports:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+        res.status(500).json({ success: false, message: 'An error occurred while fetching leave reports. Please try again.' });
     }
 };

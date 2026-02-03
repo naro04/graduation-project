@@ -6,7 +6,8 @@ exports.getAllDepartments = async (req, res) => {
         const result = await pool.query(deptQueries.getDepartments);
         res.status(200).json({ status: 'success', results: result.rows.length, data: result.rows });
     } catch (err) {
-        res.status(500).json({ message: 'Error fetching departments', error: err.message });
+        console.error('Error fetching departments:', err);
+        res.status(500).json({ message: 'An error occurred while fetching departments. Please try again.' });
     }
 };
 
@@ -16,7 +17,8 @@ exports.createDepartment = async (req, res) => {
         const result = await pool.query(deptQueries.createDepartment, [name, description, status || 'active']);
         res.status(201).json({ status: 'success', data: result.rows[0] });
     } catch (err) {
-        res.status(500).json({ message: 'Error creating department', error: err.message });
+        console.error('Error creating department:', err);
+        res.status(500).json({ message: 'An error occurred while creating the department. Please try again.' });
     }
 };
 
@@ -28,7 +30,8 @@ exports.updateDepartment = async (req, res) => {
         if (result.rows.length === 0) return res.status(404).json({ message: 'Department not found' });
         res.status(200).json({ status: 'success', data: result.rows[0] });
     } catch (err) {
-        res.status(500).json({ message: 'Error updating department', error: err.message });
+        console.error('Error updating department:', err);
+        res.status(500).json({ message: 'An error occurred while updating the department. Please try again.' });
     }
 };
 
@@ -39,7 +42,8 @@ exports.deleteDepartment = async (req, res) => {
         if (result.rows.length === 0) return res.status(404).json({ message: 'Department not found' });
         res.status(200).json({ status: 'success', message: 'Department deleted' });
     } catch (err) {
-        res.status(500).json({ message: 'Error deleting department', error: err.message });
+        console.error('Error deleting department:', err);
+        res.status(500).json({ message: 'An error occurred while deleting the department. Please try again.' });
     }
 };
 
@@ -50,7 +54,8 @@ exports.getDepartment = async (req, res) => {
         if (result.rows.length === 0) return res.status(404).json({ message: 'Department not found' });
         res.status(200).json({ status: 'success', data: result.rows[0] });
     } catch (err) {
-        res.status(500).json({ message: 'Error fetching department', error: err.message });
+        console.error('Error fetching department:', err);
+        res.status(500).json({ message: 'An error occurred while fetching the department details. Please try again.' });
     }
 };
 
@@ -76,10 +81,11 @@ exports.bulkAction = async (req, res) => {
             data: result.rows
         });
     } catch (err) {
-        let message = 'Error performing bulk action';
+        console.error('Error performing bulk action:', err);
+        let message = 'An error occurred while performing the bulk action.';
         if (err.code === '23503') {
-            message = 'Cannot delete departments that have linked employees or positions';
+            message = 'Cannot delete departments that have linked employees or positions.';
         }
-        res.status(500).json({ message, error: err.message });
+        res.status(500).json({ message });
     }
 };

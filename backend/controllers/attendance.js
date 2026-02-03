@@ -33,7 +33,7 @@ const getDailyStatus = (checkInTime) => {
     const minute = new Date(checkInTime).getMinutes();
     const checkInMinutes = hour * 60 + minute;
     const onTimeMinutes = CHECKIN_CUTOFF_HOUR * 60 + CHECKIN_CUTOFF_MINUTE; // 8:15 AM
-    
+
     if (checkInMinutes > onTimeMinutes) {
         return 'Late';
     }
@@ -93,7 +93,7 @@ const calculateWorkHours = (checkIn, checkOut) => {
 const verifyGPSForAttendance = async (attendanceId, employeeId, latitude, longitude) => {
     // Get employee's assigned locations
     const locationsResult = await pool.query(gpsQueries.getEmployeeLocationsQuery, [employeeId]);
-    
+
     if (locationsResult.rows.length === 0) {
         // No assigned locations
         await pool.query(gpsQueries.updateGPSStatusQuery, [null, 'Not Verified', attendanceId]);
@@ -128,7 +128,7 @@ const verifyGPSForAttendance = async (attendanceId, employeeId, latitude, longit
     // Determine GPS status based on minimum distance
     const gpsStatus = getGPSStatus(minDistance);
     await pool.query(gpsQueries.updateGPSStatusQuery, [minDistance, gpsStatus, attendanceId]);
-    
+
     return { distance: minDistance, status: gpsStatus };
 };
 
@@ -200,7 +200,7 @@ exports.getMyAttendance = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching attendance:', err);
-        res.status(500).json({ message: 'Error fetching attendance', error: err.message });
+        res.status(500).json({ message: 'An error occurred while fetching attendance records. Please try again.' });
     }
 };
 
@@ -208,7 +208,7 @@ exports.checkIn = async (req, res) => {
     try {
         const { latitude, longitude, location_address, work_type, manual_location_id, check_in_method } = req.body;
         const userId = req.user.id;
-        
+
         // Debug logging
         console.log('Check-in request body:', req.body);
         console.log('check_in_method received:', check_in_method);
@@ -222,8 +222,8 @@ exports.checkIn = async (req, res) => {
         // Check if already checked in today (without check-out)
         const todayAttendanceResult = await pool.query(attendanceQueries.getTodayAttendanceQuery, [userId]);
         if (todayAttendanceResult.rows.length > 0) {
-            return res.status(400).json({ 
-                message: 'You have already checked in today. Please check out first.' 
+            return res.status(400).json({
+                message: 'You have already checked in today. Please check out first.'
             });
         }
 
@@ -233,7 +233,7 @@ exports.checkIn = async (req, res) => {
 
         // Resolve location address
         let finalLocationAddress = location_address;
-        
+
         // If manual location was selected (GPS fallback), get the location name
         if (manual_location_id && !location_address) {
             const locationResult = await pool.query('SELECT name, address FROM locations WHERE id = $1', [manual_location_id]);
@@ -289,7 +289,7 @@ exports.checkIn = async (req, res) => {
         });
     } catch (err) {
         console.error('Error during check-in:', err);
-        res.status(500).json({ message: 'Error during check-in', error: err.message });
+        res.status(500).json({ message: 'An error occurred during check-in. Please try again.' });
     }
 };
 
@@ -307,8 +307,8 @@ exports.checkOut = async (req, res) => {
         // Get today's check-in record (without check-out)
         const todayAttendanceResult = await pool.query(attendanceQueries.getTodayAttendanceQuery, [userId]);
         if (todayAttendanceResult.rows.length === 0) {
-            return res.status(400).json({ 
-                message: 'No active check-in found. Please check in first.' 
+            return res.status(400).json({
+                message: 'No active check-in found. Please check in first.'
             });
         }
 
@@ -316,7 +316,7 @@ exports.checkOut = async (req, res) => {
 
         // Resolve location address for checkout
         let checkoutLocationAddress = location_address;
-        
+
         if (manual_location_id && !location_address) {
             const locationResult = await pool.query('SELECT name, address FROM locations WHERE id = $1', [manual_location_id]);
             if (locationResult.rows.length > 0) {
@@ -349,7 +349,7 @@ exports.checkOut = async (req, res) => {
         });
     } catch (err) {
         console.error('Error during check-out:', err);
-        res.status(500).json({ message: 'Error during check-out', error: err.message });
+        res.status(500).json({ message: 'An error occurred during check-out. Please try again.' });
     }
 };
 
@@ -371,7 +371,7 @@ exports.getLocationsForCheckIn = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching locations:', err);
-        res.status(500).json({ message: 'Error fetching locations', error: err.message });
+        res.status(500).json({ message: 'An error occurred while fetching locations. Please try again.' });
     }
 };
 
@@ -402,7 +402,7 @@ exports.getDailyAttendance = async (req, res) => {
             WHERE DATE(a.check_in_time) = $1
             ORDER BY a.check_in_time DESC
         `;
-        
+
         const result = await pool.query(attendanceQuery, [targetDate]);
 
         // Calculate stats
@@ -439,7 +439,7 @@ exports.getDailyAttendance = async (req, res) => {
         }
         if (search) {
             const searchLower = search.toLowerCase();
-            filteredRecords = filteredRecords.filter(r => 
+            filteredRecords = filteredRecords.filter(r =>
                 r.employeeName.toLowerCase().includes(searchLower) ||
                 r.employeeCode.toLowerCase().includes(searchLower)
             );
@@ -456,7 +456,7 @@ exports.getDailyAttendance = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching daily attendance:', err);
-        res.status(500).json({ message: 'Error fetching daily attendance', error: err.message });
+        res.status(500).json({ message: 'An error occurred while fetching daily attendance. Please try again.' });
     }
 };
 
@@ -466,7 +466,7 @@ exports.getDailyAttendance = async (req, res) => {
 exports.getAttendanceReports = async (req, res) => {
     try {
         const { from, to, location, status, search } = req.query;
-        
+
         // Default to last 7 days if no date range provided
         const endDate = to || new Date().toISOString().split('T')[0];
         const startDate = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -493,7 +493,7 @@ exports.getAttendanceReports = async (req, res) => {
             WHERE DATE(a.check_in_time) BETWEEN $1 AND $2
             ORDER BY a.check_in_time DESC
         `;
-        
+
         const result = await pool.query(attendanceQuery, [startDate, endDate]);
 
         // Get total active employees
@@ -505,7 +505,7 @@ exports.getAttendanceReports = async (req, res) => {
             let finalStatus = row.daily_status || 'Present';
             const checkOutTime = row.check_out_time;
             const checkInTime = row.check_in_time;
-            
+
             // Determine status based on logic
             if (!checkOutTime) {
                 // Check if shift is over (assuming 8-hour shift from check-in or past 5 PM)
@@ -513,7 +513,7 @@ exports.getAttendanceReports = async (req, res) => {
                 const checkIn = new Date(checkInTime);
                 const hoursElapsed = (now - checkIn) / (1000 * 60 * 60);
                 const currentHour = now.getHours();
-                
+
                 if (hoursElapsed > 9 || currentHour >= 17) {
                     finalStatus = 'Missing Check-out';
                 } else {
@@ -522,7 +522,7 @@ exports.getAttendanceReports = async (req, res) => {
             } else if (isEarlyCheckout(checkOutTime)) {
                 finalStatus = row.daily_status === 'Late' ? 'Late' : 'Early Leave';
             }
-            
+
             return {
                 id: row.id,
                 employeeId: row.employee_id,
@@ -551,7 +551,7 @@ exports.getAttendanceReports = async (req, res) => {
         }
         if (search) {
             const searchLower = search.toLowerCase();
-            filteredRecords = filteredRecords.filter(r => 
+            filteredRecords = filteredRecords.filter(r =>
                 r.employeeName.toLowerCase().includes(searchLower) ||
                 r.employeeCode.toLowerCase().includes(searchLower)
             );
@@ -568,7 +568,7 @@ exports.getAttendanceReports = async (req, res) => {
         // Calculate daily attendance for bar chart (last 7 days)
         const dailyStats = {};
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        
+
         // Initialize last 7 days
         for (let i = 6; i >= 0; i--) {
             const date = new Date();
@@ -619,7 +619,7 @@ exports.getAttendanceReports = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching attendance reports:', err);
-        res.status(500).json({ message: 'Error fetching attendance reports', error: err.message });
+        res.status(500).json({ message: 'An error occurred while fetching attendance reports. Please try again.' });
     }
 };
 
@@ -680,7 +680,7 @@ exports.getTeamAttendance = async (req, res) => {
               AND e.supervisor_id = $2
             ORDER BY a.check_in_time DESC
         `;
-        
+
         const result = await pool.query(attendanceQuery, [targetDate, managerEmployeeId]);
 
         // Calculate stats
@@ -714,7 +714,7 @@ exports.getTeamAttendance = async (req, res) => {
         }
         if (search) {
             const searchLower = search.toLowerCase();
-            filteredRecords = filteredRecords.filter(r => 
+            filteredRecords = filteredRecords.filter(r =>
                 r.employeeName.toLowerCase().includes(searchLower) ||
                 r.employeeCode.toLowerCase().includes(searchLower)
             );
@@ -731,7 +731,7 @@ exports.getTeamAttendance = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching team attendance:', err);
-        res.status(500).json({ message: 'Error fetching team attendance', error: err.message });
+        res.status(500).json({ message: 'An error occurred while fetching team attendance. Please try again.' });
     }
 };
 
@@ -753,7 +753,7 @@ exports.deleteAttendance = async (req, res) => {
             message: 'Attendance record deleted successfully'
         });
     } catch (err) {
-        console.error('Error deleting attendance:', err);
-        res.status(500).json({ message: 'Error deleting attendance', error: err.message });
+        console.error('Error deleting attendance record:', err);
+        res.status(500).json({ message: 'An error occurred while deleting the attendance record. Please try again.' });
     }
 };

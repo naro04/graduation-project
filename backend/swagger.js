@@ -7,11 +7,11 @@ const paths = {
     get: {
       tags: ['Dashboard'],
       summary: 'Get dashboard statistics',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'object' } } }
-        } 
+        }
       }
     }
   },
@@ -25,12 +25,12 @@ const paths = {
         required: true,
         content: { 'application/json': { schema: { type: 'object', properties: { email: { type: 'string' }, password: { type: 'string' }, rememberMe: { type: 'boolean' } } } } },
       },
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Login successful',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/User' } } }
-        }, 
-        401: { description: 'Unauthorized' } 
+        },
+        401: { description: 'Unauthorized' }
       },
     },
   },
@@ -40,13 +40,14 @@ const paths = {
       summary: 'User Registration',
       requestBody: {
         required: true,
-        content: { 'application/json': { schema: { type: 'object', properties: { firstName: { type: 'string' }, lastName: { type: 'string' }, email: { type: 'string' }, password: { type: 'string' }, phone: { type: 'string' } } } } },
+        content: { 'application/json': { schema: { type: 'object', properties: { firstName: { type: 'string' }, lastName: { type: 'string' }, email: { type: 'string' }, password: { type: 'string' }, phone: { type: 'string' }, privacyPolicyAgreement: { type: 'boolean' } } } } },
       },
-      responses: { 
-        201: { 
+      responses: {
+        201: {
           description: 'User created',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/Employee' } } }
-        } 
+        },
+        400: { description: 'Bad Request' }
       },
     },
   },
@@ -94,11 +95,11 @@ const paths = {
     get: {
       tags: ['Authentication'],
       summary: 'Get current user data',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/User' } } }
-        } 
+        }
       }
     }
   },
@@ -108,11 +109,11 @@ const paths = {
     get: {
       tags: ['Profile'],
       summary: 'Get current user profile',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/Employee' } } }
-        } 
+        }
       }
     },
     patch: {
@@ -138,17 +139,44 @@ const paths = {
       tags: ['Profile'],
       summary: 'Get job information',
       responses: { 200: { description: 'Success' } }
+    },
+    put: {
+      tags: ['Profile'],
+      summary: 'Update job information',
+      requestBody: {
+        content: { 'application/json': { schema: { type: 'object', properties: { department_id: { type: 'string' }, position_id: { type: 'string' }, employment_type: { type: 'string' } } } } }
+      },
+      responses: { 200: { description: 'Success' } }
+    }
+  },
+  '/profile/positions': {
+    get: {
+      tags: ['Profile'],
+      summary: 'Get all available positions',
+      responses: {
+        200: {
+          description: 'Success',
+          content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Position' } } } }
+        }
+      }
+    }
+  },
+  '/profile/location': {
+    get: {
+      tags: ['Profile'],
+      summary: 'Get user assigned location',
+      responses: { 200: { description: 'Success' } }
     }
   },
   '/profile/emergency-contact': {
     get: {
       tags: ['Profile'],
       summary: 'Get emergency contact',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/EmergencyContact' } } }
-        } 
+        }
       }
     },
     put: {
@@ -161,11 +189,11 @@ const paths = {
     get: {
       tags: ['Profile'],
       summary: 'Get work schedule (Routine + Assignments)',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'object', properties: { routine: { type: 'array' }, assignments: { type: 'array' } } } } }
-        } 
+        }
       }
     }
   },
@@ -173,6 +201,14 @@ const paths = {
     get: {
       tags: ['Profile'],
       summary: 'Get account security settings',
+      responses: { 200: { description: 'Success' } }
+    },
+    put: {
+      tags: ['Profile'],
+      summary: 'Update account security settings',
+      requestBody: {
+        content: { 'application/json': { schema: { type: 'object', properties: { currentPassword: { type: 'string' }, newPassword: { type: 'string' } } } } }
+      },
       responses: { 200: { description: 'Success' } }
     }
   },
@@ -182,11 +218,11 @@ const paths = {
     get: {
       tags: ['RBAC'],
       summary: 'Get all roles',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Role' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -200,11 +236,11 @@ const paths = {
       tags: ['RBAC'],
       summary: 'Get role by ID',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/Role' } } }
-        } 
+        }
       }
     },
     put: {
@@ -224,11 +260,11 @@ const paths = {
     get: {
       tags: ['RBAC'],
       summary: 'Get all permissions',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Permission' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -237,17 +273,31 @@ const paths = {
       responses: { 201: { description: 'Created' } }
     }
   },
+  '/rbac/permissions/{id}': {
+    put: {
+      tags: ['RBAC'],
+      summary: 'Update permission',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Success' } }
+    },
+    delete: {
+      tags: ['RBAC'],
+      summary: 'Delete permission',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Success' } }
+    }
+  },
 
   // --- Departments ---
   '/departments': {
     get: {
       tags: ['Departments'],
       summary: 'Get all departments',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Department' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -268,11 +318,11 @@ const paths = {
       tags: ['Departments'],
       summary: 'Get department by ID',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/Department' } } }
-        } 
+        }
       }
     },
     put: {
@@ -294,11 +344,11 @@ const paths = {
     get: {
       tags: ['Employees'],
       summary: 'Get all employees',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Employee' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -311,11 +361,11 @@ const paths = {
     get: {
       tags: ['Employees'],
       summary: 'Get members reporting to me (Manager)',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Employee' } } } }
-        } 
+        }
       }
     }
   },
@@ -338,11 +388,11 @@ const paths = {
       tags: ['Employees'],
       summary: 'Get employee by ID',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/Employee' } } }
-        } 
+        }
       }
     },
     put: {
@@ -370,11 +420,11 @@ const paths = {
     get: {
       tags: ['Positions'],
       summary: 'Get all positions',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Position' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -403,11 +453,11 @@ const paths = {
     get: {
       tags: ['Location Types'],
       summary: 'Get all location types',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/LocationType' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -436,11 +486,11 @@ const paths = {
     get: {
       tags: ['Locations'],
       summary: 'Get all locations',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Location' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -510,11 +560,11 @@ const paths = {
     get: {
       tags: ['Activities'],
       summary: 'Get all activities',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Activity' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -540,13 +590,13 @@ const paths = {
         { name: 'status', in: 'query', schema: { type: 'string' }, description: 'Filter by implementation status' },
         { name: 'approvalStatus', in: 'query', schema: { type: 'string' }, description: 'Filter by approval status' },
         { name: 'type', in: 'query', schema: { type: 'string' }, description: 'Filter by activity type' },
-        { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by activity name' }
+        { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by employee name' }
       ],
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'object', properties: { activities: { type: 'array', items: { $ref: '#/components/schemas/Activity' } }, stats: { type: 'object' } } } } }
-        } 
+        }
       }
     }
   },
@@ -555,11 +605,11 @@ const paths = {
       tags: ['Activities'],
       summary: 'Get activity by ID',
       parameters: [{ name: 'activity_id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/Activity' } } }
-        } 
+        }
       }
     },
     put: {
@@ -573,6 +623,19 @@ const paths = {
       summary: 'Delete activity',
       parameters: [{ name: 'activity_id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { 200: { description: 'Success' } }
+    }
+  },
+  '/location-activities/{activity_id}/employees': {
+    get: {
+      tags: ['Activities'],
+      summary: 'Get employees assigned to activity',
+      parameters: [{ name: 'activity_id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: {
+        200: {
+          description: 'Success',
+          content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Employee' } } } }
+        }
+      }
     }
   },
   '/location-activities/{activity_id}/approve': {
@@ -614,11 +677,11 @@ const paths = {
     get: {
       tags: ['Attendance'],
       summary: 'Get my attendance history',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Attendance' } } } }
-        } 
+        }
       }
     }
   },
@@ -640,11 +703,11 @@ const paths = {
         { name: 'status', in: 'query', schema: { type: 'string' }, description: 'Filter by status' },
         { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by employee name' }
       ],
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Attendance' } }, stats: { type: 'object' } } } } }
-        } 
+        }
       }
     }
   },
@@ -676,11 +739,11 @@ const paths = {
     get: {
       tags: ['Leaves'],
       summary: 'Get all leave requests (Admin/HR)',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/LeaveRequest' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -714,11 +777,11 @@ const paths = {
         { name: 'type', in: 'query', schema: { type: 'string' }, description: 'Filter by leave type' },
         { name: 'status', in: 'query', schema: { type: 'string' }, description: 'Filter by status' }
       ],
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/LeaveRequest' } }, stats: { type: 'object' } } } } }
-        } 
+        }
       }
     }
   },
@@ -726,11 +789,11 @@ const paths = {
     get: {
       tags: ['Leaves'],
       summary: 'Get my leave balance stats',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/LeaveBalance' } } } }
-        } 
+        }
       }
     }
   },
@@ -787,11 +850,11 @@ const paths = {
     get: {
       tags: ['Notifications'],
       summary: 'Get notification settings',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { $ref: '#/components/schemas/NotificationSettings' } } }
-        } 
+        }
       }
     },
     put: {
@@ -836,11 +899,11 @@ const paths = {
     get: {
       tags: ['Support'],
       summary: 'Get support tickets',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/SupportTicket' } } } }
-        } 
+        }
       }
     },
     post: {
@@ -858,11 +921,11 @@ const paths = {
     get: {
       tags: ['Projects'],
       summary: 'Get all active projects',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string' }, data: { type: 'array', items: { $ref: '#/components/schemas/Project' } } } } } }
-        } 
+        }
       }
     }
   },
@@ -888,18 +951,20 @@ const paths = {
     get: {
       tags: ['API Keys'],
       summary: 'Get API keys',
-      responses: { 
-        200: { 
+      responses: {
+        200: {
           description: 'Success',
           content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/APIKey' } } } }
-        } 
+        }
       }
     },
     post: {
       tags: ['API Keys'],
       summary: 'Create an API key',
       responses: { 201: { description: 'Created' } }
-    },
+    }
+  },
+  '/api-keys/{id}': {
     delete: {
       tags: ['API Keys'],
       summary: 'Delete API key',
