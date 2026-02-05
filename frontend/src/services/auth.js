@@ -256,6 +256,25 @@ const getCurrentUser = () => {
 };
 
 /**
+ * Get effective role key for menu/UI from current user (so Manager stays Manager on all pages)
+ * @param {string} fallback - fallback role if no user (e.g. from route)
+ * @returns {string} - role key: superAdmin | hr | manager | fieldEmployee | officer
+ */
+const getEffectiveRole = (fallback = 'superAdmin') => {
+  const user = getCurrentUser();
+  if (!user) return fallback;
+  const role = user.role ?? user.roles?.[0];
+  if (!role || typeof role !== 'string') return fallback;
+  const r = role.toLowerCase().trim();
+  if (r === 'super admin' || r === 'superadmin') return 'superAdmin';
+  if (r === 'hr' || r === 'hr admin' || r === 'hradmin') return 'hr';
+  if (r === 'manager') return 'manager';
+  if (r === 'field employee' || r === 'fieldemployee' || r === 'field worker') return 'fieldEmployee';
+  if (r === 'officer' || r === 'office staff') return 'officer';
+  return fallback;
+};
+
+/**
  * Fetch current user data from API
  * @returns {Promise<object>} - User data with permissions and role info
  */
@@ -307,4 +326,4 @@ const getMe = async () => {
   }
 };
 
-export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, getCurrentUser, getMe };
+export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, getCurrentUser, getEffectiveRole, getMe };

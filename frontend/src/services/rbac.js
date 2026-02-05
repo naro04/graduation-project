@@ -1,142 +1,72 @@
-// RBAC Service
-// Handles all RBAC (Role-Based Access Control) related API calls
+// RBAC Service – يتوافق مع:
+// GET/POST http://localhost:5000/api/v1/rbac/roles
+// GET/PUT/DELETE http://localhost:5000/api/v1/rbac/roles/:id
+// GET/POST http://localhost:5000/api/v1/rbac/permissions
 
-import { apiRequest } from './api.js';
+import { apiClient } from "./apiClient";
 
-/**
- * Get all roles
- * @returns {Promise<Array>} - Array of role objects with id, name, and description
- */
-const getRoles = async () => {
-  try {
-    console.log('📤 Fetching roles from /rbac/roles');
-    
-    const response = await apiRequest('/rbac/roles', {
-      method: 'GET',
-    });
-
-    console.log('✅ Roles loaded successfully:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Failed to fetch roles:', error);
-    
-    // Handle specific error cases
-    if (error.status === 401) {
-      throw new Error('Session expired. Please login again.');
-    } else if (error.status === 500) {
-      throw new Error('Internal server error. Please try again later or contact support.');
-    } else if (error.status === 404) {
-      throw new Error('Roles endpoint not found. Please contact support.');
-    } else if (error.message) {
-      throw error;
-    } else {
-      throw new Error('Failed to fetch roles. Please try again.');
-    }
-  }
-};
+const ROLES_BASE = "/rbac/roles";
+const PERMISSIONS_BASE = "/rbac/permissions";
 
 /**
- * Get role details by ID including permissions
- * @param {string} roleId - The ID of the role
- * @returns {Promise<object>} - Role object with id, name, description, and permissions array
+ * GET /rbac/roles – جلب كل الأدوار
  */
-const getRoleById = async (roleId) => {
-  try {
-    console.log('📤 Fetching role details from /rbac/roles/' + roleId);
-    
-    const response = await apiRequest(`/rbac/roles/${roleId}`, {
-      method: 'GET',
-    });
-
-    console.log('✅ Role details loaded successfully:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Failed to fetch role details:', error);
-    
-    // Handle specific error cases
-    if (error.status === 401) {
-      throw new Error('Session expired. Please login again.');
-    } else if (error.status === 500) {
-      throw new Error('Internal server error. Please try again later or contact support.');
-    } else if (error.status === 404) {
-      throw new Error('Role not found. Please check the role ID.');
-    } else if (error.message) {
-      throw error;
-    } else {
-      throw new Error('Failed to fetch role details. Please try again.');
-    }
-  }
-};
+export async function getRoles() {
+  const res = await apiClient.get(ROLES_BASE);
+  const raw = res.data?.data ?? res.data;
+  return Array.isArray(raw) ? raw : raw?.items ?? raw?.records ?? [];
+}
 
 /**
- * Update role permissions
- * @param {string} roleId - The ID of the role to update
- * @param {Array<string>} permissionIds - Array of permission IDs to assign to the role
- * @returns {Promise<object>} - Updated role object
+ * POST /rbac/roles – إنشاء دور جديد
+ * @param {{ name: string, description?: string }} payload
  */
-const updateRole = async (roleId, permissionIds) => {
-  try {
-    console.log('📤 Updating role permissions to /rbac/roles/' + roleId, permissionIds);
-    
-    const response = await apiRequest(`/rbac/roles/${roleId}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        permissionIds: permissionIds
-      }),
-    });
-
-    console.log('✅ Role updated successfully:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Failed to update role:', error);
-    
-    // Handle specific error cases
-    if (error.status === 401) {
-      throw new Error('Session expired. Please login again.');
-    } else if (error.status === 500) {
-      throw new Error('Internal server error. Please try again later or contact support.');
-    } else if (error.status === 404) {
-      throw new Error('Role not found. Please check the role ID.');
-    } else if (error.status === 400) {
-      throw new Error(error.message || 'Invalid data. Please check your input.');
-    } else if (error.message) {
-      throw error;
-    } else {
-      throw new Error('Failed to update role. Please try again.');
-    }
-  }
-};
+export async function createRole(payload) {
+  const res = await apiClient.post(ROLES_BASE, payload);
+  return res.data?.data ?? res.data;
+}
 
 /**
- * Get all permissions
- * @returns {Promise<Array>} - Array of permission objects with id, resource, action, permissionType, and slug
+ * GET /rbac/roles/:id – جلب دور بالمعرف (مع الصلاحيات)
  */
-const getPermissions = async () => {
-  try {
-    console.log('📤 Fetching permissions from /rbac/permissions');
-    
-    const response = await apiRequest('/rbac/permissions', {
-      method: 'GET',
-    });
+export async function getRoleById(roleId) {
+  const res = await apiClient.get(`${ROLES_BASE}/${roleId}`);
+  return res.data?.data ?? res.data;
+}
 
-    console.log('✅ Permissions loaded successfully:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Failed to fetch permissions:', error);
-    
-    // Handle specific error cases
-    if (error.status === 401) {
-      throw new Error('Session expired. Please login again.');
-    } else if (error.status === 500) {
-      throw new Error('Internal server error. Please try again later or contact support.');
-    } else if (error.status === 404) {
-      throw new Error('Permissions endpoint not found. Please contact support.');
-    } else if (error.message) {
-      throw error;
-    } else {
-      throw new Error('Failed to fetch permissions. Please try again.');
-    }
-  }
-};
+/**
+ * PUT /rbac/roles/:id – تحديث دور (مثلاً الصلاحيات)
+ * @param {string} roleId
+ * @param {object} data – مثلاً { permissionIds: string[] } أو حقول الدور
+ */
+export async function updateRole(roleId, data) {
+  const body = Array.isArray(data) ? { permissionIds: data } : (data?.permissionIds != null ? data : { ...data });
+  const res = await apiClient.put(`${ROLES_BASE}/${roleId}`, body);
+  return res.data?.data ?? res.data;
+}
 
-export { getRoles, getRoleById, updateRole, getPermissions };
+/**
+ * DELETE /rbac/roles/:id – حذف دور
+ */
+export async function deleteRole(roleId) {
+  const res = await apiClient.delete(`${ROLES_BASE}/${roleId}`);
+  return res.data?.data ?? res.data;
+}
+
+/**
+ * GET /rbac/permissions – جلب كل الصلاحيات
+ */
+export async function getPermissions() {
+  const res = await apiClient.get(PERMISSIONS_BASE);
+  const raw = res.data?.data ?? res.data;
+  return Array.isArray(raw) ? raw : raw?.items ?? raw?.records ?? [];
+}
+
+/**
+ * POST /rbac/permissions – إنشاء صلاحية جديدة
+ * @param {{ resource?: string, action?: string, permissionType?: string, slug?: string }} payload
+ */
+export async function createPermission(payload) {
+  const res = await apiClient.post(PERMISSIONS_BASE, payload);
+  return res.data?.data ?? res.data;
+}
