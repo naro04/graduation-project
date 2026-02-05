@@ -7,7 +7,7 @@ const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).hr
 const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
 const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
 
-const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [] }) => {
+const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [], employeesLoading = false }) => {
     if (!isOpen) return null;
 
     // Mock employee photos mapping (in real app, this would come from employee data)
@@ -49,7 +49,9 @@ const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [] }) =
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-[24px] bg-[#FFFFFF]">
-                    {employees.length === 0 ? (
+                    {employeesLoading ? (
+                        <p className="text-center text-gray-500 py-8">Loading employees...</p>
+                    ) : employees.length === 0 ? (
                         <p className="text-center text-gray-500 py-8">No employees found for this activity.</p>
                     ) : (
                         <>

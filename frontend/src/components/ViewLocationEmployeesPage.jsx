@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getLocations, getLocationEmployees } from "../services/locations";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -19,49 +21,64 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 
 const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const { locationName } = useParams();
   const [activeMenu, setActiveMenu] = useState("5-3");
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const decodedLocationName = locationName ? decodeURIComponent(locationName) : "";
 
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample employees for locations
-  const locationEmployeesData = {
-    "Gaza Office": Array.from({ length: 15 }, (_, i) => {
-      const baseEmployees = [
-        { name: "Mohamed Ali", department: "Office", position: "Data Entry", photo: MohamedAliPhoto },
-        { name: "Amal Ahmed", department: "Field Operation", position: "Trainer", photo: AmalAhmedPhoto },
-        { name: "Amjad Saeed", department: "HR", position: "HR Manager", photo: AmjadSaeedPhoto },
-        { name: "Jana Hassan", department: "IT", position: "System Administration", photo: JanaHassanPhoto },
-        { name: "Hasan Jaber", department: "Project Management", position: "Project Manager", photo: HasanJaberPhoto }
-      ];
-      return { id: i + 1, ...baseEmployees[i % 5] };
-    }),
-    "Field Site A": Array.from({ length: 10 }, (_, i) => {
-      const baseEmployees = [
-        { name: "Mohamed Ali", department: "Office", position: "Data Entry", photo: MohamedAliPhoto },
-        { name: "Amal Ahmed", department: "Field Operation", position: "Trainer", photo: AmalAhmedPhoto }
-      ];
-      return { id: i + 1, ...baseEmployees[i % 2] };
-    }),
-    "Training Center": []
-  };
-
-  const decodedLocationName = locationName ? decodeURIComponent(locationName) : "";
-  const employees = locationEmployeesData[decodedLocationName] || [];
+  // Resolve location by name and fetch employees from API
+  useEffect(() => {
+    if (!decodedLocationName) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getLocations()
+      .then((locations) => {
+        if (cancelled) return;
+        const loc = Array.isArray(locations)
+          ? locations.find((l) => (l.name || "").trim() === decodedLocationName.trim())
+          : null;
+        if (!loc?.id) {
+          setEmployees([]);
+          setLoading(false);
+          return;
+        }
+        return getLocationEmployees(loc.id).then((list) => {
+          if (!cancelled) setEmployees(Array.isArray(list) ? list : []);
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.response?.data?.message || err?.message || "Failed to load employees");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [decodedLocationName]);
 
   return (
     <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar 
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -98,10 +115,10 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                       <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
               </div>
@@ -145,8 +162,19 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
               </p>
             </div>
 
+            {/* Error */}
+            {error && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Employees Table */}
-            {employees.length > 0 ? (
+            {loading ? (
+              <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[40px] text-center">
+                <p className="text-[14px] text-[#6B7280]">Loading employees...</p>
+              </div>
+            ) : employees.length > 0 ? (
               <div className="bg-white border border-[#E0E0E0] rounded-[4px] overflow-hidden">
                 {/* Table Header */}
                 <div 
@@ -193,9 +221,14 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                 </div>
 
                 {/* Table Rows */}
-                {employees.map((employee, index) => (
+                {employees.map((employee, index) => {
+                  const name = employee.name ?? employee.full_name ?? employee.employee_name ?? "";
+                  const department = employee.department ?? employee.department_name ?? "";
+                  const position = employee.position ?? employee.position_name ?? "";
+                  const photo = employee.photo ?? employee.avatar_url ?? employee.profile_image ?? MohamedAliPhoto;
+                  return (
                   <div 
-                    key={employee.id}
+                    key={employee.id ?? index}
                     className={`grid grid-cols-[2fr_1fr_1fr] border-b border-[#E0E0E0] ${
                       index % 2 === 0 ? 'bg-white' : 'bg-[#F9FAFB]'
                     }`}
@@ -208,9 +241,10 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                       }}
                     >
                       <img 
-                        src={employee.photo} 
-                        alt={employee.name}
+                        src={photo} 
+                        alt={name}
                         className="w-[40px] h-[40px] rounded-full object-cover"
+                        onError={(e) => { e.target.src = MohamedAliPhoto; }}
                       />
                       <span 
                         className="text-[14px] text-left"
@@ -220,7 +254,7 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                           color: '#000000'
                         }}
                       >
-                        {employee.name}
+                        {name}
                       </span>
                     </div>
                     <div 
@@ -234,7 +268,7 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                         borderRight: '1px solid #E0E0E0'
                       }}
                     >
-                      {employee.department}
+                      {department}
                     </div>
                     <div 
                       className="flex items-center justify-center text-center"
@@ -246,10 +280,10 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                         padding: '12px 16px'
                       }}
                     >
-                      {employee.position}
+                      {position}
                     </div>
                   </div>
-                ))}
+                );})}
               </div>
             ) : (
               <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[40px] text-center">

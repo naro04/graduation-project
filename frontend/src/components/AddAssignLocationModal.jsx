@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-const AddAssignLocationModal = ({ isOpen, onClose, locations, employees }) => {
+const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [], onSave }) => {
     const navigate = useNavigate();
 
     // Form state
@@ -12,6 +12,8 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations, employees }) => {
     const [selectedEmployees, setSelectedEmployees] = useState([]);
     const [numberOfDays, setNumberOfDays] = useState(1);
     const [activityDates, setActivityDates] = useState([""]);
+    const [saving, setSaving] = useState(false);
+    const [validationError, setValidationError] = useState("");
 
     // Reset form when opening
     useEffect(() => {
@@ -23,6 +25,7 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations, employees }) => {
             setSelectedEmployees([]);
             setNumberOfDays(1);
             setActivityDates([""]);
+            setValidationError("");
         }
     }, [isOpen]);
 
@@ -46,10 +49,34 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations, employees }) => {
         });
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        console.log('Assign location:', formData, selectedEmployees, numberOfDays, activityDates);
-        onClose();
+        setValidationError("");
+        const locationId = (formData.location || "").toString().trim();
+        if (!locationId) {
+            setValidationError("Please select a location.");
+            return;
+        }
+        if (!selectedEmployees.length) {
+            setValidationError("Please select at least one employee.");
+            return;
+        }
+        if (!onSave) {
+            onClose();
+            return;
+        }
+        setSaving(true);
+        try {
+            const result = onSave(locationId, selectedEmployees);
+            if (result && typeof result.then === "function") {
+                await result;
+            }
+            onClose();
+        } catch (err) {
+            setValidationError(err?.response?.data?.message || err?.message || "Failed to save.");
+        } finally {
+            setSaving(false);
+        }
     };
 
     if (!isOpen) return null;
@@ -119,9 +146,11 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations, employees }) => {
                                         }}
                                     >
                                         <option value="" disabled style={{ color: '#9CA3AF' }}>Select Location</option>
-                                        {locations.map((location) => (
-                                            <option key={location} value={location} style={{ color: '#727272' }}>{location}</option>
-                                        ))}
+                                        {(Array.isArray(locations) ? locations : []).map((loc) => {
+                                            const id = typeof loc === 'object' ? (loc.id ?? loc.location_id) : loc;
+                                            const name = typeof loc === 'object' ? (loc.name ?? loc.location_name ?? '') : String(loc);
+                                            return <option key={id ?? name} value={id ?? name} style={{ color: '#727272' }}>{name || id}</option>;
+                                        })}
                                     </select>
                                     <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -284,19 +313,27 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations, employees }) => {
                             </div>
                         </div>
 
+                        {validationError && (
+                            <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                                {validationError}
+                            </div>
+                        )}
+
                         <div className="flex items-center justify-center gap-[20px] mt-[32px]">
                             <button
                                 type="button"
                                 onClick={onClose}
-                                className="w-[164px] h-[34px] rounded-[5px] bg-white border border-[#B5B1B1] text-[#000000] font-semibold text-[16px] flex items-center justify-center hover:bg-gray-50 transition-colors shadow-[0_2px_4px_rgba(0,0,0,0.25)]"
+                                disabled={saving}
+                                className="w-[164px] h-[34px] rounded-[5px] bg-white border border-[#B5B1B1] text-[#000000] font-semibold text-[16px] flex items-center justify-center hover:bg-gray-50 transition-colors shadow-[0_2px_4px_rgba(0,0,0,0.25)] disabled:opacity-60"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="submit"
-                                className="w-[170px] h-[34px] rounded-[5px] bg-[#00564F] border border-[#B5B1B1] text-white font-semibold text-[16px] flex items-center justify-center hover:opacity-90 transition-opacity shadow-[0_2px_4px_rgba(0,0,0,0.25)]"
+                                disabled={saving}
+                                className="w-[170px] h-[34px] rounded-[5px] bg-[#00564F] border border-[#B5B1B1] text-white font-semibold text-[16px] flex items-center justify-center hover:opacity-90 transition-opacity shadow-[0_2px_4px_rgba(0,0,0,0.25)] disabled:opacity-60"
                             >
-                                Assign Location
+                                {saving ? "Saving..." : "Assign Location"}
                             </button>
                         </div>
                     </form>

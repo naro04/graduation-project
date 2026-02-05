@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LogoutModal from "./LogoutModal";
+import { getLeaves, updateLeaveStatus, deleteLeave, createLeave } from "../services/leaves";
+import { getProfileMe } from "../services/profile";
+import { getEmployees } from "../services/employees";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -31,6 +35,8 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 
 const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("6-1");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLeaveType, setSelectedLeaveType] = useState("All Leave Type");
@@ -54,73 +60,78 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
   const statusDropdownRef = useRef(null);
   const bulkActionsDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
+  const tableContainerRef = useRef(null);
+  const mobileResultsRef = useRef(null);
+
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const formatDateShort = (val) => {
+    if (!val || typeof val !== "string") return "—";
+    try {
+      const d = new Date(val.trim());
+      if (Number.isNaN(d.getTime())) return val;
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    } catch {
+      return val;
+    }
+  };
+
+  const fetchLeaveRequests = async () => {
+    try {
+      setLoading(true);
+      const data = await getLeaves();
+      const list = Array.isArray(data) ? data : [];
+      const formatted = list.map((item) => {
+        const start = item.start_date ?? item.startDate;
+        const end = item.end_date ?? item.endDate;
+        const dateRangeStr =
+          start && end ? `${formatDateShort(start)} - ${formatDateShort(end)}` : (item.date_range || "—");
+        const submitted = item.submitted_date ?? item.submittedDate;
+        return {
+          id: item.id,
+          employeeName: item.employee_name ?? item.employeeName ?? "-",
+          employeePhoto: item.avatar_url ?? item.employeePhoto ?? AmeerJamalPhoto,
+          position: item.position ?? "—",
+          department: item.department ?? "—",
+          leaveType: item.leave_type ?? item.leaveType ?? "—",
+          dateRange: typeof dateRangeStr === "string" && dateRangeStr.length > 35 ? `${formatDateShort(start)} - ${formatDateShort(end)}` : dateRangeStr,
+          startDate: start ? formatDateShort(start) : "—",
+          endDate: end ? formatDateShort(end) : "—",
+          totalDays: item.total_days ?? item.totalDays ?? 0,
+          reason: item.reason ?? "—",
+          adminNotes: item.admin_notes ?? item.adminNotes ?? "",
+          submittedDate: formatDateShort(submitted) || "—",
+          status: item.status ?? "Pending",
+        };
+      });
+      setLeaveRequests(formatted);
+    } catch (err) {
+      console.error("Failed to fetch leave requests:", err);
+      setLeaveRequests([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaveRequests();
+  }, []);
 
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample leave requests data
-  const leaveRequestsData = [
-    {
-      id: 1,
-      employeeName: "Ameer Jamal",
-      employeePhoto: AmeerJamalPhoto,
-      position: "Data Entry",
-      department: "Office",
-      leaveType: "Annual Leave",
-      dateRange: "12/24/2025 - 12/29/2025",
-      startDate: "12/24/2025",
-      endDate: "12/29/2025",
-      totalDays: 6,
-      reason: "Family vacation during holidays",
-      adminNotes: "",
-      submittedDate: "12/14/2025",
-      status: "Pending"
-    },
-    {
-      id: 2,
-      employeeName: "Amal Ahmed",
-      employeePhoto: AmalAhmedPhoto,
-      position: "Data Entry",
-      department: "Office",
-      leaveType: "Sick Leave",
-      dateRange: "12/19/2025 - 12/21/2025",
-      startDate: "12/19/2025",
-      endDate: "12/21/2025",
-      totalDays: 3,
-      reason: "Catch cold",
-      adminNotes: "Denied - critical client meetings scheduled",
-      submittedDate: "12/18/2025",
-      status: "Rejected"
-    },
-    {
-      id: 3,
-      employeeName: "Hasan Jaber",
-      employeePhoto: HasanJaberPhoto,
-      position: "Data Entry",
-      department: "Office",
-      leaveType: "Annual Leave",
-      dateRange: "12/17/2025 - 12/19/2025",
-      startDate: "12/17/2025",
-      endDate: "12/19/2025",
-      totalDays: 3,
-      reason: "Personal matters",
-      adminNotes: "Approved - adequate coverage available",
-      submittedDate: "12/18/2025",
-      status: "Approved"
-    }
-  ];
-
-  // Calculate summary stats
+  // Summary stats from API data
   const summaryStats = {
-    pending: leaveRequestsData.filter(r => r.status === "Pending").length,
-    approved: leaveRequestsData.filter(r => r.status === "Approved").length,
-    rejected: leaveRequestsData.filter(r => r.status === "Rejected").length
+    pending: leaveRequests.filter((r) => r.status === "Pending").length,
+    approved: leaveRequests.filter((r) => r.status === "Approved").length,
+    rejected: leaveRequests.filter((r) => r.status === "Rejected").length,
   };
 
   // Employees list
@@ -146,7 +157,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
   const requestLeaveEmployeeDropdownRef = useRef(null);
   const requestLeaveTypeDropdownRef = useRef(null);
   const [requestLeaveFormData, setRequestLeaveFormData] = useState({
-    employee: "",
+    employeeId: "",
     leaveType: "",
     startDate: "",
     endDate: "",
@@ -154,6 +165,45 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
     reason: "",
     supportingDocument: null
   });
+
+  // Employees list for "Request leave" modal (id + full_name) and current user's employee_id
+  const [employeesForLeaveModal, setEmployeesForLeaveModal] = useState([]);
+  const [currentUserEmployeeId, setCurrentUserEmployeeId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getEmployees();
+        if (cancelled) return;
+        const raw = res?.data ?? res?.results ?? (Array.isArray(res) ? res : []);
+        const list = Array.isArray(raw) ? raw : [];
+        setEmployeesForLeaveModal(
+          list.map((e) => ({
+            id: e.id,
+            full_name: e.full_name || [e.first_name, e.last_name].filter(Boolean).join(" ").trim() || "—",
+          }))
+        );
+      } catch (_) {
+        if (!cancelled) setEmployeesForLeaveModal([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await getProfileMe();
+        if (cancelled) return;
+        setCurrentUserEmployeeId(profile?.employee?.id ?? profile?.employee_id ?? null);
+      } catch (_) {
+        if (!cancelled) setCurrentUserEmployeeId(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Calculate total days when start and end dates change
   useEffect(() => {
@@ -168,19 +218,66 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
     }
   }, [requestLeaveFormData.startDate, requestLeaveFormData.endDate]);
 
-  const handleRequestLeaveSubmit = (e) => {
+  const [requestLeaveSubmitting, setRequestLeaveSubmitting] = useState(false);
+  const [requestLeaveError, setRequestLeaveError] = useState(null);
+
+  const handleRequestLeaveSubmit = async (e) => {
     e.preventDefault();
-    console.log("Submit leave request:", requestLeaveFormData);
-    setShowRequestLeaveModal(false);
-    setRequestLeaveFormData({
-      employee: "",
-      leaveType: "",
-      startDate: "",
-      endDate: "",
-      totalDays: "",
-      reason: "",
-      supportingDocument: null
-    });
+    setRequestLeaveError(null);
+    const { employeeId, leaveType, startDate, endDate, totalDays, reason, supportingDocument } = requestLeaveFormData;
+    if (!leaveType || leaveType === "All Leave Type" || !startDate || !endDate) {
+      setRequestLeaveError("Please select leave type and date range.");
+      return;
+    }
+    if (!reason?.trim()) {
+      setRequestLeaveError("Please provide a reason for the leave request.");
+      return;
+    }
+    const resolvedEmployeeId = employeeId || currentUserEmployeeId;
+    if (!resolvedEmployeeId) {
+      setRequestLeaveError("Unable to identify employee. Please select an employee or try again.");
+      return;
+    }
+    try {
+      setRequestLeaveSubmitting(true);
+      const hasFile = supportingDocument && supportingDocument instanceof File;
+      if (hasFile) {
+        const fd = new FormData();
+        fd.append("employee_id", resolvedEmployeeId);
+        fd.append("leave_type", leaveType);
+        fd.append("start_date", startDate);
+        fd.append("end_date", endDate);
+        fd.append("total_days", String(totalDays || ""));
+        fd.append("reason", reason);
+        fd.append("supporting_document", supportingDocument);
+        await createLeave(fd);
+      } else {
+        await createLeave({
+          employee_id: resolvedEmployeeId,
+          leave_type: leaveType,
+          start_date: startDate,
+          end_date: endDate,
+          total_days: Number(totalDays) || undefined,
+          reason: reason || undefined,
+        });
+      }
+      setShowRequestLeaveModal(false);
+      setRequestLeaveFormData({
+        employeeId: "",
+        leaveType: "",
+        startDate: "",
+        endDate: "",
+        totalDays: "",
+        reason: "",
+        supportingDocument: null
+      });
+      await fetchLeaveRequests();
+    } catch (err) {
+      console.error("Submit leave request failed:", err);
+      setRequestLeaveError(err.response?.data?.message ?? err.message ?? "Failed to submit request.");
+    } finally {
+      setRequestLeaveSubmitting(false);
+    }
   };
 
   // Close dropdowns when clicking outside
@@ -217,11 +314,21 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
     };
   }, []);
 
-  // Filter data
-  const filteredData = leaveRequestsData.filter(request => {
-    const matchesSearch = request.employeeName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesLeaveType = selectedLeaveType === "All Leave Type" || request.leaveType === selectedLeaveType;
-    const matchesStatus = selectedStatus === "All Status" || request.status === selectedStatus;
+  // Filter data (case-insensitive: API may return "pending"/"approved" vs dropdown "Pending"/"Approved")
+  const filteredData = leaveRequests.filter((request) => {
+    const matchesSearch = (request.employeeName || "")
+      .toString()
+      .toLowerCase()
+      .includes((searchQuery || "").toString().trim().toLowerCase());
+    const reqType = (request.leaveType || "").toString().trim().replace(/_/g, " ");
+    const selType = (selectedLeaveType || "").trim().replace(/_/g, " ");
+    const matchesLeaveType =
+      selectedLeaveType === "All Leave Type" ||
+      reqType === selType ||
+      reqType.toLowerCase() === selType.toLowerCase();
+    const reqStatus = (request.status || "").toString().trim().toLowerCase();
+    const selStatus = (selectedStatus || "").trim().toLowerCase();
+    const matchesStatus = selectedStatus === "All Status" || reqStatus === selStatus;
     return matchesSearch && matchesLeaveType && matchesStatus;
   });
 
@@ -265,7 +372,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           onLogoutClick={() => setIsLogoutModalOpen(true)}
@@ -311,14 +418,14 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -581,8 +688,9 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
             {/* Filters and Search */}
             <div className="flex items-center gap-[16px] mb-[24px] flex-wrap">
               {/* Leave Type Dropdown */}
-              <div className="relative" ref={leaveTypeDropdownRef}>
+              <div className="relative z-[100]" ref={leaveTypeDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[180px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -593,11 +701,14 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isLeaveTypeDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[180px] max-h-[200px] overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] min-w-[180px] max-h-[200px] overflow-y-auto">
                     {leaveTypes.map((type) => (
                       <button
                         key={type}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedLeaveType(type);
                           setIsLeaveTypeDropdownOpen(false);
                           setCurrentPage(1);
@@ -620,8 +731,9 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Status Dropdown */}
-              <div className="relative" ref={statusDropdownRef}>
+              <div className="relative z-[100]" ref={statusDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -632,11 +744,14 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[140px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] min-w-[140px]">
                     {statusOptions.map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                           setCurrentPage(1);
@@ -698,7 +813,6 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                     <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[8px] shadow-lg z-50 min-w-[200px]">
                       <button
                         onClick={() => {
-                          console.log('Delete selected:', selectedRequests);
                           setIsBulkActionsDropdownOpen(false);
                           setShowWarningModal(true);
                         }}
@@ -727,9 +841,23 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
             )}
 
             {/* Leave Requests Table */}
-            <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+            <div
+              ref={tableContainerRef}
+              tabIndex={0}
+              className="bg-white rounded-[10px] overflow-hidden w-full max-w-full focus:outline-none focus-within:ring-2 focus-within:ring-[#004D40]/20"
+              style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', overflowX: 'hidden' }}
+            >
+              <div className="w-full max-w-full overflow-x-hidden" style={{ overflowX: 'hidden' }}>
+                <table className="w-full table-fixed" style={{ tableLayout: 'fixed', width: '100%', maxWidth: '100%' }}>
+                  <colgroup>
+                    <col style={{ width: '4%' }} />
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '18%' }} />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
@@ -746,7 +874,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         Leave Type
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, fontSize: '14px' }}>
                         Date Range
                       </th>
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
@@ -789,7 +917,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                               {request.leaveType}
                             </span>
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center overflow-hidden" style={{ wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: 0 }}>
                             <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
                               {request.dateRange}
                             </span>
@@ -1014,7 +1142,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1077,8 +1205,9 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
           {/* Filters */}
           <div className="flex flex-col gap-3 mb-6">
             {/* Leave Type Dropdown */}
-            <div className="relative" ref={leaveTypeDropdownRef}>
+            <div className="relative z-[100]" ref={leaveTypeDropdownRef}>
               <button
+                type="button"
                 onClick={() => setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -1088,11 +1217,14 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isLeaveTypeDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 max-h-[200px] overflow-y-auto">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] max-h-[200px] overflow-y-auto">
                   {leaveTypes.map((type) => (
                     <button
                       key={type}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedLeaveType(type);
                         setIsLeaveTypeDropdownOpen(false);
                         setCurrentPage(1);
@@ -1108,8 +1240,9 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Status Dropdown */}
-            <div className="relative" ref={statusDropdownRef}>
+            <div className="relative z-[100]" ref={statusDropdownRef}>
               <button
+                type="button"
                 onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -1119,11 +1252,14 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isStatusDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100]">
                   {statusOptions.map((status) => (
                     <button
                       key={status}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
                         setCurrentPage(1);
@@ -1157,7 +1293,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
           </div>
 
           {/* Leave Request Cards */}
-          <div className="space-y-4">
+          <div ref={mobileResultsRef} tabIndex={0} className="space-y-4 focus:outline-none focus-within:ring-2 focus-within:ring-[#004D40]/20 rounded-[10px]">
             {paginatedData.length > 0 ? (
               paginatedData.map((request) => (
                 <div
@@ -1972,13 +2108,18 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    // Handle approve
-                    console.log("Approve leave request:", selectedRequest.id, "Notes:", approveAdminNotes);
-                    setShowApproveModal(false);
-                    setShowDetailsModal(false);
-                    setSelectedRequest(null);
-                    setApproveAdminNotes("");
+                  onClick={async () => {
+                    try {
+                      await updateLeaveStatus(selectedRequest.id, "Approved", approveAdminNotes);
+                      await fetchLeaveRequests();
+                      setShowApproveModal(false);
+                      setShowDetailsModal(false);
+                      setSelectedRequest(null);
+                      setApproveAdminNotes("");
+                    } catch (err) {
+                      console.error("Failed to approve:", err);
+                      alert(err.response?.data?.message ?? "Failed to approve request");
+                    }
                   }}
                   className="px-[24px] py-[10px] rounded-[5px] hover:opacity-90 transition-opacity"
                   style={{
@@ -2182,13 +2323,18 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
               <div className="flex items-center justify-center gap-[12px]">
                 <button
                   type="button"
-                  onClick={() => {
-                    // Handle reject
-                    console.log("Reject leave request:", selectedRequest.id, "Notes:", rejectAdminNotes);
-                    setShowRejectModal(false);
-                    setShowDetailsModal(false);
-                    setSelectedRequest(null);
-                    setRejectAdminNotes("");
+                  onClick={async () => {
+                    try {
+                      await updateLeaveStatus(selectedRequest.id, "Rejected", rejectAdminNotes);
+                      await fetchLeaveRequests();
+                      setShowRejectModal(false);
+                      setShowDetailsModal(false);
+                      setSelectedRequest(null);
+                      setRejectAdminNotes("");
+                    } catch (err) {
+                      console.error("Failed to reject:", err);
+                      alert(err.response?.data?.message ?? "Failed to reject request");
+                    }
                   }}
                   className="px-[24px] py-[10px] rounded-[5px] hover:opacity-90 transition-opacity"
                   style={{
@@ -2281,24 +2427,24 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                         type="button"
                         onClick={() => setIsRequestLeaveEmployeeDropdownOpen(!isRequestLeaveEmployeeDropdownOpen)}
                         className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between hover:border-[#004D40] transition-colors"
-                        style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 400, color: requestLeaveFormData.employee ? '#000000' : '#9CA3AF' }}
+                        style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 400, color: requestLeaveFormData.employeeId ? '#000000' : '#9CA3AF' }}
                       >
-                        <span>{requestLeaveFormData.employee || "Select an Employee"}</span>
+                        <span>{requestLeaveFormData.employeeId ? (employeesForLeaveModal.find(emp => emp.id === requestLeaveFormData.employeeId)?.full_name || "—") : "Select an Employee (optional – uses you if empty)"}</span>
                         <svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                       </button>
                       {isRequestLeaveEmployeeDropdownOpen && (
                         <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 max-h-[200px] overflow-y-auto">
-                          {employeesList.map((employee) => (
+                          {employeesForLeaveModal.map((emp) => (
                             <button
-                              key={employee}
+                              key={emp.id}
                               type="button"
                               onClick={() => {
-                                setRequestLeaveFormData(prev => ({ ...prev, employee }));
+                                setRequestLeaveFormData(prev => ({ ...prev, employeeId: emp.id }));
                                 setIsRequestLeaveEmployeeDropdownOpen(false);
                               }}
-                              className={`w-full px-[16px] py-[10px] text-left transition-colors ${requestLeaveFormData.employee === employee
+                              className={`w-full px-[16px] py-[10px] text-left transition-colors ${requestLeaveFormData.employeeId === emp.id
                                 ? 'bg-[#E5E7EB] text-[#333333]'
                                 : 'text-[#333333] hover:bg-[#F5F7FA]'
                                 } first:rounded-t-[5px] last:rounded-b-[5px]`}
@@ -2308,7 +2454,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                                 fontWeight: 400
                               }}
                             >
-                              {employee}
+                              {emp.full_name}
                             </button>
                           ))}
                         </div>
@@ -2608,12 +2754,19 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   </div>
                 </div>
 
+                {requestLeaveError && (
+                  <p className="mt-4 text-red-600 text-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
+                    {requestLeaveError}
+                  </p>
+                )}
+
                 {/* Footer Buttons */}
                 <div className="flex items-center justify-between gap-[16px] mt-[32px]">
                   <button
                     type="button"
                     onClick={() => setShowRequestLeaveModal(false)}
-                    className="flex-1 py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white text-[#333333] hover:bg-[#F5F7FA] transition-colors"
+                    disabled={requestLeaveSubmitting}
+                    className="flex-1 py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white text-[#333333] hover:bg-[#F5F7FA] transition-colors disabled:opacity-50"
                     style={{
                       fontFamily: 'Inter, sans-serif',
                       fontSize: '14px',
@@ -2624,14 +2777,15 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-[10px] rounded-[5px] bg-[#004D40] text-white hover:opacity-90 transition-opacity"
+                    disabled={requestLeaveSubmitting}
+                    className="flex-1 py-[10px] rounded-[5px] bg-[#004D40] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                     style={{
                       fontFamily: 'Inter, sans-serif',
                       fontSize: '14px',
                       fontWeight: 500
                     }}
                   >
-                    Submit Request
+                    {requestLeaveSubmitting ? "Submitting…" : "Submit Request"}
                   </button>
                 </div>
               </form>
@@ -2719,10 +2873,16 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
             {/* Action Buttons */}
             <div className="flex items-center justify-center gap-[20px] px-[20px]">
               <button
-                onClick={() => {
-                  console.log('Deleting selected requests:', selectedRequests);
-                  setSelectedRequests([]);
-                  setShowWarningModal(false);
+                onClick={async () => {
+                  try {
+                    await Promise.all(selectedRequests.map((id) => deleteLeave(id)));
+                    await fetchLeaveRequests();
+                    setSelectedRequests([]);
+                    setShowWarningModal(false);
+                  } catch (err) {
+                    console.error("Failed to delete:", err);
+                    alert(err.response?.data?.message ?? "Failed to delete request(s)");
+                  }
                 }}
                 className="text-white focus:outline-none"
                 style={{

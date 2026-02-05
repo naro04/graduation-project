@@ -1,14 +1,19 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // Action icons
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
 const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).href;
 
+const roleDisplayNames = { superAdmin: "Super Admin", hr: "HR Admin", manager: "Manager", fieldEmployee: "Field Employee", officer: "Officer" };
+
 const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const employee = location.state?.employee;
   const selectedDate = location.state?.date || new Date(2025, 11, 7);
   const [showWarningModal, setShowWarningModal] = useState(false);
@@ -45,7 +50,7 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         {/* Sidebar Component */}
         <Sidebar 
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu="3-2"
           setActiveMenu={() => {}}
         />
@@ -83,10 +88,10 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                       <img src={new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href} alt="" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">Super Admin</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
               </div>

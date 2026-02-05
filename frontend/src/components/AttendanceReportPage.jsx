@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LogoutModal from "./LogoutModal";
+import { getAttendanceReports, getAttendanceLocations } from "../services/attendance";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -22,6 +24,8 @@ const JanaHassanPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).hr
 
 const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("7-1");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("All Locations");
@@ -38,6 +42,10 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [reportsFromApi, setReportsFromApi] = useState([]);
+  const [reportLocations, setReportLocations] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsError, setReportsError] = useState(null);
   const locationDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const exportAllDropdownRef = useRef(null);
@@ -48,81 +56,78 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample attendance data
-  const attendanceData = [
-    {
-      id: 1,
-      employeeName: "Mohamed Ali",
-      employeePhoto: MohamedAliPhoto,
-      employeeId: "15259",
-      checkIn: "08:00 Am",
-      checkOut: "04:10 Pm",
-      attendanceType: "Office",
-      location: "Head Office",
-      status: "Present"
-    },
-    {
-      id: 2,
-      employeeName: "Amal Ahmed",
-      employeePhoto: AmalAhmedPhoto,
-      employeeId: "25896",
-      checkIn: "08:05 Am",
-      checkOut: "On Duty",
-      attendanceType: "GPS",
-      location: "Hattin School",
-      status: "In progress"
-    },
-    {
-      id: 3,
-      employeeName: "Amjad Saeed",
-      employeePhoto: AmjadSaeedPhoto,
-      employeeId: "14736",
-      checkIn: "08:02 Am",
-      checkOut: "-",
-      attendanceType: "Office",
-      location: "Head Office",
-      status: "Missing Check-out"
-    },
-    {
-      id: 4,
-      employeeName: "Jana Hassan",
-      employeePhoto: JanaHassanPhoto,
-      employeeId: "85236",
-      checkIn: "10:02 Am",
-      checkOut: "04:20 Pm",
-      attendanceType: "Office",
-      location: "Head Office",
-      status: "Late"
-    }
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    setReportsLoading(true);
+    setReportsError(null);
+    Promise.all([
+      getAttendanceReports({ from: fromDate, to: toDate }).catch((err) => {
+        if (!cancelled) setReportsError(err?.response?.data?.message || err?.message || "Failed to load reports");
+        return [];
+      }),
+      getAttendanceLocations().catch(() => []),
+    ]).then(([list, locs]) => {
+      if (cancelled) return;
+      setReportsFromApi(Array.isArray(list) ? list : []);
+      setReportLocations(Array.isArray(locs) ? locs : []);
+    }).finally(() => {
+      if (!cancelled) setReportsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [fromDate, toDate]);
 
-  // Daily attendance data for bar chart - matching the image
-  const dailyAttendanceData = [
-    { day: "Sun", present: 38, late: 6, absent: 3 },
-    { day: "Mon", present: 39, late: 2, absent: 1 },
-    { day: "Tue", present: 35, late: 8, absent: 2 },
-    { day: "Wed", present: 39, late: 4, absent: 2 },
-    { day: "Thu", present: 34, late: 9, absent: 1 },
-    { day: "Fri", present: 0, late: 0, absent: 0 },
-    { day: "Sat", present: 0, late: 0, absent: 0 }
-  ];
+  const attendanceData = React.useMemo(() => {
+    return (reportsFromApi || []).map((r) => ({
+      id: r.id ?? r.attendance_id,
+      employeeName: r.employee_name ?? r.employeeName ?? "—",
+      employeePhoto: r.photo ?? r.avatar_url ?? MohamedAliPhoto,
+      employeeId: String(r.employee_id ?? r.employeeId ?? "—"),
+      checkIn: r.check_in ?? r.check_in_time ?? r.checkIn ?? "—",
+      checkOut: r.check_out ?? r.check_out_time ?? r.checkOut ?? "—",
+      attendanceType: r.attendance_type ?? r.check_method ?? r.type ?? "—",
+      location: r.location_name ?? r.location ?? "—",
+      status: r.status ?? "—",
+    }));
+  }, [reportsFromApi]);
 
-  // Attendance status distribution for pie chart
-  const attendanceDistribution = {
-    present: 89,
-    late: 6,
-    absent: 4,
-    missingCheckout: 1
-  };
+  const dailyAttendanceData = React.useMemo(() => {
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const byDay = reportsFromApi.reduce((acc, r) => {
+      const d = r.date ?? r.check_in_date ?? r.checkInDate;
+      if (!d) return acc;
+      const day = new Date(d).getDay();
+      const key = dayNames[day];
+      if (!acc[key]) acc[key] = { present: 0, late: 0, absent: 0 };
+      const st = (r.status || "").toLowerCase();
+      if (st === "present") acc[key].present++;
+      else if (st === "late") acc[key].late++;
+      else if (st === "absent") acc[key].absent++;
+      return acc;
+    }, {});
+    return dayNames.map((day) => ({
+      day,
+      present: byDay[day]?.present ?? 0,
+      late: byDay[day]?.late ?? 0,
+      absent: byDay[day]?.absent ?? 0,
+    }));
+  }, [reportsFromApi]);
 
-  // Locations
-  const locations = ["All Locations", "Head Office", "Hattin School", "Branch Office"];
+  const attendanceDistribution = React.useMemo(() => {
+    const list = attendanceData;
+    const present = list.filter((r) => (r.status || "").toLowerCase() === "present").length;
+    const late = list.filter((r) => (r.status || "").toLowerCase() === "late").length;
+    const absent = list.filter((r) => (r.status || "").toLowerCase() === "absent").length;
+    const missingCheckout = list.filter((r) => (String(r.status || "").toLowerCase()).includes("missing") || (r.status || "").toLowerCase() === "missing check-out").length;
+    return { present, late, absent, missingCheckout: missingCheckout || 0 };
+  }, [attendanceData]);
+
+  const locations = ["All Locations", ...(reportLocations || []).map((l) => l.name ?? l.location_name ?? "").filter(Boolean)];
 
   // Status options
   const statusOptions = ["All Status", "Present", "Late", "Absent", "Missing Check-out", "In progress"];
@@ -181,10 +186,10 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     };
   }, [isExportAllDropdownOpen, isExportSelectedDropdownOpen]);
 
-  // Filter data
-  const filteredData = attendanceData.filter(record => {
-    const matchesSearch = record.employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      record.employeeId.includes(searchQuery);
+  const filteredData = attendanceData.filter((record) => {
+    const name = (record.employeeName || "").toLowerCase();
+    const id = String(record.employeeId || "");
+    const matchesSearch = name.includes(searchQuery.toLowerCase()) || id.includes(searchQuery);
     const matchesLocation = selectedLocation === "All Locations" || record.location === selectedLocation;
     const matchesStatus = selectedStatus === "All Status" || record.status === selectedStatus;
     return matchesSearch && matchesLocation && matchesStatus;
@@ -202,7 +207,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
 
   // Calculate pie chart segments
   const totalDistribution = attendanceDistribution.present + attendanceDistribution.late +
-    attendanceDistribution.absent + attendanceDistribution.missingCheckout;
+    attendanceDistribution.absent + attendanceDistribution.missingCheckout || 1;
   const presentAngle = (attendanceDistribution.present / totalDistribution) * 360;
   const lateAngle = (attendanceDistribution.late / totalDistribution) * 360;
   const absentAngle = (attendanceDistribution.absent / totalDistribution) * 360;
@@ -259,7 +264,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           onLogoutClick={() => setIsLogoutModalOpen(true)}
@@ -303,14 +308,14 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -447,6 +452,18 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
+            {reportsError && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {reportsError}
+              </div>
+            )}
+
+            {reportsLoading ? (
+              <div className="bg-white rounded-[10px] p-[40px] text-center" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
+                <p className="text-[14px] text-[#6B7280]">Loading attendance reports...</p>
+              </div>
+            ) : (
+            <>
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-[20px] mb-[32px]">
               {/* Daily Attendance Bar Chart */}
@@ -1085,6 +1102,8 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                 </button>
               </div>
             )}
+            </>
+            )}
           </div>
         </main>
       </div>
@@ -1167,7 +1186,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
