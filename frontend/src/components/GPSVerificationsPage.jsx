@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getGPSVerifications, getGPSVerificationsStats, verifyGPSCheckIn, updateGPSVerificationStatus, deleteGPSVerification } from "../services/gpsVerifications";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -29,19 +31,25 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 
 const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("3-2");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedDate, setSelectedDate] = useState(new Date(2025, 11, 7)); // December 7, 2025
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [isExportAllDropdownOpen, setIsExportAllDropdownOpen] = useState(false);
   const [isExportSelectedDropdownOpen, setIsExportSelectedDropdownOpen] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [employeeToDelete, setEmployeeToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [gpsVerifications, setGpsVerifications] = useState([]);
+  const [stats, setStats] = useState({ total_count: 0, verified_count: 0, suspicious_count: 0 });
+  const [isLoading, setIsLoading] = useState(true);
   const dateInputRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const exportAllDropdownRef = useRef(null);
@@ -49,6 +57,49 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
   const userDropdownRef = useRef(null);
   const pageContentRef = useRef(null);
   const mobileContentRef = useRef(null);
+
+  // Fetch GPS verifications and stats on mount
+  useEffect(() => {
+    fetchGPSData();
+  }, []);
+
+  const fetchGPSData = async () => {
+    try {
+      setIsLoading(true);
+      const [verificationsData, statsData] = await Promise.all([
+        getGPSVerifications(),
+        getGPSVerificationsStats()
+      ]);
+
+      const list = Array.isArray(verificationsData) ? verificationsData : [];
+      const formattedData = list.map(item => ({
+        id: item.id ?? item.attendance_id,
+        name: item.employee_name ?? item.employee_name_en ?? '-',
+        employeeId: String(item.employee_code ?? item.employee_id ?? ''),
+        checkIn: item.check_in_time ? new Date(item.check_in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
+        location: item.location_address ?? item.location_name ?? '-',
+        distanceDifference: item.distance_from_base != null ? `${Math.round(Number(item.distance_from_base))} m` : '-',
+        status: (item.gps_status ?? "Not Verified").replace(/\s+/g, " ").trim(),
+        photo: item.avatar_url ?? null,
+        originalData: item
+      }));
+
+      setGpsVerifications(formattedData);
+      const s = statsData && typeof statsData === 'object' ? statsData : {};
+      setStats({
+        total_count: Number(s.total_count ?? 0),
+        verified_count: Number(s.verified_count ?? 0),
+        suspicious_count: Number(s.suspicious_count ?? 0),
+        rejected_count: Number(s.rejected_count ?? 0),
+        not_verified_count: Number(s.not_verified_count ?? 0),
+      });
+    } catch (error) {
+      console.error('Failed to fetch GPS verifications:', error);
+      setGpsVerifications([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Scroll to top on mount
   useEffect(() => {
@@ -79,61 +130,20 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample GPS verification data
-  const gpsData = [
-    {
-      id: 1,
-      name: "Ameer Jamal",
-      employeeId: "45678",
-      checkIn: "08:00 Am",
-      location: "Hattin School",
-      distanceDifference: "51 m",
-      status: "Verified",
-      photo: AmeerJamalPhoto
-    },
-    {
-      id: 2,
-      name: "Amal Ahmed",
-      employeeId: "25896",
-      checkIn: "08:05 Am",
-      location: "School A",
-      distanceDifference: "150 m",
-      status: "Suspicious",
-      photo: AmalAhmedPhoto
-    },
-    {
-      id: 3,
-      name: "Hasan Jaber",
-      employeeId: "36258",
-      checkIn: "08:02 Am",
-      location: "School B",
-      distanceDifference: "-",
-      status: "Not Verified",
-      photo: HasanJaberPhoto
-    },
-    {
-      id: 4,
-      name: "Rania Abed",
-      employeeId: "98745",
-      checkIn: "10:02 Am",
-      location: "School C",
-      distanceDifference: "205 m",
-      status: "Rejected",
-      photo: RaniaAbedPhoto
-    }
-  ];
+  // Removed hardcoded data as we are using API
+
 
   // Summary statistics
   const summaryStats = {
-    totalGPSLog: 27,
-    verifiedLogs: 2,
-    suspiciousLogs: 1
+    totalGPSLog: stats.total_count || 0,
+    verifiedLogs: stats.verified_count || 0,
+    suspiciousLogs: stats.suspicious_count || 0
   };
 
   // Format date
@@ -194,11 +204,17 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
     };
   }, [isStatusDropdownOpen, isExportAllDropdownOpen, isExportSelectedDropdownOpen, isUserDropdownOpen]);
 
+  // Normalize status for comparison (API may return different casing)
+  const normalizeStatus = (s) => (s ? String(s).trim().toLowerCase() : "");
+  const statusMatches = (empStatus, filterStatus) =>
+    filterStatus === "All Status" || normalizeStatus(empStatus) === normalizeStatus(filterStatus);
+
   // Filter data based on search and status
-  const filteredData = gpsData.filter(employee => {
-    const matchesSearch = employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      employee.employeeId.includes(searchQuery);
-    const matchesStatus = selectedStatus === "All Status" || employee.status === selectedStatus;
+  const filteredData = gpsVerifications.filter((employee) => {
+    const matchesSearch =
+      employee.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      employee.employeeId?.toString().includes(searchQuery);
+    const matchesStatus = statusMatches(employee.status, selectedStatus);
     return matchesSearch && matchesStatus;
   });
 
@@ -226,7 +242,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -243,6 +259,8 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                 <input
                   type="text"
                   placeholder="Search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-[280px] h-[44px] pl-[48px] pr-[16px] rounded-[10px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40] transition-colors"
                   style={{ fontWeight: 400 }}
                 />
@@ -269,14 +287,14 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -621,6 +639,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
               {/* Status Dropdown */}
               <div className="relative" ref={statusDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                   className="px-[16px] py-[12px] rounded-[10px] border border-[#E0E0E0] bg-white flex items-center justify-between gap-[8px] cursor-pointer"
                   style={{ minWidth: '200px' }}
@@ -633,11 +652,17 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-10">
+                  <div
+                    className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-[100]"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
                     {["All Status", "Verified", "Suspicious", "Not Verified", "Rejected"].map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                         }}
@@ -723,9 +748,20 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
 
                   {/* Mark as reviewed */}
                   <button
-                    onClick={() => {
-                      console.log('Mark as reviewed', selectedEmployees);
-                      setSelectedEmployees([]);
+                    onClick={async () => {
+                      if (window.confirm('Are you sure you want to verify selected items?')) {
+                        try {
+                          setIsLoading(true);
+                          await Promise.all(selectedEmployees.map(id => verifyGPSCheckIn(id)));
+                          await fetchGPSData();
+                          setSelectedEmployees([]);
+                        } catch (error) {
+                          console.error("Failed to verify:", error);
+                          alert("Failed to verify selected items");
+                        } finally {
+                          setIsLoading(false);
+                        }
+                      }
                     }}
                     className="px-[16px] py-[8px] rounded-[8px] border border-[#E0E0E0] bg-white hover:bg-[#F5F7FA] transition-colors"
                     style={{ fontWeight: 500, fontSize: '14px' }}
@@ -735,9 +771,21 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
 
                   {/* Reject selected */}
                   <button
-                    onClick={() => {
-                      console.log('Reject selected', selectedEmployees);
-                      setSelectedEmployees([]);
+                    onClick={async () => {
+                      if (window.confirm('Are you sure you want to reject selected items?')) {
+                        try {
+                          setIsLoading(true);
+                          // Using updateGPSVerificationStatus with 'Rejected' status
+                          await Promise.all(selectedEmployees.map(id => updateGPSVerificationStatus(id, 'Rejected')));
+                          await fetchGPSData();
+                          setSelectedEmployees([]);
+                        } catch (error) {
+                          console.error("Failed to reject:", error);
+                          alert("Failed to reject selected items");
+                        } finally {
+                          setIsLoading(false);
+                        }
+                      }
                     }}
                     className="px-[16px] py-[8px] rounded-[8px] border border-[#E0E0E0] bg-white hover:bg-[#F5F7FA] transition-colors"
                     style={{ fontWeight: 500, fontSize: '14px' }}
@@ -843,6 +891,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                         <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
                           <div className="flex items-center justify-center gap-0">
                             <button
+                              type="button"
                               onClick={() => {
                                 navigate('/attendance/gps-location', {
                                   state: {
@@ -851,18 +900,19 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                                   }
                                 });
                               }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity cursor-pointer"
                               title="View"
                             >
                               <img src={ViewIcon} alt="View" className="w-full h-full object-contain" />
                             </button>
                             <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
                             <button
+                              type="button"
                               onClick={() => {
                                 setEmployeeToDelete(employee);
                                 setShowWarningModal(true);
                               }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity cursor-pointer"
                               title="Delete"
                             >
                               <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
@@ -1033,7 +1083,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1181,6 +1231,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
             {/* Status Dropdown */}
             <div className="relative" ref={statusDropdownRef}>
               <button
+                type="button"
                 onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                 className="w-full h-[44px] px-[16px] rounded-[10px] border border-[#E0E0E0] bg-white flex items-center justify-between gap-[8px] cursor-pointer"
               >
@@ -1192,11 +1243,17 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isStatusDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-10">
+                <div
+                  className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-[100]"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
                   {["All Status", "Verified", "Suspicious", "Not Verified", "Rejected"].map((status) => (
                     <button
                       key={status}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
                       }}
@@ -1252,6 +1309,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                   </div>
                   <div className="flex items-center gap-[8px]">
                     <button
+                      type="button"
                       onClick={() => {
                         navigate('/attendance/gps-location', {
                           state: {
@@ -1260,16 +1318,17 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                           }
                         });
                       }}
-                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors"
+                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors cursor-pointer"
                     >
                       <img src={ViewIcon} alt="View" className="w-[16px] h-[16px] object-contain" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setEmployeeToDelete(employee);
                         setShowWarningModal(true);
                       }}
-                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors"
+                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors cursor-pointer"
                     >
                       <img src={DeleteIcon} alt="Delete" className="w-[16px] h-[16px] object-contain" />
                     </button>
@@ -1442,14 +1501,33 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
             {/* Action Buttons */}
             <div className="flex items-center justify-center gap-[20px] px-[20px]">
               <button
-                onClick={() => {
-                  if (employeeToDelete) {
-                    console.log('Deleting employee attendance:', employeeToDelete);
+                type="button"
+                disabled={isDeleting}
+                onClick={async () => {
+                  if (!employeeToDelete) return;
+                  try {
+                    setIsDeleting(true);
+                    try {
+                      await deleteGPSVerification(employeeToDelete.id);
+                    } catch (delErr) {
+                      const status = delErr.response?.status;
+                      if (status === 404 || status === 405 || status === 501) {
+                        await updateGPSVerificationStatus(employeeToDelete.id, "Rejected");
+                      } else {
+                        throw delErr;
+                      }
+                    }
+                    await fetchGPSData();
+                    setShowWarningModal(false);
+                    setEmployeeToDelete(null);
+                  } catch (error) {
+                    console.error("Failed to delete/reject verification:", error);
+                    alert(error.response?.data?.message ?? "Failed to delete verification");
+                  } finally {
+                    setIsDeleting(false);
                   }
-                  setShowWarningModal(false);
-                  setEmployeeToDelete(null);
                 }}
-                className="text-white focus:outline-none"
+                className="text-white focus:outline-none disabled:opacity-60"
                 style={{
                   width: '144px',
                   height: '34px',
@@ -1463,14 +1541,16 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                   boxShadow: '0 2px 4px rgba(0, 0, 0, 0.25)'
                 }}
               >
-                Delete
+                {isDeleting ? "Deleting…" : "Delete"}
               </button>
               <button
+                type="button"
+                disabled={isDeleting}
                 onClick={() => {
                   setShowWarningModal(false);
                   setEmployeeToDelete(null);
                 }}
-                className="text-white focus:outline-none"
+                className="text-white focus:outline-none disabled:opacity-60"
                 style={{
                   width: '144px',
                   height: '34px',

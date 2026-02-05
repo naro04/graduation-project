@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getLocationTypes, createLocationType, updateLocationType, deleteLocationType } from "../services/locationTypes";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -17,6 +19,7 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 
 const LocationTypePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("5-2");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,6 +37,11 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
   const bulkActionsDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [locationTypesData, setLocationTypesData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitError, setSubmitError] = useState(null);
+  const [submitSuccess, setSubmitSuccess] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form state for Add/Edit Location Type
   const [formData, setFormData] = useState({
@@ -45,27 +53,38 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample location types data
-  const locationTypesData = [
-    {
-      id: 1,
-      name: "Office",
-      description: "Office-based attendance",
-      status: "Active"
-    },
-    {
-      id: 2,
-      name: "Field",
-      description: "GPS-based attendance",
-      status: "Active"
+  const normalizeType = (item) => ({
+    id: item.id,
+    name: item.name || "",
+    description: item.description || "",
+    status: (item.status || "active").toLowerCase() === "active" ? "Active" : "Inactive",
+  });
+
+  const fetchLocationTypes = useCallback(async () => {
+    try {
+      setLoading(true);
+      setSubmitError(null);
+      const raw = await getLocationTypes();
+      const list = Array.isArray(raw) ? raw : [];
+      setLocationTypesData(list.map(normalizeType));
+    } catch (err) {
+      console.error("Failed to fetch location types:", err);
+      setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to load location types");
+      setLocationTypesData([]);
+    } finally {
+      setLoading(false);
     }
-  ];
+  }, []);
+
+  useEffect(() => {
+    fetchLocationTypes();
+  }, [fetchLocationTypes]);
 
   // Handle checkbox selection
   const handleCheckboxChange = (typeId) => {
@@ -106,11 +125,8 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
   // Reset form when opening Add Location Type page
   useEffect(() => {
     if (showAddLocationTypePage) {
-      setFormData({
-        name: "",
-        status: "Active",
-        description: ""
-      });
+      setFormData({ name: "", status: "Active", description: "" });
+      setSubmitError(null);
     }
   }, [showAddLocationTypePage]);
 
@@ -120,8 +136,9 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
       setFormData({
         name: editingType.name,
         status: editingType.status,
-        description: editingType.description
+        description: editingType.description || ""
       });
+      setSubmitError(null);
     }
   }, [showEditLocationTypePage, editingType]);
 
@@ -151,7 +168,7 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -168,6 +185,8 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                 <input
                   type="text"
                   placeholder="Search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-[280px] h-[44px] pl-[48px] pr-[16px] rounded-[10px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40] transition-colors"
                   style={{ fontWeight: 400 }}
                 />
@@ -194,14 +213,14 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -293,15 +312,18 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[8px] bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg min-w-[240px] z-50">
+                  <div className="absolute top-full left-0 mt-[8px] bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg min-w-[240px] z-[100]">
                     {statusOptions.map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                         }}
-                        className={`w-full px-[16px] py-[12px] text-left text-[14px] transition-colors ${selectedStatus === status
+                        className={`w-full px-[16px] py-[12px] text-left text-[14px] transition-colors cursor-pointer ${selectedStatus === status
                           ? 'bg-[#E5E7EB] text-[#333333]'
                           : 'text-[#333333] hover:bg-[#F5F7FA]'
                           } first:rounded-t-[10px] last:rounded-b-[10px]`}
@@ -330,6 +352,17 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
+            {submitError && (
+              <div className="mb-4 p-3 rounded-[8px] bg-red-50 border border-red-200 text-red-700 text-[14px]">
+                {submitError}
+              </div>
+            )}
+            {submitSuccess && (
+              <div className="mb-4 p-3 rounded-[8px] bg-green-50 border border-green-200 text-green-700 text-[14px]">
+                {submitSuccess}
+              </div>
+            )}
+
             {/* Bulk Actions */}
             {selectedTypes.length > 0 && (
               <div className="mb-[20px] bg-white rounded-[10px] p-[16px] flex items-center gap-[16px]" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
@@ -350,9 +383,17 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                   {isBulkActionsDropdownOpen && (
                     <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[8px] shadow-lg z-20 min-w-[200px]">
                       <button
-                        onClick={() => {
-                          setShowWarningModal(true);
-                          setIsBulkActionsDropdownOpen(false);
+                        onClick={async () => {
+                          try {
+                            for (const id of selectedTypes) {
+                              await deleteLocationType(id);
+                            }
+                            await fetchLocationTypes();
+                            setSelectedTypes([]);
+                            setIsBulkActionsDropdownOpen(false);
+                          } catch (err) {
+                            setSubmitError(err.response?.data?.message ?? err.message ?? "Bulk delete failed");
+                          }
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] flex items-center gap-[8px] first:rounded-t-[8px]"
                         style={{ fontWeight: 400 }}
@@ -407,7 +448,20 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedData.map((type) => (
+                    {loading ? (
+                      <tr>
+                        <td colSpan="5" className="px-[12px] py-[40px] text-center text-[14px] text-[#6B7280]">
+                          Loading...
+                        </td>
+                      </tr>
+                    ) : paginatedData.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="px-[12px] py-[40px] text-center text-[14px] text-[#6B7280]">
+                          No location types found.
+                        </td>
+                      </tr>
+                    ) : (
+                    paginatedData.map((type) => (
                       <tr key={type.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
                         <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                           <input
@@ -469,7 +523,9 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    ))
+                    )
+                    }
                   </tbody>
                 </table>
               </div>
@@ -763,7 +819,7 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -787,7 +843,39 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
               </button>
             </div>
 
-            <form className="p-6 space-y-5">
+            <form
+              className="p-6 space-y-5"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!formData.name?.trim()) {
+                  setSubmitError("Type name is required.");
+                  return;
+                }
+                try {
+                  setIsSaving(true);
+                  setSubmitError(null);
+                  await createLocationType({
+                    name: formData.name.trim(),
+                    status: (formData.status || "Active").toLowerCase(),
+                    description: formData.description?.trim() || undefined,
+                  });
+                  await fetchLocationTypes();
+                  setShowAddLocationTypePage(false);
+                  setFormData({ name: "", status: "Active", description: "" });
+                  setSubmitSuccess("Location type added.");
+                  setTimeout(() => setSubmitSuccess(null), 3000);
+                } catch (err) {
+                  setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to add location type");
+                } finally {
+                  setIsSaving(false);
+                }
+              }}
+            >
+              {submitError && (
+                <div className="p-3 rounded-[8px] bg-red-50 border border-red-200 text-red-700 text-[14px]">
+                  {submitError}
+                </div>
+              )}
               <div className="space-y-1.5">
                 <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Type Name</label>
                 <input
@@ -839,11 +927,11 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                 </button>
                 <button
                   type="submit"
-                  onClick={(e) => { e.preventDefault(); setShowAddLocationTypePage(false); }}
-                  className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98]"
+                  disabled={isSaving}
+                  className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98] disabled:opacity-50"
                   style={{ fontFamily: 'Inter, sans-serif' }}
                 >
-                  Save
+                  {isSaving ? "Saving..." : "Save"}
                 </button>
               </div>
             </form>
@@ -866,7 +954,39 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
               </button>
             </div>
 
-            <form className="p-6 space-y-5">
+            <form
+              className="p-6 space-y-5"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!editingType?.id || !formData.name?.trim()) {
+                  setSubmitError("Type name is required.");
+                  return;
+                }
+                try {
+                  setIsSaving(true);
+                  setSubmitError(null);
+                  await updateLocationType(editingType.id, {
+                    name: formData.name.trim(),
+                    status: (formData.status || "Active").toLowerCase(),
+                    description: formData.description?.trim() || undefined,
+                  });
+                  await fetchLocationTypes();
+                  setShowEditLocationTypePage(false);
+                  setEditingType(null);
+                  setSubmitSuccess("Location type updated.");
+                  setTimeout(() => setSubmitSuccess(null), 3000);
+                } catch (err) {
+                  setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to update location type");
+                } finally {
+                  setIsSaving(false);
+                }
+              }}
+            >
+              {submitError && (
+                <div className="p-3 rounded-[8px] bg-red-50 border border-red-200 text-red-700 text-[14px]">
+                  {submitError}
+                </div>
+              )}
               <div className="space-y-1.5">
                 <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Type Name</label>
                 <input
@@ -928,11 +1048,11 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                   </button>
                   <button
                     type="submit"
-                    onClick={(e) => { e.preventDefault(); setShowEditLocationTypePage(false); }}
-                    className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98]"
+                    disabled={isSaving}
+                    className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98] disabled:opacity-50"
                     style={{ fontFamily: 'Inter, sans-serif' }}
                   >
-                    Update
+                    {isSaving ? "Updating..." : "Update"}
                   </button>
                 </div>
               </div>
@@ -1009,11 +1129,18 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
             {/* Action Buttons */}
             <div className="flex items-center justify-center gap-[20px] px-[20px] pb-[30px] flex-wrap sm:flex-nowrap">
               <button
-                onClick={() => {
-                  if (typeToDelete) {
-                    console.log('Deleting:', typeToDelete.id);
-                    setShowEditLocationTypePage(false);
-                    setEditingType(null);
+                onClick={async () => {
+                  if (typeToDelete?.id) {
+                    try {
+                      await deleteLocationType(typeToDelete.id);
+                      await fetchLocationTypes();
+                      setShowEditLocationTypePage(false);
+                      setEditingType(null);
+                      setSubmitSuccess("Location type deleted.");
+                      setTimeout(() => setSubmitSuccess(null), 3000);
+                    } catch (err) {
+                      setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to delete location type");
+                    }
                   }
                   setShowWarningModal(false);
                   setTypeToDelete(null);

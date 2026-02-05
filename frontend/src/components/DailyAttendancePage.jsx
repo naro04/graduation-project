@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getDailyAttendance, getAttendanceLocations, deleteAttendance } from "../services/attendance";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -39,6 +41,8 @@ const IdIcon = new URL("../images/icons/id.png", import.meta.url).href;
 
 const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("3-1");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,6 +60,10 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
   const [showAttendanceDetailsModal, setShowAttendanceDetailsModal] = useState(false);
   const [selectedEmployeeForDetails, setSelectedEmployeeForDetails] = useState(null);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [attendanceFromApi, setAttendanceFromApi] = useState([]);
+  const [attendanceLocations, setAttendanceLocations] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [attendanceError, setAttendanceError] = useState(null);
   const dateInputRef = useRef(null);
   const locationDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
@@ -66,66 +74,65 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample attendance data
-  const attendanceData = [
-    {
-      id: 1,
-      name: "Mohamed Ali",
-      employeeId: "15259",
-      checkIn: "08:00 Am",
-      checkOut: "04:10 Pm",
-      attendanceType: "Office",
-      location: "Head Office",
-      status: "Present",
-      photo: MohamedAliPhoto
-    },
-    {
-      id: 2,
-      name: "Amal Ahmed",
-      employeeId: "25896",
-      checkIn: "08:05 Am",
-      checkOut: "On Duty",
-      attendanceType: "GPS",
-      location: "Hattin School",
-      status: "In progress",
-      photo: AmalAhmedPhoto
-    },
-    {
-      id: 3,
-      name: "Amjad Saeed",
-      employeeId: "14736",
-      checkIn: "08:02 Am",
-      checkOut: "-",
-      attendanceType: "Office",
-      location: "Head Office",
-      status: "Missing Check-out",
-      photo: AmjadSaeedPhoto
-    },
-    {
-      id: 4,
-      name: "Jana Hassan",
-      employeeId: "85236",
-      checkIn: "10:02 Am",
-      checkOut: "04:20 Pm",
-      attendanceType: "Office",
-      location: "Head Office",
-      status: "Late",
-      photo: JanaHassanPhoto
-    }
-  ];
+  const dateParam = selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}` : "";
 
-  // Summary statistics
-  const summaryStats = {
-    present: 27,
-    absent: 2,
-    lateArrivals: 1
+  useEffect(() => {
+    let cancelled = false;
+    setAttendanceLoading(true);
+    setAttendanceError(null);
+    Promise.all([
+      dateParam ? getDailyAttendance({ date: dateParam }).catch((err) => {
+        if (!cancelled) setAttendanceError(err?.response?.data?.message || err?.message || "Failed to load daily attendance");
+        return [];
+      }) : Promise.resolve([]),
+      getAttendanceLocations().catch(() => []),
+    ]).then(([list, locations]) => {
+      if (cancelled) return;
+      setAttendanceFromApi(Array.isArray(list) ? list : []);
+      setAttendanceLocations(Array.isArray(locations) ? locations : []);
+    }).finally(() => {
+      if (!cancelled) setAttendanceLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [dateParam]);
+
+  const refreshDailyAttendance = () => {
+    if (!dateParam) return;
+    getDailyAttendance({ date: dateParam })
+      .then((list) => setAttendanceFromApi(Array.isArray(list) ? list : []))
+      .catch(() => {});
   };
+
+  const locationOptions = ["All Locations", ...(attendanceLocations || []).map((l) => l.name ?? l.location_name ?? "")].filter(Boolean);
+
+  const attendanceData = React.useMemo(() => {
+    return (attendanceFromApi || []).map((r) => ({
+      id: r.id ?? r.attendance_id,
+      name: r.employee_name ?? r.name ?? "—",
+      employeeId: r.employee_id ?? r.employeeId ?? "—",
+      checkIn: r.check_in ?? r.check_in_time ?? r.checkIn ?? "—",
+      checkOut: r.check_out ?? r.check_out_time ?? r.checkOut ?? "—",
+      attendanceType: r.attendance_type ?? r.check_method ?? r.type ?? "—",
+      location: r.location_name ?? r.location ?? "—",
+      status: r.status ?? "Present",
+      photo: r.photo ?? r.avatar_url ?? MohamedAliPhoto,
+    }));
+  }, [attendanceFromApi]);
+
+  const summaryStats = React.useMemo(() => {
+    const list = attendanceData;
+    return {
+      present: list.filter((e) => (e.status || "").toLowerCase() === "present").length,
+      absent: list.filter((e) => (e.status || "").toLowerCase() === "absent").length,
+      lateArrivals: list.filter((e) => (e.status || "").toLowerCase() === "late").length,
+    };
+  }, [attendanceData]);
 
   // Format date
   const formatDate = (date) => {
@@ -243,7 +250,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -287,14 +294,14 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -647,7 +654,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                 </button>
                 {isLocationDropdownOpen && (
                   <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-10">
-                    {["All Locations", "Head Office", "Hattin School"].map((location) => (
+                    {locationOptions.map((location) => (
                       <button
                         key={location}
                         onClick={() => {
@@ -788,7 +795,18 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
 
+            {attendanceError && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {attendanceError}
+              </div>
+            )}
+
             {/* Table */}
+            {attendanceLoading ? (
+              <div className="bg-white rounded-[10px] p-[40px] text-center" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
+                <p className="text-[14px] text-[#6B7280]">Loading daily attendance...</p>
+              </div>
+            ) : (
             <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -973,6 +991,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                 </div>
               )}
             </div>
+            )}
           </div>
         </main>
       </div>
@@ -1059,7 +1078,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1219,7 +1238,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
               </button>
               {isLocationDropdownOpen && (
                 <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-10">
-                  {["All Locations", "Head Office", "Hattin School"].map((location) => (
+                  {locationOptions.map((location) => (
                     <button
                       key={location}
                       onClick={() => {
@@ -1660,10 +1679,10 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
             <div className="flex items-center justify-center gap-[20px] px-[20px]">
               <button
                 onClick={() => {
-                  // Handle delete action
-                  if (employeeToDelete) {
-                    console.log('Deleting employee attendance:', employeeToDelete);
-                    // Delete employee attendance logic here
+                  if (employeeToDelete?.id) {
+                    deleteAttendance(employeeToDelete.id)
+                      .then(() => refreshDailyAttendance())
+                      .catch(() => {});
                   }
                   setShowWarningModal(false);
                   setEmployeeToDelete(null);

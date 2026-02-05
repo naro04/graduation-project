@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getMyLeaves, getMyLeaveStats } from "../services/leaves";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -16,6 +18,8 @@ const UploadIcon = new URL("../images/icons/upload.png", import.meta.url).href;
 
 const MyLeavePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("6-3");
   const [selectedLeaveType, setSelectedLeaveType] = useState("All Leave Type");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
@@ -33,6 +37,45 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
   const requestLeaveTypeDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [leaveBalance, setLeaveBalance] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchMyLeaves = async () => {
+    try {
+      setLoading(true);
+      const [list, stats] = await Promise.all([getMyLeaves(), getMyLeaveStats()]);
+      const requests = Array.isArray(list) ? list : [];
+      setLeaveRequests(
+        requests.map((item) => ({
+          id: item.id,
+          leaveType: item.leave_type ?? item.leaveType ?? "—",
+          dateRange: item.date_range ?? (item.start_date && item.end_date ? `${item.start_date} - ${item.end_date}` : "—"),
+          startDate: item.start_date ?? item.startDate ?? "—",
+          endDate: item.end_date ?? item.endDate ?? "—",
+          days: item.total_days ?? item.totalDays ?? item.days ?? 0,
+          totalDays: item.total_days ?? item.totalDays ?? 0,
+          submittedDate: item.submitted_date ?? item.submittedDate ?? "—",
+          status: item.status ?? "Pending",
+          reason: item.reason ?? "—",
+          adminNotes: item.admin_notes ?? item.adminNotes ?? "",
+        }))
+      );
+      const balance = stats?.balance ?? stats?.leave_balance ?? stats;
+      const balanceList = Array.isArray(balance) ? balance : balance && typeof balance === "object" ? Object.entries(balance).map(([type, v]) => ({ type, ...(typeof v === "object" ? v : { remaining: v, total: v, used: 0 }) })) : [];
+      setLeaveBalance(balanceList.length ? balanceList : []);
+    } catch (err) {
+      console.error("Failed to fetch my leaves:", err);
+      setLeaveRequests([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMyLeaves();
+  }, []);
+
   // Form State for Request Leave Modal
   const [requestFormData, setRequestFormData] = useState({
     leaveType: "",
@@ -46,82 +89,13 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Leave balance data
-  const leaveBalance = [
-    {
-      type: "Annual Leave",
-      remaining: 12,
-      total: 20,
-      used: 8,
-    },
-    {
-      type: "Sick Leave",
-      remaining: 8,
-      total: 10,
-      used: 2,
-    },
-    {
-      type: "Emergency Leave",
-      remaining: 4,
-      total: 5,
-      used: 1,
-    },
-    {
-      type: "Paternity Leave",
-      remaining: 3,
-      total: 3,
-      used: 0,
-    },
-  ];
-
-  // Sample leave requests data
-  const leaveRequestsData = [
-    {
-      id: 1,
-      leaveType: "Annual Leave",
-      dateRange: "12/24/2025 - 12/29/2025",
-      startDate: "12/24/2025",
-      endDate: "12/29/2025",
-      days: 6,
-      totalDays: 6,
-      submittedDate: "12/14/2025",
-      status: "Pending",
-      reason: "Family vacation during holidays",
-      adminNotes: ""
-    },
-    {
-      id: 2,
-      leaveType: "Sick Leave",
-      dateRange: "12/19/2025 - 12/21/2025",
-      startDate: "12/19/2025",
-      endDate: "12/21/2025",
-      days: 3,
-      totalDays: 3,
-      submittedDate: "12/18/2025",
-      status: "Rejected",
-      reason: "Catch cold",
-      adminNotes: "Denied - critical client meetings scheduled"
-    },
-    {
-      id: 3,
-      leaveType: "Annual Leave",
-      dateRange: "12/17/2025 - 12/19/2025",
-      startDate: "12/17/2025",
-      endDate: "12/19/2025",
-      days: 3,
-      totalDays: 3,
-      submittedDate: "12/9/2025",
-      status: "Approved",
-      reason: "Personal matters",
-      adminNotes: "Approved - adequate coverage available"
-    }
-  ];
+  const leaveRequestsData = leaveRequests;
 
   // Leave types
   const leaveTypes = ["All Leave Type", "Annual Leave", "Sick Leave", "Emergency Leave", "Unpaid Leave", "Compensatory Time Off", "Maternity Leave", "Paternity Leave"];
@@ -191,10 +165,17 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
     setShowRequestLeaveModal(false);
   };
 
-  // Filter data
-  const filteredData = leaveRequestsData.filter(request => {
-    const matchesLeaveType = selectedLeaveType === "All Leave Type" || request.leaveType === selectedLeaveType;
-    const matchesStatus = selectedStatus === "All Status" || request.status === selectedStatus;
+  // Filter data (case-insensitive so API "pending" matches dropdown "Pending")
+  const filteredData = leaveRequestsData.filter((request) => {
+    const reqType = (request.leaveType || "").toString().trim().replace(/_/g, " ");
+    const selType = (selectedLeaveType || "").trim().replace(/_/g, " ");
+    const matchesLeaveType =
+      selectedLeaveType === "All Leave Type" ||
+      reqType === selType ||
+      reqType.toLowerCase() === selType.toLowerCase();
+    const reqStatus = (request.status || "").toString().trim().toLowerCase();
+    const selStatus = (selectedStatus || "").trim().toLowerCase();
+    const matchesStatus = selectedStatus === "All Status" || reqStatus === selStatus;
     return matchesLeaveType && matchesStatus;
   });
 
@@ -210,7 +191,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar 
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -253,14 +234,14 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
 
@@ -438,8 +419,9 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
             {/* Filters */}
             <div className="flex items-center gap-[16px] mb-[24px] flex-wrap">
               {/* Leave Type Dropdown */}
-              <div className="relative" ref={leaveTypeDropdownRef}>
+              <div className="relative z-[100]" ref={leaveTypeDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[180px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -450,11 +432,14 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isLeaveTypeDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[180px] max-h-[200px] overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] min-w-[180px] max-h-[200px] overflow-y-auto">
                     {leaveTypes.map((type) => (
                       <button
                         key={type}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedLeaveType(type);
                           setIsLeaveTypeDropdownOpen(false);
                           setCurrentPage(1);
@@ -477,8 +462,9 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Status Dropdown */}
-              <div className="relative" ref={statusDropdownRef}>
+              <div className="relative z-[100]" ref={statusDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -489,11 +475,14 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[140px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] min-w-[140px]">
                     {statusOptions.map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                           setCurrentPage(1);
@@ -747,7 +736,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -859,8 +848,9 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
           {/* Filters - Mobile */}
           <div className="flex flex-col gap-3 mb-6">
             {/* Leave Type Dropdown */}
-            <div className="relative" ref={leaveTypeDropdownRef}>
+            <div className="relative z-[100]" ref={leaveTypeDropdownRef}>
               <button
+                type="button"
                 onClick={() => setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -870,11 +860,14 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isLeaveTypeDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 max-h-[200px] overflow-y-auto">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] max-h-[200px] overflow-y-auto">
                   {leaveTypes.map((type) => (
                     <button
                       key={type}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedLeaveType(type);
                         setIsLeaveTypeDropdownOpen(false);
                         setCurrentPage(1);
@@ -890,8 +883,9 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Status Dropdown */}
-            <div className="relative" ref={statusDropdownRef}>
+            <div className="relative z-[100]" ref={statusDropdownRef}>
               <button
+                type="button"
                 onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -901,11 +895,14 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isStatusDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100]">
                   {statusOptions.map((status) => (
                     <button
                       key={status}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
                         setCurrentPage(1);

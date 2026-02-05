@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { getProfileMe, updateProfile, updatePersonalInfo, updateEmergencyContact } from "../services/profile.js";
+import {
+  getProfileMe,
+  updateProfile,
+  getPersonalInfo,
+  updatePersonalInfo,
+  getJobInfo,
+  getEmergencyContact,
+  updateEmergencyContact,
+  getWorkSchedule,
+  getAccountSecurity,
+} from "../services/profile.js";
+import { getEffectiveRole } from "../services/auth.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -69,9 +80,10 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   const [emergencySaveSuccess, setEmergencySaveSuccess] = useState(false);
 
   // Role display names
+  const effectiveRole = getEffectiveRole(userRole);
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
@@ -131,17 +143,17 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
     setCurrentWeekStart(newDate);
   };
 
-  // Fetch profile data on component mount
+  // Fetch main profile on mount (GET /profile/me)
   useEffect(() => {
     const fetchProfileData = async () => {
       try {
         setIsLoading(true);
         setError(null);
         const data = await getProfileMe();
-        setProfileData(data);
+        setProfileData(data || null);
       } catch (err) {
-        console.error('Failed to load profile data:', err);
-        setError(err.message || 'Failed to load profile data');
+        console.error("Failed to load profile data:", err);
+        setError(err.message || "Failed to load profile data");
       } finally {
         setIsLoading(false);
       }
@@ -149,6 +161,37 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
 
     fetchProfileData();
   }, []);
+
+  // When profile loaded or tab changes, load section from its endpoint (GET personal-info, job-info, emergency-contact, work-schedule, account-security)
+  useEffect(() => {
+    if (!profileData || isLoading) return;
+
+    const fetchSection = async () => {
+      try {
+        if (activeTab === "personal") {
+          const data = await getPersonalInfo();
+          if (data) setProfileData((prev) => ({ ...prev, employee: { ...(prev?.employee || {}), ...data } }));
+        } else if (activeTab === "job") {
+          const data = await getJobInfo();
+          if (data) setProfileData((prev) => ({ ...prev, employee: { ...(prev?.employee || {}), ...data }, jobInfo: data }));
+        } else if (activeTab === "emergency") {
+          const data = await getEmergencyContact();
+          const contacts = data?.emergencyContacts ?? (Array.isArray(data) ? data : []);
+          setProfileData((prev) => ({ ...prev, employee: { ...(prev?.employee || {}), emergencyContacts: contacts } }));
+        } else if (activeTab === "schedule") {
+          const data = await getWorkSchedule();
+          if (data) setProfileData((prev) => ({ ...prev, workSchedule: data }));
+        } else if (activeTab === "security") {
+          const data = await getAccountSecurity();
+          if (data) setProfileData((prev) => ({ ...prev, accountSecurity: data }));
+        }
+      } catch (err) {
+        console.error("Failed to load section:", activeTab, err);
+      }
+    };
+
+    fetchSection();
+  }, [activeTab]);
 
   // Initialize form data when profile data is loaded or edit mode is enabled
   useEffect(() => {
@@ -561,7 +604,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       className={`w-[14px] h-[14px] object-contain transition-transform duration-200 mt-[2px] ${isDropdownOpen ? 'rotate-180' : ''}`}
                     />
                   </div>
-                  <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                  <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                 </div>
               </div>
 
@@ -628,7 +671,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                     {isLoading ? "Loading..." : (userData?.fullName || profileData?.name || "User")}
                   </h1>
                   <p className="text-[13px] text-white/80">
-                    {isLoading ? "" : (userData?.roles?.[0] || profileData?.roles?.[0] || roleDisplayNames[userRole])}
+                    {isLoading ? "" : (userData?.roles?.[0] || profileData?.roles?.[0] || roleDisplayNames[effectiveRole])}
                   </p>
                 </div>
               </div>
@@ -1826,8 +1869,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
 
                 {/* Name and Role */}
                 <div className="flex-1">
-                  <h1 className="text-[18px] font-bold text-white mb-[4px]" style={{ fontFamily: 'Libre Caslon Text, serif', lineHeight: '100%' }}>Firas Alijla</h1>
-                  <p className="text-[11px] text-white/80">{roleDisplayNames[userRole]}</p>
+                  <h1 className="text-[18px] font-bold text-white mb-[4px]" style={{ fontFamily: 'Libre Caslon Text, serif', lineHeight: '100%' }}>{!isLoading && (userData?.fullName || profileData?.name || "User")}</h1>
+                  <p className="text-[11px] text-white/80">{roleDisplayNames[effectiveRole]}</p>
                 </div>
               </div>
 
@@ -2055,7 +2098,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <div className="relative">
                           <select
                             className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer"
-                            defaultValue={userRole === "superAdmin" ? "none" : ""}
+                            defaultValue={effectiveRole === "superAdmin" ? "none" : ""}
                           >
                             <option value="">Select Supervisor</option>
                             <option value="none">None</option>

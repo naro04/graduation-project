@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -23,29 +24,19 @@ const VideoIcon = new URL("../images/icons/video.png", import.meta.url).href;
 const LeftArrowIcon = new URL("../images/icons/left.png", import.meta.url).href;
 
 import LogoutModal from "./LogoutModal";
-// Logout icon for modal
-// const LogoutIcon2 = new URL("../images/icons/logout2.png", import.meta.url).href;
+import { getHelpContent } from "../services/helpCenter";
 
 const roleDisplayNames = {
   superAdmin: "Super Admin",
-  hr: "HR Manager",
+  hr: "HR Admin",
   manager: "Manager",
   fieldEmployee: "Field Employee",
   officer: "Officer"
 };
 
-const HelpCenterPage = ({ userRole = "superAdmin" }) => {
-  const navigate = useNavigate();
-  const [activeMenu, setActiveMenu] = useState("8-5");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
-  const [isDesktopDropdownOpen, setIsDesktopDropdownOpen] = useState(false);
-  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const userDropdownRef = useRef(null);
-  const desktopDropdownRef = useRef(null);
+const CATEGORY_ICONS = [BookIcon, TimeIcon, PulseIcon, LeaveIcon, EmployeesIcon, SettingIcon];
 
-  const categories = [
+const DEFAULT_CATEGORIES = [
     {
       id: 1,
       title: "Getting Started",
@@ -120,13 +111,91 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
     }
   ];
 
-  const popularArticles = [
-    { id: 1, title: "How to reset your password?", views: "2.5k" },
-    { id: 2, title: "Setting up GPS-based attendance", views: "1.8k" },
-    { id: 3, title: "Understanding leave approval workflows", views: "1.6k" },
-    { id: 4, title: "Generating monthly attendance reports", views: "1.4k" },
-    { id: 5, title: "Configuring notification settings", views: "1.2k" }
-  ];
+const DEFAULT_POPULAR_ARTICLES = [
+  { id: 1, title: "How to reset your password?", views: "2.5k" },
+  { id: 2, title: "Setting up GPS-based attendance", views: "1.8k" },
+  { id: 3, title: "Understanding leave approval workflows", views: "1.6k" },
+  { id: 4, title: "Generating monthly attendance reports", views: "1.4k" },
+  { id: 5, title: "Configuring notification settings", views: "1.2k" }
+];
+
+const HelpCenterPage = ({ userRole = "superAdmin" }) => {
+  const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
+  const [activeMenu, setActiveMenu] = useState("8-5");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [isDesktopDropdownOpen, setIsDesktopDropdownOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const userDropdownRef = useRef(null);
+  const desktopDropdownRef = useRef(null);
+
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [popularArticles, setPopularArticles] = useState(DEFAULT_POPULAR_ARTICLES);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const toText = (val) => (val != null && typeof val === "object" ? "" : String(val ?? ""));
+  const normalizeLinks = (links) => {
+    if (!Array.isArray(links)) return [];
+    return links.map((link) => {
+      if (typeof link === "object" && link !== null) {
+        return { title: toText(link.title), path: toText(link.path) || "#" };
+      }
+      return { title: toText(link), path: "#" };
+    });
+  };
+  const normalizeCategory = (cat, index) => ({
+    id: cat.id ?? index,
+    title: toText(cat.title),
+    description: toText(cat.description),
+    icon: CATEGORY_ICONS[index % CATEGORY_ICONS.length],
+    links: normalizeLinks(cat.links)
+  });
+  const normalizeArticle = (item, index) => ({
+    id: item.id ?? index,
+    title: toText(item.title),
+    views: toText(item.views ?? item.view_count ?? "0")
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchContent = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getHelpContent();
+        if (cancelled) return;
+        const cats = Array.isArray(data) ? data : data.categories || [];
+        const articles = data.popular_articles || [];
+        setCategories(cats.length ? cats.map((cat, i) => normalizeCategory(cat, i)) : DEFAULT_CATEGORIES);
+        setPopularArticles(articles.length ? articles.map((item, i) => normalizeArticle(item, i)) : DEFAULT_POPULAR_ARTICLES);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || "Failed to load help content");
+          setCategories(DEFAULT_CATEGORIES);
+          setPopularArticles(DEFAULT_POPULAR_ARTICLES);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchContent();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredCategories = searchQuery.trim()
+    ? categories.filter(
+        (c) =>
+          toText(c.title).toLowerCase().includes(searchQuery.toLowerCase()) ||
+          toText(c.description).toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : categories;
+  const filteredArticles = searchQuery.trim()
+    ? popularArticles.filter((a) => toText(a.title).toLowerCase().includes(searchQuery.toLowerCase()))
+    : popularArticles;
 
   const resourceCards = [
     {
@@ -176,57 +245,57 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
     <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
-        <Sidebar userRole={userRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
+        <Sidebar userRole={effectiveRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
 
         <main className="flex-1 flex flex-col bg-[#F5F7FA]" style={{ minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}>
           {/* Header */}
           <header className="bg-white px-[40px] py-[24px]" style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
             <div className="flex items-center justify-between mb-[16px]" style={{ minWidth: 0, maxWidth: '100%' }}>
-            <div className="relative flex-shrink-0">
-              <svg className="absolute left-[16px] top-1/2 -translate-y-1/2 w-[20px] h-[20px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <div className="relative flex-shrink-0">
+                <svg className="absolute left-[16px] top-1/2 -translate-y-1/2 w-[20px] h-[20px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <input 
-                type="text"
-                placeholder="Search"
-                className="w-[280px] h-[44px] pl-[48px] pr-[16px] rounded-[10px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40] transition-colors"
-                style={{ fontWeight: 400 }}
-              />
-            </div>
-            
-            <div className="flex items-center gap-[16px] flex-shrink-0">
-              {/* Message Icon */}
-              <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-              </button>
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search"
+                  className="w-[280px] h-[44px] pl-[48px] pr-[16px] rounded-[10px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40] transition-colors"
+                  style={{ fontWeight: 400 }}
+                />
+              </div>
 
-              {/* Notification Bell */}
-              <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-              </button>
-              
-              {/* User Profile */}
+              <div className="flex items-center gap-[16px] flex-shrink-0">
+                {/* Message Icon */}
+                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
+                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
+                </button>
+
+                {/* Notification Bell */}
+                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
+                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
+                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
+                </button>
+
+                {/* User Profile */}
                 <div className="relative" ref={desktopDropdownRef}>
                   <div
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsDesktopDropdownOpen(!isDesktopDropdownOpen)}
                   >
-                <img 
-                  src={UserAvatar}
-                  alt="User"
-                  className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
-                />
-                <div>
-                  <div className="flex items-center gap-[6px]">
-                    <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                    <img
+                      src={UserAvatar}
+                      alt="User"
+                      className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
+                    />
+                    <div>
+                      <div className="flex items-center gap-[6px]">
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 mt-[2px] ${isDesktopDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -251,31 +320,31 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                       </button>
                     </div>
                   )}
+                </div>
               </div>
             </div>
-          </div>
-          
-          {/* Breadcrumb */}
-          <div>
-            <p className="text-[12px]" style={{ fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
-              <span style={{ color: '#B0B0B0' }}>More</span>
-              <span className="mx-[8px]" style={{ color: '#B0B0B0' }}>&gt;</span>
-              <span style={{ color: '#8E8C8C' }}>Help Center</span>
-            </p>
-          </div>
-        </header>
+
+            {/* Breadcrumb */}
+            <div>
+              <p className="text-[12px]" style={{ fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
+                <span style={{ color: '#B0B0B0' }}>More</span>
+                <span className="mx-[8px]" style={{ color: '#B0B0B0' }}>&gt;</span>
+                <span style={{ color: '#8E8C8C' }}>Help Center</span>
+              </p>
+            </div>
+          </header>
 
           {/* Page Content */}
           <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ overflowX: 'hidden', maxWidth: '100%', width: '100%', boxSizing: 'border-box', overflowY: 'auto' }}>
             {/* Page Header */}
             <div className="mb-[32px]" style={{ minWidth: 0, maxWidth: '100%' }}>
-              <h1 
-                className="mb-[8px]" 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif', 
-                  fontWeight: 600, 
-                  fontSize: '24px', 
-                  lineHeight: '100%', 
+              <h1
+                className="mb-[8px]"
+                style={{
+                  fontFamily: 'Inter, sans-serif',
+                  fontWeight: 600,
+                  fontSize: '24px',
+                  lineHeight: '100%',
                   letterSpacing: '0%',
                   color: '#000000',
                   textAlign: 'left'
@@ -283,12 +352,12 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
               >
                 Help Center
               </h1>
-              <p 
-                style={{ 
-                  fontFamily: 'Inter, sans-serif', 
-                  fontWeight: 400, 
+              <p
+                style={{
+                  fontFamily: 'Inter, sans-serif',
+                  fontWeight: 400,
                   fontSize: '14px',
-                  lineHeight: '100%', 
+                  lineHeight: '100%',
                   letterSpacing: '0%',
                   color: '#505050'
                 }}
@@ -300,11 +369,11 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
             {/* Browse by Category Section */}
             <div className="mb-[48px]">
               <div className="flex items-center justify-between mb-[24px]">
-                <h2 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif', 
-                    fontWeight: 600, 
-                    fontSize: '20px', 
+                <h2
+                  style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 600,
+                    fontSize: '20px',
                     color: '#000000',
                     lineHeight: '100%'
                   }}
@@ -315,7 +384,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   <svg className="absolute left-[12px] top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  <input 
+                  <input
                     type="text"
                     placeholder="Search for help..."
                     value={searchQuery}
@@ -326,71 +395,86 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
+              {error && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+              {loading && (
+                <div className="mb-6 flex items-center justify-center py-8">
+                  <p className="text-sm text-[#6B7280]">Loading help content...</p>
+                </div>
+              )}
+
               {/* Category Cards Grid */}
               <div className="grid grid-cols-3 gap-[24px]">
-                {categories.map((category) => (
-                  <div 
+                {!loading && filteredCategories.map((category) => (
+                  <div
                     key={category.id}
                     className="bg-white rounded-[12px] border border-[#E0E0E0] p-[24px] hover:shadow-md transition-shadow"
                   >
                     <div className="flex items-start gap-[16px] mb-[16px]">
-                      <div 
+                      <div
                         className="w-[48px] h-[48px] rounded-[10px] flex items-center justify-center flex-shrink-0"
                         style={{ backgroundColor: '#BCDEDC80' }}
                       >
-                        <img src={category.icon} alt={category.title} className="w-[24px] h-[24px] object-contain" />
+                        <img src={category.icon} alt={String(category.title ?? '')} className="w-[24px] h-[24px] object-contain" />
                       </div>
                       <div className="flex-1">
-                        <h3 
-                          style={{ 
-                            fontFamily: 'Inter, sans-serif', 
-                            fontWeight: 600, 
-                            fontSize: '16px', 
+                        <h3
+                          style={{
+                            fontFamily: 'Inter, sans-serif',
+                            fontWeight: 600,
+                            fontSize: '16px',
                             lineHeight: '100%',
                             letterSpacing: '0%',
                             color: '#000000',
                             marginBottom: '8px'
                           }}
                         >
-                          {category.title}
+                          {String(category.title ?? '')}
                         </h3>
-                        <p 
-                          style={{ 
-                            fontFamily: 'Inter, sans-serif', 
-                            fontWeight: 400, 
+                        <p
+                          style={{
+                            fontFamily: 'Inter, sans-serif',
+                            fontWeight: 400,
                             fontSize: '12px',
                             lineHeight: '140%',
                             letterSpacing: '0%',
                             color: '#505050'
                           }}
                         >
-                          {category.description}
+                          {String(category.description ?? '')}
                         </p>
                       </div>
                     </div>
                     <div className="space-y-[8px]" style={{ paddingLeft: '64px' }}>
-                      {category.links.map((link, index) => (
-                        <a
-                          key={index}
-                          href="#"
-                          className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors"
-                          style={{ 
-                            fontFamily: 'Inter, sans-serif', 
-                            fontWeight: 400,
-                            fontSize: '14px',
-                            lineHeight: '100%',
-                            letterSpacing: '0%'
-                          }}
-                        >
-                          <img 
-                            src={LeftArrowIcon} 
-                            alt="arrow" 
-                            className="w-[12px] h-[12px] object-contain flex-shrink-0"
-                            style={{ transform: 'rotate(135deg)', marginRight: '8px', marginLeft: '-20px' }}
-                          />
-                          {link}
-                        </a>
-                      ))}
+                      {(Array.isArray(category.links) ? category.links : []).map((link, index) => {
+                        const href = typeof link === 'object' && link !== null && link.path != null ? String(link.path) : '#';
+                        const label = typeof link === 'object' && link !== null && link.title != null ? String(link.title) : (typeof link === 'string' ? link : '');
+                        return (
+                          <a
+                            key={index}
+                            href={href}
+                            className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors"
+                            style={{
+                              fontFamily: 'Inter, sans-serif',
+                              fontWeight: 400,
+                              fontSize: '14px',
+                              lineHeight: '100%',
+                              letterSpacing: '0%'
+                            }}
+                          >
+                            <img
+                              src={LeftArrowIcon}
+                              alt="arrow"
+                              className="w-[12px] h-[12px] object-contain flex-shrink-0"
+                              style={{ transform: 'rotate(135deg)', marginRight: '8px', marginLeft: '-20px' }}
+                            />
+                            {label}
+                          </a>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -400,11 +484,11 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
             {/* Popular Articles Section */}
             <div className="mb-[48px]">
               <div className="bg-white rounded-[12px] border border-[#E0E0E0] p-[24px]">
-                <h2 
-                  style={{ 
-                    fontFamily: 'Inter, sans-serif', 
-                    fontWeight: 600, 
-                    fontSize: '20px', 
+                <h2
+                  style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 600,
+                    fontSize: '20px',
                     color: '#000000',
                     marginBottom: '16px',
                     lineHeight: '100%',
@@ -416,15 +500,15 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   Popular Articles
                 </h2>
                 <div className="space-y-[16px]">
-                  {popularArticles.map((article) => (
-                    <div 
+                  {!loading && filteredArticles.map((article) => (
+                    <div
                       key={article.id}
                       className="flex items-center justify-between py-[12px] border-b border-[#F0F0F0] last:border-b-0 hover:bg-[#F9FAFB] rounded-[8px] px-[12px] transition-colors cursor-pointer"
                     >
                       <div className="flex items-center gap-[16px]">
-                        <div 
+                        <div
                           className="w-[32px] h-[32px] rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{ 
+                          style={{
                             backgroundColor: '#BCDEDC80',
                             fontFamily: 'Inter, sans-serif',
                             fontWeight: 600,
@@ -432,32 +516,32 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                             color: '#00564FB2'
                           }}
                         >
-                          {article.id}
+                          {String(article.id ?? '')}
                         </div>
-                        <p 
-                          style={{ 
-                            fontFamily: 'Inter, sans-serif', 
-                            fontWeight: 400, 
+                        <p
+                          style={{
+                            fontFamily: 'Inter, sans-serif',
+                            fontWeight: 400,
                             fontSize: '14px',
                             lineHeight: '100%',
                             letterSpacing: '0%',
                             color: '#626262'
                           }}
                         >
-                          {article.title}
+                          {String(article.title ?? '')}
                         </p>
                       </div>
-                      <span 
-                        style={{ 
-                          fontFamily: 'Inter, sans-serif', 
-                          fontWeight: 400, 
+                      <span
+                        style={{
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: 400,
                           fontSize: '14px',
                           lineHeight: '100%',
                           letterSpacing: '0%',
                           color: '#626262'
                         }}
                       >
-                        {article.views} views
+                        {String(article.views ?? '')} views
                       </span>
                     </div>
                   ))}
@@ -468,20 +552,20 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
             {/* Resource Cards */}
             <div className="grid grid-cols-3 gap-[24px]">
               {resourceCards.map((card) => (
-                <div 
+                <div
                   key={card.id}
                   className="bg-white rounded-[12px] border border-[#E0E0E0] p-[24px] hover:shadow-md transition-shadow flex flex-col items-center text-center"
                 >
-                  <div 
+                  <div
                     className="w-[48px] h-[48px] rounded-[10px] flex items-center justify-center mb-[16px]"
                     style={{ backgroundColor: '#BCDEDC80' }}
                   >
                     <img src={card.icon} alt={card.title} className="w-[24px] h-[24px] object-contain" />
                   </div>
-                  <h3 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif', 
-                      fontWeight: 600, 
+                  <h3
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 600,
                       fontSize: '16px',
                       lineHeight: '100%',
                       letterSpacing: '0%',
@@ -491,10 +575,10 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   >
                     {card.title}
                   </h3>
-                  <p 
-                    style={{ 
-                      fontFamily: 'Inter, sans-serif', 
-                      fontWeight: 400, 
+                  <p
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 400,
                       fontSize: '12px',
                       lineHeight: '100%',
                       letterSpacing: '0%',
@@ -507,7 +591,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   </p>
                   <button
                     className="text-[14px] text-[#00564F] font-medium hover:text-[#004D40] transition-colors flex items-center gap-[4px] justify-center"
-                    style={{ 
+                    style={{
                       fontFamily: 'Inter, sans-serif',
                       fontWeight: 500,
                       fontSize: '14px',
@@ -598,7 +682,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -676,7 +760,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
 
             {/* Category Cards - Mobile */}
             <div className="space-y-4">
-              {categories.map((category) => (
+              {!loading && filteredCategories.map((category) => (
                 <div
                   key={category.id}
                   className="bg-white rounded-[12px] border border-[#E0E0E0] p-4"
@@ -686,7 +770,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                       className="w-[40px] h-[40px] rounded-[10px] flex items-center justify-center flex-shrink-0"
                       style={{ backgroundColor: '#BCDEDC80' }}
                     >
-                      <img src={category.icon} alt={category.title} className="w-[20px] h-[20px] object-contain" />
+                      <img src={category.icon} alt={String(category.title ?? '')} className="w-[20px] h-[20px] object-contain" />
                     </div>
                     <div className="flex-1">
                       <h3
@@ -700,7 +784,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                           marginBottom: '6px'
                         }}
                       >
-                        {category.title}
+                        {String(category.title ?? '')}
                       </h3>
                       <p
                         style={{
@@ -712,33 +796,37 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                           color: '#505050'
                         }}
                       >
-                        {category.description}
+                        {String(category.description ?? '')}
                       </p>
                     </div>
                   </div>
                   <div className="space-y-2 pl-[52px]">
-                    {category.links.map((link, index) => (
-                      <a
-                        key={index}
-                        href="#"
-                        className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors"
-                        style={{
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 400,
-                          fontSize: '12px',
-                          lineHeight: '100%',
-                          letterSpacing: '0%'
-                        }}
-                      >
-                        <img
-                          src={LeftArrowIcon}
-                          alt="arrow"
-                          className="w-[10px] h-[10px] object-contain flex-shrink-0 mr-2"
-                          style={{ transform: 'rotate(135deg)' }}
-                        />
-                        {link}
-                      </a>
-                    ))}
+                    {(Array.isArray(category.links) ? category.links : []).map((link, index) => {
+                      const href = typeof link === 'object' && link !== null && link.path != null ? String(link.path) : '#';
+                      const label = typeof link === 'object' && link !== null && link.title != null ? String(link.title) : (typeof link === 'string' ? link : '');
+                      return (
+                        <a
+                          key={index}
+                          href={href}
+                          className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors"
+                          style={{
+                            fontFamily: 'Inter, sans-serif',
+                            fontWeight: 400,
+                            fontSize: '12px',
+                            lineHeight: '100%',
+                            letterSpacing: '0%'
+                          }}
+                        >
+                          <img
+                            src={LeftArrowIcon}
+                            alt="arrow"
+                            className="w-[10px] h-[10px] object-contain flex-shrink-0 mr-2"
+                            style={{ transform: 'rotate(135deg)' }}
+                          />
+                          {label}
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -763,7 +851,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                 Popular Articles
               </h2>
               <div className="space-y-3">
-                {popularArticles.map((article) => (
+                {!loading && filteredArticles.map((article) => (
                   <div
                     key={article.id}
                     className="flex items-center justify-between py-2 border-b border-[#F0F0F0] last:border-b-0"
@@ -779,7 +867,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                           color: '#00564FB2'
                         }}
                       >
-                        {article.id}
+                        {String(article.id ?? '')}
                       </div>
                       <p
                         className="flex-1"
@@ -792,7 +880,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                           color: '#626262'
                         }}
                       >
-                        {article.title}
+                        {String(article.title ?? '')}
                       </p>
                     </div>
                     <span
@@ -806,7 +894,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                         color: '#626262'
                       }}
                     >
-                      {article.views}
+                      {String(article.views ?? '')}
                     </span>
                   </div>
                 ))}

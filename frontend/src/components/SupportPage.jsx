@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -21,12 +22,11 @@ const CheckIcon = new URL("../images/icons/verified.png", import.meta.url).href;
 const UploadIcon = new URL("../images/icons/upload.png", import.meta.url).href;
 
 import LogoutModal from "./LogoutModal";
-// Logout icon for modal
-// const LogoutIcon2 = new URL("../images/icons/logout2.png", import.meta.url).href;
+import { getSupportTickets, createSupportTicket } from "../services/support";
 
 const roleDisplayNames = {
   superAdmin: "Super Admin",
-  hr: "HR Manager",
+  hr: "HR Admin",
   manager: "Manager",
   fieldEmployee: "Field Employee",
   officer: "Officer"
@@ -34,6 +34,8 @@ const roleDisplayNames = {
 
 const SupportPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("8-6");
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isDesktopDropdownOpen, setIsDesktopDropdownOpen] = useState(false);
@@ -45,8 +47,36 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
     subject: "",
     category: "",
     message: "",
+    priority: "medium",
     file: null
   });
+  const [tickets, setTickets] = useState([]);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
+  const [ticketsError, setTicketsError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchTickets = async () => {
+      try {
+        setTicketsLoading(true);
+        setTicketsError(null);
+        const data = await getSupportTickets();
+        if (!cancelled) setTickets(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (!cancelled) {
+          setTicketsError(err.message || "Failed to load tickets");
+          setTickets([]);
+        }
+      } finally {
+        if (!cancelled) setTicketsLoading(false);
+      }
+    };
+    fetchTickets();
+    return () => { cancelled = true; };
+  }, []);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -68,26 +98,12 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
     };
   }, [isUserDropdownOpen, isDesktopDropdownOpen]);
 
-  const recentTickets = [
-    {
-      id: "TICK-1234",
-      title: "GPS tracking not working",
-      date: "Dec 22, 2024",
-      status: "In Progress"
-    },
-    {
-      id: "TICK-1198",
-      title: "Cannot export attendance report",
-      date: "Dec 18, 2024",
-      status: "Resolved"
-    },
-    {
-      id: "TICK-1165",
-      title: "Leave balance not updating",
-      date: "Dec 15, 2024",
-      status: "Resolved"
-    }
-  ];
+  const displayTickets = tickets.map((t) => ({
+    id: t.id ?? t.ticket_id ?? "",
+    title: t.subject ?? t.title ?? "",
+    date: t.created_at ? new Date(t.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : t.date ?? "",
+    status: t.status ?? ""
+  }));
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -104,15 +120,33 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    alert("Ticket submitted successfully!");
-    setFormData({
-      subject: "",
-      category: "",
-      message: "",
-      file: null
-    });
+    if (!formData.subject?.trim() || !formData.message?.trim()) {
+      setSubmitError("Subject and message are required.");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+      setSubmitSuccess(false);
+      await createSupportTicket({
+        subject: formData.subject.trim(),
+        message: formData.message.trim(),
+        priority: formData.priority || "medium",
+        category: formData.category || undefined,
+        file: formData.file || undefined
+      });
+      setSubmitSuccess(true);
+      setFormData({ subject: "", category: "", message: "", priority: "medium", file: null });
+      const data = await getSupportTickets();
+      setTickets(Array.isArray(data) ? data : []);
+      setTimeout(() => setSubmitSuccess(false), 4000);
+    } catch (err) {
+      setSubmitError(err.message || "Failed to submit ticket.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleClear = () => {
@@ -120,8 +154,11 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
       subject: "",
       category: "",
       message: "",
+      priority: "medium",
       file: null
     });
+    setSubmitError(null);
+    setSubmitSuccess(false);
   };
 
   return (
@@ -137,7 +174,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
       `}</style>
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
-        <Sidebar userRole={userRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
+        <Sidebar userRole={effectiveRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
 
         <main className="flex-1 flex flex-col bg-[#F5F7FA]" style={{ minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}>
           {/* Header */}
@@ -180,14 +217,14 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 mt-[2px] ${isDesktopDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -567,6 +604,37 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                       </div>
                     </div>
 
+                    {/* Priority Field (API: subject, message, priority) */}
+                    <div className="mb-[20px]">
+                      <label
+                        className="block mb-[8px]"
+                        style={{
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: 500,
+                          fontSize: '14px',
+                          color: '#181818'
+                        }}
+                      >
+                        Priority
+                      </label>
+                      <div className="relative">
+                        <select
+                          name="priority"
+                          value={formData.priority}
+                          onChange={handleInputChange}
+                          className="w-full h-[44px] px-[16px] pr-[40px] rounded-[8px] border border-[#E0E0E0] bg-white text-[14px] focus:outline-none focus:border-[#00564F] transition-colors appearance-none"
+                          style={{ fontWeight: 400, color: '#000000' }}
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                        </select>
+                        <svg className="absolute right-[16px] top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-[#9CA3AF] pointer-events-none" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    </div>
+
                     {/* Message Field */}
                     <div className="mb-[12px]">
                       <label
@@ -619,8 +687,8 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                         Attach File <span style={{ color: '#909090' }}>(Optional)</span>
                       </label>
                       <div
-                        className="border-2 border-dashed rounded-[8px] p-[32px] text-center cursor-pointer transition-colors hover:border-[#00564F]"
-                        style={{ borderColor: '#E0E0E0' }}
+                        className="border-2 border-dashed rounded-[8px] p-[32px] text-center cursor-pointer transition-colors hover:border-[#00564F] relative"
+                        style={{ borderColor: formData.file ? '#00564F' : '#E0E0E0' }}
                         onClick={() => document.getElementById('file-upload').click()}
                       >
                         <input
@@ -630,37 +698,87 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                           onChange={handleFileChange}
                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                         />
-                        <img src={UploadIcon} alt="Upload" className="w-[32px] h-[32px] mx-auto mb-[12px] opacity-50" />
-                        <p
-                          style={{
-                            fontFamily: 'Inter, sans-serif',
-                            fontWeight: 400,
-                            fontSize: '14px',
-                            color: '#666666',
-                            lineHeight: '140%'
-                          }}
-                        >
-                          Click to upload or drag and drop
-                        </p>
-                        <p
-                          style={{
-                            fontFamily: 'Inter, sans-serif',
-                            fontWeight: 400,
-                            fontSize: '12px',
-                            color: '#9CA3AF',
-                            lineHeight: '140%',
-                            marginTop: '4px'
-                          }}
-                        >
-                          PDF, DOC, or Image (max 10MB)
-                        </p>
+                        {formData.file ? (
+                          <>
+                            <img src={UploadIcon} alt="Upload" className="w-[32px] h-[32px] mx-auto mb-[12px] opacity-70" />
+                            <p
+                              style={{
+                                fontFamily: 'Inter, sans-serif',
+                                fontWeight: 500,
+                                fontSize: '14px',
+                                color: '#00564F',
+                                lineHeight: '140%'
+                              }}
+                            >
+                              {formData.file.name}
+                            </p>
+                            <p
+                              style={{
+                                fontFamily: 'Inter, sans-serif',
+                                fontWeight: 400,
+                                fontSize: '12px',
+                                color: '#6B7280',
+                                lineHeight: '140%',
+                                marginTop: '4px'
+                              }}
+                            >
+                              {(formData.file.size / 1024).toFixed(1)} KB · Click to change
+                            </p>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setFormData(prev => ({ ...prev, file: null })); }}
+                              className="mt-2 px-3 py-1 rounded text-[12px] font-medium text-red-600 hover:bg-red-50 border border-red-200"
+                              style={{ fontFamily: 'Inter, sans-serif' }}
+                            >
+                              Remove file
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <img src={UploadIcon} alt="Upload" className="w-[32px] h-[32px] mx-auto mb-[12px] opacity-50" />
+                            <p
+                              style={{
+                                fontFamily: 'Inter, sans-serif',
+                                fontWeight: 400,
+                                fontSize: '14px',
+                                color: '#666666',
+                                lineHeight: '140%'
+                              }}
+                            >
+                              Click to upload or drag and drop
+                            </p>
+                            <p
+                              style={{
+                                fontFamily: 'Inter, sans-serif',
+                                fontWeight: 400,
+                                fontSize: '12px',
+                                color: '#9CA3AF',
+                                lineHeight: '140%',
+                                marginTop: '4px'
+                              }}
+                            >
+                              PDF, DOC, or Image (max 10MB)
+                            </p>
+                          </>
+                        )}
                       </div>
                     </div>
 
+                    {submitError && (
+                      <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
+                        <p className="text-sm text-red-600">{submitError}</p>
+                      </div>
+                    )}
+                    {submitSuccess && (
+                      <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200">
+                        <p className="text-sm text-green-600">Ticket submitted successfully.</p>
+                      </div>
+                    )}
                     {/* Form Buttons */}
                     <div className="flex items-center gap-[12px]">
                       <button
                         type="submit"
+                        disabled={isSubmitting}
                         className="px-[24px] py-[12px] rounded-[8px] text-white transition-colors"
                         style={{
                           fontFamily: 'Inter, sans-serif',
@@ -670,12 +788,13 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                           backgroundColor: '#00564F'
                         }}
                       >
-                        Submit Ticket
+                        {isSubmitting ? "Submitting..." : "Submit Ticket"}
                       </button>
                       <button
                         type="button"
                         onClick={handleClear}
-                        className="px-[24px] py-[12px] rounded-[8px] border border-[#E0E0E0] bg-white transition-colors hover:bg-[#F5F7FA]"
+                        disabled={isSubmitting}
+                        className="px-[24px] py-[12px] rounded-[8px] border border-[#E0E0E0] bg-white transition-colors hover:bg-[#F5F7FA] disabled:opacity-50"
                         style={{
                           fontFamily: 'Inter, sans-serif',
                           fontWeight: 500,
@@ -709,8 +828,14 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                   >
                     Recent Tickets
                   </h2>
+                  {ticketsLoading && (
+                    <p className="text-sm text-[#6B7280] py-4">Loading tickets...</p>
+                  )}
+                  {ticketsError && (
+                    <p className="text-sm text-red-600 py-2">{ticketsError}</p>
+                  )}
                   <div className="space-y-[12px] mb-[20px]">
-                    {recentTickets.map((ticket) => (
+                    {!ticketsLoading && displayTickets.map((ticket) => (
                       <div
                         key={ticket.id}
                         className="p-[12px] rounded-[8px] border border-[#E0E0E0]"
@@ -982,7 +1107,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1265,6 +1390,32 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
+              {/* Priority Field */}
+              <div className="mb-4">
+                <label
+                  className="block mb-2 text-[13px] font-medium text-[#181818]"
+                  style={{ fontFamily: 'Inter, sans-serif' }}
+                >
+                  Priority
+                </label>
+                <div className="relative">
+                  <select
+                    name="priority"
+                    value={formData.priority}
+                    onChange={handleInputChange}
+                    className="w-full h-[40px] px-3 pr-10 rounded-[8px] border border-[#E0E0E0] bg-white text-[13px] focus:outline-none focus:border-[#00564F] appearance-none"
+                    style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, color: '#000000' }}
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                  <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF] pointer-events-none" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
+
               {/* Message Field */}
               <div className="mb-3">
                 <label
@@ -1302,7 +1453,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                 </label>
                 <div
                   className="border-2 border-dashed rounded-[8px] p-6 text-center cursor-pointer transition-colors"
-                  style={{ borderColor: '#E0E0E0' }}
+                  style={{ borderColor: formData.file ? '#00564F' : '#E0E0E0' }}
                   onClick={() => document.getElementById('file-upload-mobile').click()}
                 >
                   <input
@@ -1312,38 +1463,78 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                     onChange={handleFileChange}
                     accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                   />
-                  <img src={UploadIcon} alt="Upload" className="w-[24px] h-[24px] mx-auto mb-2 opacity-50" />
-                  <p
-                    className="text-[12px] text-[#666666] mb-1"
-                    style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, lineHeight: '140%' }}
-                  >
-                    Click to upload or drag and drop
-                  </p>
-                  <p
-                    className="text-[10px] text-[#9CA3AF]"
-                    style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, lineHeight: '140%' }}
-                  >
-                    PDF, DOC, or Image (max 10MB)
-                  </p>
+                  {formData.file ? (
+                    <>
+                      <img src={UploadIcon} alt="Upload" className="w-[24px] h-[24px] mx-auto mb-2 opacity-70" />
+                      <p
+                        className="text-[13px] font-medium text-[#00564F] mb-1 break-all"
+                        style={{ fontFamily: 'Inter, sans-serif', lineHeight: '140%' }}
+                      >
+                        {formData.file.name}
+                      </p>
+                      <p
+                        className="text-[11px] text-[#6B7280] mb-2"
+                        style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, lineHeight: '140%' }}
+                      >
+                        {(formData.file.size / 1024).toFixed(1)} KB · Click to change
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setFormData(prev => ({ ...prev, file: null })); }}
+                        className="px-2 py-1 rounded text-[11px] font-medium text-red-600 hover:bg-red-50 border border-red-200"
+                        style={{ fontFamily: 'Inter, sans-serif' }}
+                      >
+                        Remove file
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <img src={UploadIcon} alt="Upload" className="w-[24px] h-[24px] mx-auto mb-2 opacity-50" />
+                      <p
+                        className="text-[12px] text-[#666666] mb-1"
+                        style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, lineHeight: '140%' }}
+                      >
+                        Click to upload or drag and drop
+                      </p>
+                      <p
+                        className="text-[10px] text-[#9CA3AF]"
+                        style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, lineHeight: '140%' }}
+                      >
+                        PDF, DOC, or Image (max 10MB)
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
 
+              {submitError && (
+                <div className="mb-3 p-2 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-xs text-red-600">{submitError}</p>
+                </div>
+              )}
+              {submitSuccess && (
+                <div className="mb-3 p-2 rounded-lg bg-green-50 border border-green-200">
+                  <p className="text-xs text-green-600">Ticket submitted successfully.</p>
+                </div>
+              )}
               {/* Form Buttons */}
               <div className="flex flex-col gap-2">
                 <button
                   type="submit"
-                  className="w-full px-4 py-3 rounded-[8px] text-white text-[13px] font-medium"
+                  disabled={isSubmitting}
+                  className="w-full px-4 py-3 rounded-[8px] text-white text-[13px] font-medium disabled:opacity-50"
                   style={{
                     fontFamily: 'Inter, sans-serif',
                     backgroundColor: '#00564F'
                   }}
                 >
-                  Submit Ticket
+                  {isSubmitting ? "Submitting..." : "Submit Ticket"}
                 </button>
                 <button
                   type="button"
                   onClick={handleClear}
-                  className="w-full px-4 py-3 rounded-[8px] border border-[#E0E0E0] bg-white text-[13px] font-medium text-[#666666]"
+                  disabled={isSubmitting}
+                  className="w-full px-4 py-3 rounded-[8px] border border-[#E0E0E0] bg-white text-[13px] font-medium text-[#666666] disabled:opacity-50"
                   style={{ fontFamily: 'Inter, sans-serif' }}
                 >
                   Clear Form
@@ -1368,8 +1559,14 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
             >
               Recent Tickets
             </h2>
+            {ticketsLoading && (
+              <p className="text-xs text-[#6B7280] py-3">Loading tickets...</p>
+            )}
+            {ticketsError && (
+              <p className="text-xs text-red-600 py-2">{ticketsError}</p>
+            )}
             <div className="space-y-3 mb-4">
-              {recentTickets.map((ticket) => (
+              {!ticketsLoading && displayTickets.map((ticket) => (
                 <div
                   key={ticket.id}
                   className="p-3 rounded-[8px] border border-[#E0E0E0]"

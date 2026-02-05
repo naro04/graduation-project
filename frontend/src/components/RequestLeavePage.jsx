@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { createLeave } from "../services/leaves";
+import { getProfileMe } from "../services/profile";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -14,6 +17,7 @@ const UploadIcon = new URL("../images/icons/upload.png", import.meta.url).href;
 
 const RequestLeavePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const effectiveRole = getEffectiveRole(userRole);
   const location = useLocation();
   const [activeMenu, setActiveMenu] = useState("6-1");
   const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
@@ -35,6 +39,25 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
     reason: "",
     supportingDocument: null
   });
+
+  // Current user's employee_id (required by backend)
+  const [currentEmployeeId, setCurrentEmployeeId] = useState(null);
+
+  // Load profile to get employee_id for leave request
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await getProfileMe();
+        if (cancelled) return;
+        const id = profile?.employee?.id ?? profile?.employee_id ?? null;
+        setCurrentEmployeeId(id || null);
+      } catch (err) {
+        if (!cancelled) setCurrentEmployeeId(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Check URL params or location state for rejected request
   useEffect(() => {
@@ -62,7 +85,7 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
@@ -111,13 +134,66 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
     };
   }, []);
 
-  const handleSubmit = (e) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Handle form submission
-    console.log("Submit leave request:", formData);
-    // Here you would typically send the data to your backend
-    // Navigate back to leave management page
-    navigate("/leave/requests");
+    setSubmitError(null);
+
+    // Validate required fields before sending
+    if (!formData.leaveType?.trim()) {
+      setSubmitError("Please select a leave type.");
+      return;
+    }
+    if (!formData.startDate) {
+      setSubmitError("Please select a start date.");
+      return;
+    }
+    if (!formData.endDate) {
+      setSubmitError("Please select an end date.");
+      return;
+    }
+    if (!formData.reason?.trim()) {
+      setSubmitError("Please provide a reason for your leave request.");
+      return;
+    }
+
+    if (!currentEmployeeId) {
+      setSubmitError("Unable to identify your employee record. Please refresh the page or contact support.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const hasFile = formData.supportingDocument && formData.supportingDocument instanceof File;
+      if (hasFile) {
+        const fd = new FormData();
+        fd.append("employee_id", currentEmployeeId);
+        fd.append("leave_type", formData.leaveType);
+        fd.append("start_date", formData.startDate);
+        fd.append("end_date", formData.endDate);
+        fd.append("total_days", String(formData.totalDays || ""));
+        fd.append("reason", formData.reason);
+        fd.append("supporting_document", formData.supportingDocument);
+        await createLeave(fd);
+      } else {
+        await createLeave({
+          employee_id: currentEmployeeId,
+          leave_type: formData.leaveType,
+          start_date: formData.startDate,
+          end_date: formData.endDate,
+          total_days: Number(formData.totalDays) || undefined,
+          reason: formData.reason,
+        });
+      }
+      navigate("/leave/my");
+    } catch (err) {
+      console.error("Failed to submit leave request:", err);
+      setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to submit request");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -125,7 +201,7 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar 
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -162,10 +238,10 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                       <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
               </div>
@@ -208,6 +284,9 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
             {/* Form Container */}
             <div className="bg-white rounded-[10px] p-[32px]" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
               <form onSubmit={handleSubmit}>
+                {submitError && (
+                  <div className="mb-4 p-3 rounded bg-red-50 text-red-700 text-sm">{submitError}</div>
+                )}
                 <div className="space-y-[24px]">
                   {/* Employee Dropdown */}
                   <div>
@@ -601,7 +680,8 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
                   </button>
                   <button
                     type="submit"
-                    className="px-[24px] py-[10px] rounded-[5px] hover:opacity-90 transition-opacity"
+                    disabled={submitting}
+                    className="px-[24px] py-[10px] rounded-[5px] hover:opacity-90 transition-opacity disabled:opacity-60"
                     style={{
                       backgroundColor: '#009084',
                       color: '#FFFFFF',

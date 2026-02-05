@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LocationErrorModal from "./LocationErrorModal";
+import { checkIn as apiCheckIn, checkOut as apiCheckOut, getMyAttendance, getAttendanceLocations } from "../services/attendance";
 
 // User Avatar
 const UserAvatar = new URL(
@@ -25,6 +27,8 @@ const DropdownArrow = new URL(
 
 const MyAttendancePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("3-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState("All Status");
@@ -37,7 +41,26 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
   const [checkOutTime, setCheckOutTime] = useState("");
   const [totalHours, setTotalHours] = useState("");
   const [showLocationModal, setShowLocationModal] = useState(false);
-
+  const [attendanceFromApi, setAttendanceFromApi] = useState([]);
+  const [attendanceLocations, setAttendanceLocations] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [attendanceError, setAttendanceError] = useState(null);
+  const [checkInOutLoading, setCheckInOutLoading] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState(null);
+  const STORAGE_KEY_COORDS = "attendance_last_coords";
+  const getStoredCoordsForToday = () => {
+    try {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const raw = sessionStorage.getItem(STORAGE_KEY_COORDS);
+      if (!raw) return null;
+      const { date, latitude, longitude } = JSON.parse(raw);
+      if (date !== todayStr || latitude == null || longitude == null) return null;
+      return { latitude, longitude };
+    } catch {
+      return null;
+    }
+  };
+  const [lastCheckInCoords, setLastCheckInCoords] = useState(() => getStoredCoordsForToday());
 
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
 
@@ -45,61 +68,159 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
   const userDropdownDesktopRef = useRef(null);
   const userDropdownMobileRef = useRef(null);
 
-  // ثابت مؤقت لمكان الـ Check-in (عدّليه حسب الداتا عندك)
-  const checkInLocationLabel = "Gaza Office (GPS)";
+  const checkInLocationLabel = (() => {
+    if (selectedLocationId && attendanceLocations.length) {
+      const loc = attendanceLocations.find((l) => (l.id ?? l.location_id) == selectedLocationId);
+      return loc?.name ?? loc?.location_name ?? "—";
+    }
+    return "—";
+  })() || "—";
 
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample attendance data
-  const attendanceData = [
-    {
-      id: 1,
-      date: new Date(2025, 11, 7), // Dec 7, 2025
-      checkIn: "08:00 Am",
-      checkOut: "04:02 Pm",
-      workHours: "8 hr, 2 m",
-      location: "Head Office",
-      type: "Office",
-      status: "Present",
-    },
-    {
-      id: 2,
-      date: new Date(2025, 11, 8), // Dec 8, 2025
-      checkIn: "10:05 Am",
-      checkOut: "04:20 Pm",
-      workHours: "6 hr, 15 m",
-      location: "Head Office",
-      type: "Office",
-      status: "Late",
-    },
-    {
-      id: 3,
-      date: new Date(2025, 11, 10), // Dec 10, 2025
-      checkIn: "08:02 Am",
-      checkOut: "-",
-      workHours: "-",
-      location: "Head Office",
-      type: "Office",
-      status: "Missing Check-out",
-    },
-    {
-      id: 4,
-      date: new Date(2025, 11, 11), // Dec 11, 2025
-      checkIn: "-",
-      checkOut: "-",
-      workHours: "-",
-      location: "-",
-      type: "-",
-      status: "Absent",
-    },
-  ];
+  // Fetch my attendance and attendance locations
+  useEffect(() => {
+    let cancelled = false;
+    setAttendanceLoading(true);
+    setAttendanceError(null);
+    Promise.all([
+      getMyAttendance().catch((err) => {
+        if (!cancelled) setAttendanceError(err?.response?.data?.message || err?.message || "Failed to load attendance");
+        return [];
+      }),
+      getAttendanceLocations().catch(() => []),
+    ]).then(([list, locations]) => {
+      if (cancelled) return;
+      setAttendanceFromApi(Array.isArray(list) ? list : []);
+      setAttendanceLocations(Array.isArray(locations) ? locations : []);
+    }).finally(() => {
+      if (!cancelled) setAttendanceLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Normalize a date value to YYYY-MM-DD for comparison
+  const toDateOnly = (val) => {
+    if (val == null || val === "") return "";
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+    return s;
+  };
+
+  // Today's location from API (show actual location from GPS/backend after check-in)
+  const todayLocationFromApi = (() => {
+    const list = attendanceFromApi || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayRecord = list.find((r) => {
+      const raw = r.date ?? r.check_in_date ?? r.checkInDate ?? r.attendance_date ?? "";
+      const dStr = toDateOnly(raw);
+      return dStr && dStr === todayStr;
+    });
+    if (!todayRecord) return null;
+    const loc = todayRecord.location_name ?? todayRecord.location ?? todayRecord.locationName ?? "";
+    if (!loc || String(loc).toLowerCase().includes("unknown")) return loc || "—";
+    return loc;
+  })();
+  // When API didn't return a location name but we sent GPS, show "من موقعك الحالي"
+  const hasLocationFromApi = todayLocationFromApi != null && todayLocationFromApi !== "" && todayLocationFromApi !== "—" && !String(todayLocationFromApi).toLowerCase().includes("unknown");
+  const displayLocationLabel = hasLocationFromApi ? todayLocationFromApi : (lastCheckInCoords ? "من موقعك الحالي" : checkInLocationLabel);
+
+  // Derive today's check-in state from API: use the ACTIVE session (no check-out) or latest record for today
+  useEffect(() => {
+    const list = attendanceFromApi || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayRecords = list.filter((r) => {
+      const raw = r.date ?? r.check_in_date ?? r.checkInDate ?? r.attendance_date ?? "";
+      const dStr = toDateOnly(raw);
+      return dStr && dStr === todayStr;
+    });
+    if (!todayRecords.length) return;
+    // Prefer a record that has check-in but NO check-out (active session) so Check-out stays enabled
+    const hasCheckOut = (r) => r.check_out ?? r.check_out_time ?? r.checkOut ?? r.check_out_at ?? r.checked_out_at ?? r.checkOutAt;
+    let todayRecord = todayRecords.find((r) => {
+      const hasIn = r.check_in ?? r.check_in_time ?? r.checkIn ?? r.check_in_at ?? r.checked_in_at ?? r.checkInTime ?? r.checkInAt;
+      return hasIn && !hasCheckOut(r);
+    });
+    if (!todayRecord) todayRecord = todayRecords[todayRecords.length - 1];
+    const hasCheckIn = todayRecord.check_in ?? todayRecord.check_in_time ?? todayRecord.checkIn ?? todayRecord.check_in_at ?? todayRecord.checked_in_at ?? todayRecord.checkInTime ?? todayRecord.checkInAt;
+    if (!hasCheckIn) return;
+    const hasOut = hasCheckOut(todayRecord);
+    if (hasOut) {
+      setIsCheckedIn(true);
+      setIsCheckedOut(true);
+      setCheckInTime(formatTimeForDisplay(todayRecord.check_in ?? todayRecord.check_in_time ?? todayRecord.checkIn ?? todayRecord.checkInAt));
+      setCheckOutTime(formatTimeForDisplay(hasOut));
+      setTotalHours(todayRecord.work_hours ?? todayRecord.workHours ?? "");
+    } else {
+      setIsCheckedIn(true);
+      setIsCheckedOut(false);
+      setCheckInTime(formatTimeForDisplay(todayRecord.check_in ?? todayRecord.check_in_time ?? todayRecord.checkIn ?? todayRecord.checkInAt));
+      setCheckOutTime("");
+      setTotalHours("");
+    }
+  }, [attendanceFromApi]);
+
+  function formatTimeForDisplay(t) {
+    if (!t) return "";
+    if (typeof t === "string" && /^\d{1,2}:\d{2}\s*(Am|Pm)?$/i.test(t.trim())) return t.trim();
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return String(t);
+    const hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? "Pm" : "Am";
+    const h = hours % 12 || 12;
+    return `${h}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+  }
+
+  const refreshMyAttendance = () => {
+    getMyAttendance()
+      .then((list) => setAttendanceFromApi(Array.isArray(list) ? list : []))
+      .catch(() => {});
+  };
+
+  // Normalize API rows for table
+  const attendanceData = React.useMemo(() => {
+    return (attendanceFromApi || []).map((r) => {
+      const dateRaw = r.date ?? r.check_in_date ?? r.checkInDate ?? "";
+      const date = dateRaw ? new Date(dateRaw) : new Date();
+      const checkInRaw = r.check_in ?? r.check_in_time ?? r.checkIn ?? r.check_in_at ?? r.checked_in_at ?? r.checkInTime ?? r.checkInAt ?? null;
+      const checkOutRaw = r.check_out ?? r.check_out_time ?? r.checkOut ?? r.check_out_at ?? r.checked_out_at ?? r.checkOutTime ?? r.checkOutAt ?? null;
+      const checkInStr = checkInRaw ?? "-";
+      const checkOutStr = checkOutRaw ?? "-";
+      const workH = r.work_hours ?? r.workHours ?? r.work_hours_display ?? "—";
+      let loc = r.location_name ?? r.location ?? r.locationName ?? "";
+      if ((!loc || loc === "—" || String(loc).toLowerCase().includes("unknown")) && (r.location_id != null || r.locationId != null)) {
+        const locId = r.location_id ?? r.locationId;
+        const found = (attendanceLocations || []).find((l) => (l.id ?? l.location_id) == locId);
+        loc = found?.name ?? found?.location_name ?? (loc || "—");
+      }
+      if (!loc || String(loc).toLowerCase().includes("unknown")) loc = loc || "—";
+      const typ = r.attendance_type ?? r.type ?? r.check_method ?? "—";
+      const st = r.status ?? "Present";
+      return {
+        id: r.id ?? r.attendance_id,
+        date,
+        checkIn: typeof checkInStr === "string" ? checkInStr : formatTimeForDisplay(checkInStr),
+        checkOut: typeof checkOutStr === "string" ? checkOutStr : formatTimeForDisplay(checkOutStr),
+        workHours: workH,
+        location: loc,
+        type: typ,
+        status: st,
+      };
+    });
+  }, [attendanceFromApi, attendanceLocations]);
 
   // Format date
   const formatDate = (date) => {
@@ -169,67 +290,145 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
     };
   }, []);
 
-  // Handle Check-in
-  // Handle Check-in
   const handleCheckIn = () => {
-    // For now, simulate location failure and show modal
     setShowLocationModal(true);
   };
 
   const confirmCheckIn = () => {
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const ampm = hours >= 12 ? "Pm" : "Am";
-    const displayHours = hours % 12 || 12;
-    const displayMinutes = minutes.toString().padStart(2, "0");
-    const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
-
-    setCheckInTime(timeString);
-    setIsCheckedIn(true);
-    setIsCheckedOut(false);
-    setCheckOutTime("");
-    setTotalHours("");
-    setShowLocationModal(false);
+    setCheckInOutLoading(true);
+    setAttendanceError(null);
+    const buildPayload = (coords) => {
+      const payload = {};
+      if (selectedLocationId != null) {
+        payload.location_id = selectedLocationId;
+        payload.locationId = selectedLocationId;
+      }
+      if (coords?.latitude != null && coords?.longitude != null) {
+        payload.latitude = coords.latitude;
+        payload.longitude = coords.longitude;
+        payload.method = "GPS";
+      }
+      return payload;
+    };
+    const tryGeolocationThenCheckIn = () => {
+      if (!navigator.geolocation) {
+        apiCheckIn(buildPayload(null)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          setLastCheckInCoords(coords);
+          try {
+            const todayStr = new Date().toISOString().split("T")[0];
+            sessionStorage.setItem(STORAGE_KEY_COORDS, JSON.stringify({ date: todayStr, ...coords }));
+          } catch (_) {}
+          apiCheckIn(buildPayload(coords)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
+        },
+        (err) => {
+          setLastCheckInCoords(null);
+          setAttendanceError("لم نتمكن من تحديد موقعك. تأكد من السماح بالموقع للمتصفح وجرب مرة أخرى. تم التسجيل بدون موقع.");
+          apiCheckIn(buildPayload(null)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+      );
+    };
+    const onCheckInSuccess = () => {
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+      const ampm = hours >= 12 ? "Pm" : "Am";
+      const displayHours = hours % 12 || 12;
+      const displayMinutes = minutes.toString().padStart(2, "0");
+      setCheckInTime(`${displayHours}:${displayMinutes} ${ampm}`);
+      setIsCheckedIn(true);
+      setIsCheckedOut(false);
+      setCheckOutTime("");
+      setTotalHours("");
+      setShowLocationModal(false);
+      setAttendanceError(null);
+      refreshMyAttendance();
+    };
+    const onCheckInError = (err) => {
+      const msg = err?.response?.data?.message || err?.message || "Check-in failed";
+      const alreadyCheckedIn = typeof msg === "string" && (
+        msg.toLowerCase().includes("already checked in") ||
+        msg.toLowerCase().includes("please check out first")
+      );
+      if (alreadyCheckedIn) {
+        // Backend says user is already checked in — sync UI so Check-out is enabled
+        setIsCheckedIn(true);
+        setIsCheckedOut(false);
+        setAttendanceError(null);
+        refreshMyAttendance();
+      } else {
+        setAttendanceError(msg);
+      }
+    };
+    const onCheckInFinally = () => setCheckInOutLoading(false);
+    tryGeolocationThenCheckIn();
   };
 
-  // Handle Check-out
+  // Fallback: enable Check-out state when user is already checked in but UI is out of sync
+  const enableCheckOutFallback = () => {
+    setIsCheckedIn(true);
+    setIsCheckedOut(false);
+    setAttendanceError(null);
+    refreshMyAttendance();
+  };
+
   const handleCheckOut = () => {
     if (!isCheckedIn || isCheckedOut) return;
-
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const ampm = hours >= 12 ? "Pm" : "Am";
-    const displayHours = hours % 12 || 12;
-    const displayMinutes = minutes.toString().padStart(2, "0");
-    const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
-
-    setCheckOutTime(timeString);
-    setIsCheckedOut(true);
-
-    // Calculate total hours
-    if (checkInTime) {
-      const checkInMatch = checkInTime.match(/(\d+):(\d+)\s*(Am|Pm)/i);
-      if (checkInMatch) {
-        let checkInHours = parseInt(checkInMatch[1], 10);
-        const checkInMinutes = parseInt(checkInMatch[2], 10);
-        const checkInAmPm = checkInMatch[3].toLowerCase();
-
-        if (checkInAmPm === "pm" && checkInHours !== 12) checkInHours += 12;
-        if (checkInAmPm === "am" && checkInHours === 12) checkInHours = 0;
-
-        // now.getHours() already 0-23 (24h)
-        const totalMinutes =
-          (hours * 60 + minutes) - (checkInHours * 60 + checkInMinutes);
-
-        const safeTotal = Math.max(0, totalMinutes);
-        const workHours = Math.floor(safeTotal / 60);
-        const workMinutes = safeTotal % 60;
-
-        setTotalHours(`${workHours} hr, ${workMinutes} m`);
-      }
-    }
+    setCheckInOutLoading(true);
+    setAttendanceError(null);
+    apiCheckOut()
+      .then(() => {
+        const now = new Date();
+        const hours = now.getHours();
+        const minutes = now.getMinutes();
+        const ampm = hours >= 12 ? "Pm" : "Am";
+        const displayHours = hours % 12 || 12;
+        const displayMinutes = minutes.toString().padStart(2, "0");
+        setCheckOutTime(`${displayHours}:${displayMinutes} ${ampm}`);
+        setIsCheckedOut(true);
+        if (checkInTime) {
+          const checkInMatch = checkInTime.match(/(\d+):(\d+)\s*(Am|Pm)/i);
+          if (checkInMatch) {
+            let checkInHours = parseInt(checkInMatch[1], 10);
+            const checkInMinutes = parseInt(checkInMatch[2], 10);
+            const checkInAmPm = checkInMatch[3].toLowerCase();
+            if (checkInAmPm === "pm" && checkInHours !== 12) checkInHours += 12;
+            if (checkInAmPm === "am" && checkInHours === 12) checkInHours = 0;
+            const totalMinutes = (hours * 60 + minutes) - (checkInHours * 60 + checkInMinutes);
+            const safeTotal = Math.max(0, totalMinutes);
+            setTotalHours(`${Math.floor(safeTotal / 60)} hr, ${safeTotal % 60} m`);
+          }
+        }
+        refreshMyAttendance();
+      })
+      .catch((err) => {
+        const msg = err?.response?.data?.message || err?.message || "Check-out failed";
+        const noActiveCheckIn = typeof msg === "string" && (
+          msg.toLowerCase().includes("no active check-in") ||
+          msg.toLowerCase().includes("check in first") ||
+          msg.toLowerCase().includes("no active check-in found")
+        );
+        if (noActiveCheckIn) {
+          // Backend says there is no active check-in — sync UI so user does check-in first
+          setIsCheckedIn(false);
+          setIsCheckedOut(false);
+          setCheckInTime("");
+          setCheckOutTime("");
+          setTotalHours("");
+          setAttendanceError(
+            "النظام لم يجد تسجيل حضور فعّال اليوم. يرجى الضغط على «Check-in» أولاً لتسجيل الدخول، ثم «Check-out» عند الانتهاء."
+          );
+          refreshMyAttendance();
+        } else {
+          setAttendanceError(msg);
+        }
+      })
+      .finally(() => setCheckInOutLoading(false));
   };
 
   return (
@@ -240,7 +439,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -315,14 +514,14 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -402,6 +601,32 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
               </p>
             </div>
 
+            {attendanceError && (
+              <div className="mb-4 p-4 rounded-lg border text-sm"
+                style={{
+                  backgroundColor: attendanceError.toLowerCase().includes("employee record not found")
+                    ? "#FEF3C7"
+                    : "#FEE2E2",
+                  borderColor: attendanceError.toLowerCase().includes("employee record not found")
+                    ? "#F59E0B"
+                    : "#EF4444",
+                  color: attendanceError.toLowerCase().includes("employee record not found")
+                    ? "#92400E"
+                    : "#B91C1C",
+                }}
+              >
+                {attendanceError.toLowerCase().includes("employee record not found") ? (
+                  <>
+                    <strong>حسابك غير مرتبط بسجل موظف.</strong>
+                    <br />
+                    يرجى التواصل مع مسؤول الموارد البشرية لربط حسابك بسجل موظف في النظام حتى تتمكن من تسجيل الحضور والانصراف.
+                  </>
+                ) : (
+                  attendanceError
+                )}
+              </div>
+            )}
+
             {/* Check-in and Check-out Section */}
             <div className="flex flex-col gap-[20px] mb-[48px]">
 
@@ -409,19 +634,19 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
               <div className="flex items-center gap-[16px]">
                 <button
                   onClick={handleCheckIn}
-                  disabled={isCheckedIn}
-                  className="w-[240px] h-[52px] rounded-[5px] text-white flex items-center justify-center transition-opacity hover:opacity-90 flex-shrink-0"
+                  disabled={(isCheckedIn && !isCheckedOut) || checkInOutLoading}
+                  className="w-[240px] h-[52px] rounded-[5px] text-white flex items-center justify-center transition-opacity hover:opacity-90 flex-shrink-0 disabled:opacity-70"
                   style={{
                     fontFamily: "Inter, sans-serif",
                     fontWeight: 500,
                     fontSize: "16px",
                     backgroundColor: "#56A39C",
                     border: "1px solid #027066",
-                    opacity: isCheckedIn ? 0.85 : 1,
-                    cursor: isCheckedIn ? "not-allowed" : "pointer",
+                    opacity: isCheckedIn && !isCheckedOut ? 0.85 : 1,
+                    cursor: (isCheckedIn && !isCheckedOut) || checkInOutLoading ? "not-allowed" : "pointer",
                   }}
                 >
-                  Check-in
+                  {checkInOutLoading ? "..." : "Check-in"}
                 </button>
 
                 {isCheckedIn && (
@@ -451,7 +676,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                         Location:{" "}
                       </span>
                       <span style={{ color: "#6B7280", fontWeight: 400 }}>
-                        {checkInLocationLabel}
+                        {displayLocationLabel}
                       </span>
                     </div>
                   </div>
@@ -459,26 +684,27 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Row 2: Check-out */}
-              <div className="flex items-center gap-[16px]">
-                <button
-                  onClick={handleCheckOut}
-                  disabled={!isCheckedIn || isCheckedOut}
-                  className="w-[240px] h-[52px] rounded-[5px] flex items-center justify-center transition-opacity hover:opacity-90 flex-shrink-0"
-                  style={{
-                    fontFamily: "Inter, sans-serif",
-                    fontWeight: 500,
-                    fontSize: "16px",
-                    backgroundColor: "#D9D9D9",
-                    border: "1px solid #B5B1B1",
-                    color: "#6C6C6C",
-                    opacity: !isCheckedIn || isCheckedOut ? 0.7 : 1,
-                    cursor: !isCheckedIn || isCheckedOut ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Check-out
-                </button>
+              <div className="flex flex-col gap-[8px]">
+                <div className="flex items-center gap-[16px]">
+                  <button
+                    onClick={handleCheckOut}
+                    disabled={!isCheckedIn || isCheckedOut || checkInOutLoading}
+                    className="w-[240px] h-[52px] rounded-[5px] flex items-center justify-center transition-opacity hover:opacity-90 flex-shrink-0 disabled:opacity-70"
+                    style={{
+                      fontFamily: "Inter, sans-serif",
+                      fontWeight: 500,
+                      fontSize: "16px",
+                      backgroundColor: isCheckedIn && !isCheckedOut ? "#027066" : "#D9D9D9",
+                      border: isCheckedIn && !isCheckedOut ? "1px solid #004D40" : "1px solid #B5B1B1",
+                      color: isCheckedIn && !isCheckedOut ? "#FFFFFF" : "#6C6C6C",
+                      opacity: !isCheckedIn || isCheckedOut ? 0.7 : 1,
+                      cursor: !isCheckedIn || isCheckedOut || checkInOutLoading ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {checkInOutLoading ? "..." : "Check-out"}
+                  </button>
 
-                {isCheckedOut && (
+                  {isCheckedOut && (
                   <>
                     {/* Check-out Info Box */}
                     <div
@@ -507,7 +733,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                           Location:{" "}
                         </span>
                         <span style={{ color: "#6B7280", fontWeight: 400 }}>
-                          {checkInLocationLabel}
+                          {displayLocationLabel}
                         </span>
                       </div>
                     </div>
@@ -535,6 +761,18 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                       </div>
                     </div>
                   </>
+                )}
+                </div>
+                {/* تفعيل زر الخروج إذا كنت مسجّل دخول لكن الواجهة لا تعرض ذلك */}
+                {!isCheckedOut && !isCheckedIn && !checkInOutLoading && !attendanceLoading && (
+                  <button
+                    type="button"
+                    onClick={enableCheckOutFallback}
+                    className="text-[14px] underline text-[#027066] hover:text-[#004D40] text-left"
+                    style={{ fontFamily: "Inter, sans-serif" }}
+                  >
+                    تم تسجيل الدخول مسبقاً؟ اضغط هنا لتفعيل زر الخروج
+                  </button>
                 )}
               </div>
             </div>
@@ -594,6 +832,11 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Table */}
+            {attendanceLoading ? (
+              <div className="bg-white rounded-[10px] p-[40px] text-center" style={{ boxShadow: "0px 1px 3px rgba(0, 0, 0, 0.1)" }}>
+                <p className="text-[14px] text-[#6B7280]">Loading attendance...</p>
+              </div>
+            ) : (
             <div
               className="bg-white rounded-[10px] overflow-hidden"
               style={{ boxShadow: "0px 1px 3px rgba(0, 0, 0, 0.1)" }}
@@ -739,6 +982,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                 </table>
               </div>
             </div>
+            )}
 
             {/* Pagination */}
             {filteredData.length > 0 && (
@@ -902,7 +1146,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
             ></div>
             <div className="relative z-10 h-full">
               <Sidebar
-                userRole={userRole}
+                userRole={effectiveRole}
                 activeMenu={activeMenu}
                 setActiveMenu={setActiveMenu}
                 isMobile={true}
@@ -928,14 +1172,14 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
 
               <button
                 onClick={handleCheckIn}
-                disabled={isCheckedIn}
+                disabled={(isCheckedIn && !isCheckedOut) || checkInOutLoading}
                 className="w-full h-[48px] rounded-lg text-white font-medium flex items-center justify-center transition-opacity"
                 style={{
                   backgroundColor: "#56A39C",
-                  opacity: isCheckedIn ? 0.7 : 1,
+                  opacity: isCheckedIn && !isCheckedOut ? 0.7 : 1,
                 }}
               >
-                {isCheckedIn ? 'Checked In' : 'Tap to Check-in'}
+                {checkInOutLoading ? "..." : (isCheckedIn && !isCheckedOut ? 'Checked In' : 'Tap to Check-in')}
               </button>
 
               {isCheckedIn && (
@@ -946,7 +1190,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-teal-700 font-semibold">Location</span>
-                    <span className="text-xs text-gray-600">{checkInLocationLabel}</span>
+                    <span className="text-xs text-gray-600">{displayLocationLabel}</span>
                   </div>
                 </div>
               )}
@@ -982,7 +1226,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-teal-800 font-semibold">Location</span>
-                      <span className="text-xs text-gray-600">{checkInLocationLabel}</span>
+                      <span className="text-xs text-gray-600">{displayLocationLabel}</span>
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 flex justify-between items-center">
@@ -990,6 +1234,15 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                     <span className="text-sm text-gray-600 font-bold">{totalHours}</span>
                   </div>
                 </div>
+              )}
+              {!isCheckedOut && !isCheckedIn && !checkInOutLoading && !attendanceLoading && (
+                <button
+                  type="button"
+                  onClick={enableCheckOutFallback}
+                  className="text-sm underline text-teal-600 hover:text-teal-800 text-left mt-1"
+                >
+                  تم تسجيل الدخول مسبقاً؟ اضغط هنا لتفعيل زر الخروج
+                </button>
               )}
             </div>
           </div>

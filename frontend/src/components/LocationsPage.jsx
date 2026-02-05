@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getLocations, createLocation, updateLocation, deleteLocation, getLocationEmployees, getLocationActivities } from "../services/locations";
+import { getLocationTypes } from "../services/locationTypes";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -13,11 +16,14 @@ const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7
 // Action icons
 const EditIcon = new URL("../images/icons/update.png", import.meta.url).href;
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
+const ViewIcon = new URL("../images/icons/eye.png", import.meta.url).href;
 
 const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).href;
 
 const LocationsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("5-1");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -33,6 +39,17 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
   const [showAddLocationPage, setShowAddLocationPage] = useState(false);
   const [showEditLocationPage, setShowEditLocationPage] = useState(false);
   const [editingLocation, setEditingLocation] = useState(null);
+  const [locationsData, setLocationsData] = useState([]);
+  const [locationTypesList, setLocationTypesList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [formError, setFormError] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [detailsLocation, setDetailsLocation] = useState(null);
+  const [detailsEmployees, setDetailsEmployees] = useState([]);
+  const [detailsActivities, setDetailsActivities] = useState([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const typeDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const bulkActionsDropdownRef = useRef(null);
@@ -51,39 +68,32 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample locations data
-  const locationsData = [
-    {
-      id: 1,
-      name: "Gaza Office",
-      type: "Office",
-      latitude: "31.5009",
-      longitude: "34.4671",
-      status: "Active"
-    },
-    {
-      id: 2,
-      name: "Field Site A",
-      type: "Field",
-      latitude: "31.5032",
-      longitude: "34.4628",
-      status: "Active"
-    },
-    {
-      id: 3,
-      name: "Training Center",
-      type: "Office",
-      latitude: "31.4975",
-      longitude: "31.4975",
-      status: "Inactive"
-    }
-  ];
+  // Fetch locations and location types from API
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.all([getLocations(), getLocationTypes().catch(() => [])])
+      .then(([list, typesList]) => {
+        if (!cancelled) {
+          setLocationsData(Array.isArray(list) ? list : []);
+          setLocationTypesList(Array.isArray(typesList) ? typesList : []);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.response?.data?.message || err?.message || "Failed to load locations");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // Handle checkbox selection
   const handleCheckboxChange = (locationId) => {
@@ -109,11 +119,46 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
   const typeOptions = ["All Type", "Office", "Field"];
   const statusOptions = ["All Status", "Active", "Inactive"];
 
+  // Map type_id -> name for display when API returns only type_id (support number and string keys)
+  const typeNamesById = React.useMemo(() => {
+    const map = {};
+    (locationTypesList || []).forEach((t) => {
+      const id = t.id ?? t.type_id;
+      const name = t.name ?? t.type_name ?? t.type;
+      if (id != null && name != null) {
+        const nameStr = String(name);
+        map[id] = nameStr;
+        map[String(id)] = nameStr;
+      }
+    });
+    return map;
+  }, [locationTypesList]);
+
+  // Normalize location for display (API may use type, type_name, location_type.name, type_id, or location_type_id)
+  const normalizeLocation = (loc) => {
+    const typeId = loc.type_id ?? loc.location_type_id;
+    const typeFromId = typeNamesById[typeId] ?? typeNamesById[String(typeId)];
+    const rawType = loc.type ?? loc.type_name ?? (typeof loc.location_type === "object" ? loc.location_type?.name : loc.location_type) ?? typeFromId ?? "";
+    const typeStr = typeof rawType === "string" ? rawType.replace(/^\w/, (c) => c.toUpperCase()) : String(rawType || "");
+    return {
+      id: loc.id,
+      name: loc.name ?? loc.location_name ?? "",
+      type: typeStr,
+      status: (loc.status ?? "").replace(/^\w/, (c) => c.toUpperCase()) || "Active",
+      latitude: loc.latitude ?? loc.lat ?? "",
+      longitude: loc.longitude ?? loc.lng ?? ""
+    };
+  };
+
+  const normalizedData = locationsData.map(normalizeLocation);
+
   // Filter data
-  const filteredData = locationsData.filter(location => {
+  const filteredData = normalizedData.filter(location => {
     const matchesSearch = location.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = selectedType === "All Type" || location.type === selectedType;
-    const matchesStatus = selectedStatus === "All Status" || location.status === selectedStatus;
+    const typeVal = (location.type || "").toLowerCase();
+    const statusVal = (location.status || "").toLowerCase();
+    const matchesType = selectedType === "All Type" || typeVal === selectedType.toLowerCase();
+    const matchesStatus = selectedStatus === "All Status" || statusVal === selectedStatus.toLowerCase();
     return matchesSearch && matchesType && matchesStatus;
   });
 
@@ -133,6 +178,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
         latitude: "",
         longitude: ""
       });
+      setFormError(null);
     }
   }, [showAddLocationPage]);
 
@@ -140,12 +186,13 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
   useEffect(() => {
     if (showEditLocationPage && editingLocation) {
       setFormData({
-        name: editingLocation.name,
-        type: editingLocation.type,
-        status: editingLocation.status,
-        latitude: editingLocation.latitude,
-        longitude: editingLocation.longitude
+        name: editingLocation.name ?? "",
+        type: editingLocation.type ?? "Office",
+        status: editingLocation.status ?? "Active",
+        latitude: editingLocation.latitude ?? editingLocation.lat ?? "",
+        longitude: editingLocation.longitude ?? editingLocation.lng ?? ""
       });
+      setFormError(null);
     }
   }, [showEditLocationPage, editingLocation]);
 
@@ -172,13 +219,99 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
     };
   }, []);
 
+  const refreshLocations = () => {
+    getLocations()
+      .then((list) => setLocationsData(Array.isArray(list) ? list : []))
+      .catch(() => {});
+  };
+
+  // Validate latitude/longitude: empty ok, otherwise must be valid number in range
+  const validateLatLng = (latStr, lngStr) => {
+    const num = (s) => (s === "" || s == null) ? null : Number(s);
+    const lat = num(latStr);
+    const lng = num(lngStr);
+    if (latStr?.trim() !== "" && (Number.isNaN(lat) || lat < -90 || lat > 90)) {
+      return { valid: false, message: "Latitude must be a number between -90 and 90." };
+    }
+    if (lngStr?.trim() !== "" && (Number.isNaN(lng) || lng < -180 || lng > 180)) {
+      return { valid: false, message: "Longitude must be a number between -180 and 180." };
+    }
+    return {
+      valid: true,
+      latitude: latStr?.trim() ? lat : undefined,
+      longitude: lngStr?.trim() ? lng : undefined
+    };
+  };
+
+  // Resolve type name (e.g. "Office") to type_id from location types list (backend often expects type_id)
+  const getTypeIdFromName = (typeName) => {
+    if (!typeName || !locationTypesList?.length) return undefined;
+    const t = locationTypesList.find(
+      (x) => (x.name ?? x.type_name ?? x.type ?? "").toString().toLowerCase() === String(typeName).toLowerCase()
+    );
+    return t?.id ?? t?.type_id;
+  };
+
+  // Handle adding a location
+  const handleAddLocation = (e) => {
+    e.preventDefault();
+    setFormError(null);
+    const validation = validateLatLng(formData.latitude, formData.longitude);
+    if (!validation.valid) {
+      setFormError(validation.message);
+      return;
+    }
+    const typeId = getTypeIdFromName(formData.type);
+    const payload = {
+      name: formData.name,
+      type: formData.type,
+      status: formData.status,
+      latitude: validation.latitude,
+      longitude: validation.longitude
+    };
+    if (typeId != null) payload.type_id = typeId;
+    setSubmitLoading(true);
+    createLocation(payload)
+      .then(() => {
+        setShowAddLocationPage(false);
+        refreshLocations();
+      })
+      .catch((err) => {
+        setError(err?.response?.data?.message || err?.message || "Failed to create location");
+      })
+      .finally(() => setSubmitLoading(false));
+  };
+
   // Handle updating a location
-  const handleUpdateLocation = () => {
-    console.log('Update location:', editingLocation.id, formData);
-    // In a real application, you would send this data to a backend API
-    // and then update your local state (e.g., locationsData)
-    setShowEditLocationPage(false);
-    setEditingLocation(null);
+  const handleUpdateLocation = (e) => {
+    e.preventDefault();
+    if (!editingLocation?.id) return;
+    setFormError(null);
+    const validation = validateLatLng(formData.latitude, formData.longitude);
+    if (!validation.valid) {
+      setFormError(validation.message);
+      return;
+    }
+    const typeId = getTypeIdFromName(formData.type);
+    const payload = {
+      name: formData.name,
+      type: formData.type,
+      status: formData.status,
+      latitude: validation.latitude,
+      longitude: validation.longitude
+    };
+    if (typeId != null) payload.type_id = typeId;
+    setSubmitLoading(true);
+    updateLocation(editingLocation.id, payload)
+      .then(() => {
+        setShowEditLocationPage(false);
+        setEditingLocation(null);
+        refreshLocations();
+      })
+      .catch((err) => {
+        setError(err?.response?.data?.message || err?.message || "Failed to update location");
+      })
+      .finally(() => setSubmitLoading(false));
   };
 
   // Handle deleting a location (opens warning modal)
@@ -187,17 +320,50 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
     setShowWarningModal(true);
   };
 
+  // Open location details (employees + activities)
+  const openLocationDetails = (location) => {
+    setDetailsLocation(location);
+    setShowDetailsModal(true);
+    setDetailsEmployees([]);
+    setDetailsActivities([]);
+    setDetailsLoading(true);
+    Promise.all([
+      getLocationEmployees(location.id).catch(() => []),
+      getLocationActivities(location.id).catch(() => [])
+    ]).then(([employees, activities]) => {
+      setDetailsEmployees(Array.isArray(employees) ? employees : []);
+      setDetailsActivities(Array.isArray(activities) ? activities : []);
+    }).finally(() => setDetailsLoading(false));
+  };
+
   // Handle actual deletion after warning confirmation
-  const handleDeleteConfirmed = () => {
-    if (locationToDelete) {
-      console.log('Deleting location:', locationToDelete);
-      // In a real application, you would send a delete request to a backend API
-      // and then update your local state (e.g., filter locationsData)
-      setShowEditLocationPage(false); // Close edit modal if open
-      setEditingLocation(null); // Clear editing state
+  const handleDeleteConfirmed = async () => {
+    const ids = Array.isArray(locationToDelete)
+      ? locationToDelete
+      : locationToDelete?.id != null
+        ? [locationToDelete.id]
+        : [];
+    if (ids.length === 0) {
+      setShowWarningModal(false);
+      setLocationToDelete(null);
+      setShowEditLocationPage(false);
+      setEditingLocation(null);
+      return;
     }
-    setShowWarningModal(false);
-    setLocationToDelete(null);
+    setSubmitLoading(true);
+    try {
+      await Promise.all(ids.map((id) => deleteLocation(id)));
+      setLocationsData((prev) => prev.filter((loc) => !ids.includes(loc.id)));
+      setSelectedLocations((prev) => prev.filter((id) => !ids.includes(id)));
+      setShowEditLocationPage(false);
+      setEditingLocation(null);
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || "Failed to delete");
+    } finally {
+      setSubmitLoading(false);
+      setShowWarningModal(false);
+      setLocationToDelete(null);
+    }
   };
 
   return (
@@ -205,7 +371,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -248,14 +414,14 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -347,11 +513,14 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isTypeDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[8px] bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg min-w-[240px] z-50">
+                  <div className="absolute top-full left-0 mt-[8px] bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg min-w-[240px] z-[100]">
                     {typeOptions.map((type) => (
                       <button
                         key={type}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedType(type);
                           setIsTypeDropdownOpen(false);
                         }}
@@ -391,11 +560,14 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[8px] bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg min-w-[240px] z-50">
+                  <div className="absolute top-full left-0 mt-[8px] bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg min-w-[240px] z-[100]">
                     {statusOptions.map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                         }}
@@ -478,8 +650,20 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
 
+            {/* Error message */}
+            {error && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Table */}
             <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
+              {loading ? (
+                <div className="p-12 text-center text-[#6B7280]">Loading locations...</div>
+              ) : filteredData.length === 0 ? (
+                <div className="p-12 text-center text-[#6B7280]">No locations found.</div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -530,7 +714,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                         </td>
                         <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                           <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {location.type}
+                            {location.type || "—"}
                           </span>
                         </td>
                         <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
@@ -562,6 +746,14 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                         <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
                           <div className="flex items-center justify-center gap-0">
                             <button
+                              onClick={() => openLocationDetails(location)}
+                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                              title="View employees & activities"
+                            >
+                              <img src={ViewIcon} alt="View" className="w-full h-full object-contain" />
+                            </button>
+                            <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
+                            <button
                               onClick={() => {
                                 setEditingLocation(location);
                                 setShowEditLocationPage(true);
@@ -589,6 +781,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
 
             {/* Pagination */}
@@ -689,7 +882,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[14px] z-50">
                   <div className="px-[16px] mb-[12px]">
-                    <p className="text-[14px] font-semibold text-[#333333]">Firas!</p>
+                    <p className="text-[14px] font-semibold text-[#333333]">{currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                     <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
@@ -717,7 +910,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -825,10 +1018,17 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                     </div>
                     <div>
                       <h3 className="text-[15px] font-semibold text-[#333333] mb-0.5">{location.name}</h3>
-                      <p className="text-[12px] text-[#6B7280] font-medium">{location.type}</p>
+                      <p className="text-[12px] text-[#6B7280] font-medium">{location.type || "—"}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openLocationDetails(location)}
+                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors"
+                      title="View employees & activities"
+                    >
+                      <img src={ViewIcon} alt="View" className="w-[16px] h-[16px] object-contain" />
+                    </button>
                     <button
                       onClick={() => {
                         setEditingLocation(location);
@@ -985,19 +1185,11 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
             {/* Action Buttons */}
             <div className="flex items-center justify-center gap-[20px] px-[20px] pb-[30px] flex-wrap sm:flex-nowrap">
               <button
-                onClick={() => {
-                  if (locationToDelete) {
-                    console.log('Deleting:', locationToDelete);
-                    if (Array.isArray(locationToDelete)) {
-                      setSelectedLocations([]);
-                    }
-                  }
-                  setShowWarningModal(false);
-                  setLocationToDelete(null);
-                }}
-                className="text-white focus:outline-none w-full sm:w-[144px] h-[34px] bg-[#A20000] border border-[#B5B1B1] font-semibold text-[16px] shadow-md transition-opacity hover:opacity-90"
+                onClick={handleDeleteConfirmed}
+                disabled={submitLoading}
+                className="text-white focus:outline-none w-full sm:w-[144px] h-[34px] bg-[#A20000] border border-[#B5B1B1] font-semibold text-[16px] shadow-md transition-opacity hover:opacity-90 disabled:opacity-60"
               >
-                Delete
+                {submitLoading ? "Deleting..." : "Delete"}
               </button>
               <button
                 onClick={() => {
@@ -1061,7 +1253,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Latitude</label>
                 <input
                   type="text"
-                  placeholder="Enter Latitude"
+                  placeholder="Enter Latitude (e.g. 31.5009)"
                   value={formData.latitude}
                   onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
                   className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] transition-all"
@@ -1073,13 +1265,19 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Longitude</label>
                 <input
                   type="text"
-                  placeholder="Enter Longitude"
+                  placeholder="Enter Longitude (e.g. 34.4671)"
                   value={formData.longitude}
                   onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
                   className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] transition-all"
                   style={{ fontFamily: 'Inter, sans-serif' }}
                 />
               </div>
+
+              {formError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  {formError}
+                </div>
+              )}
 
               <div className="pt-5 flex gap-3">
                 <button
@@ -1092,11 +1290,12 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 </button>
                 <button
                   type="submit"
-                  onClick={(e) => { e.preventDefault(); setShowAddLocationPage(false); }}
-                  className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98]"
+                  onClick={handleAddLocation}
+                  disabled={submitLoading}
+                  className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98] disabled:opacity-60"
                   style={{ fontFamily: 'Inter, sans-serif' }}
                 >
-                  Save
+                  {submitLoading ? "Saving..." : "Save"}
                 </button>
               </div>
             </form>
@@ -1151,6 +1350,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Latitude</label>
                 <input
                   type="text"
+                  placeholder="e.g. 31.5009"
                   value={formData.latitude}
                   onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
                   className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
@@ -1162,12 +1362,19 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Longitude</label>
                 <input
                   type="text"
+                  placeholder="e.g. 34.4671"
                   value={formData.longitude}
                   onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
                   className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
                   style={{ fontFamily: 'Inter, sans-serif' }}
                 />
               </div>
+
+              {formError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  {formError}
+                </div>
+              )}
 
               <div className="pt-5 flex items-center gap-3">
                 <button
@@ -1192,15 +1399,82 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                   </button>
                   <button
                     type="submit"
-                    onClick={(e) => { e.preventDefault(); setShowEditLocationPage(false); }}
-                    className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98]"
+                    onClick={handleUpdateLocation}
+                    disabled={submitLoading}
+                    className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98] disabled:opacity-60"
                     style={{ fontFamily: 'Inter, sans-serif' }}
                   >
-                    Update
+                    {submitLoading ? "Saving..." : "Update"}
                   </button>
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Location Details Modal (Employees + Activities) */}
+      {showDetailsModal && detailsLocation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4" onClick={() => setShowDetailsModal(false)}>
+          <div className="bg-white w-full max-w-[560px] rounded-[12px] overflow-hidden shadow-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+              <h2 className="text-[20px] font-bold text-[#003934]" style={{ fontFamily: 'Inter, sans-serif' }}>
+                {detailsLocation.name} – Employees & Activities
+              </h2>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-[#F5F7FA] transition-colors"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              {detailsLoading ? (
+                <p className="text-[14px] text-[#6B7280]">Loading...</p>
+              ) : (
+                <>
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-[#181818] mb-3" style={{ fontFamily: 'Inter, sans-serif' }}>Employees</h3>
+                    {detailsEmployees.length === 0 ? (
+                      <p className="text-[14px] text-[#6B7280]">No employees assigned to this location.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {detailsEmployees.map((emp) => (
+                          <li key={emp.id ?? emp.employee_id} className="text-[14px] text-[#333333]">
+                            {emp.full_name ?? emp.name ?? emp.email ?? `Employee #${emp.id ?? emp.employee_id}`}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-[#181818] mb-3" style={{ fontFamily: 'Inter, sans-serif' }}>Activities</h3>
+                    {detailsActivities.length === 0 ? (
+                      <p className="text-[14px] text-[#6B7280]">No activities at this location.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {detailsActivities.map((act) => (
+                          <li key={act.id ?? act.activity_id} className="text-[14px] text-[#333333]">
+                            {act.name ?? act.title ?? act.activity_name ?? `Activity #${act.id ?? act.activity_id}`}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-[#E0E0E0]">
+              <button
+                type="button"
+                onClick={() => setShowDetailsModal(false)}
+                className="w-full h-[44px] rounded-[8px] border border-[#E0E0E0] text-[#6B7280] font-semibold text-[15px] hover:bg-[#F5F7FA] transition-colors"
+                style={{ fontFamily: 'Inter, sans-serif' }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

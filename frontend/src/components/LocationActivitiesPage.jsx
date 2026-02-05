@@ -1,6 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getLocations } from "../services/locations";
+import { getEmployees } from "../services/employees";
+import {
+  getLocationActivities,
+  createLocationActivity,
+  updateLocationActivity,
+  deleteLocationActivity,
+  approveLocationActivity,
+  rejectLocationActivity,
+} from "../services/locationActivities";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -19,6 +30,7 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 
 const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const effectiveRole = getEffectiveRole(userRole);
   const { locationName } = useParams();
   const [activeMenu, setActiveMenu] = useState("5-3");
   const [showEditPage, setShowEditPage] = useState(false);
@@ -31,64 +43,85 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
     numberOfDays: 1,
     activityDates: [""]
   });
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [locationId, setLocationId] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addFormData, setAddFormData] = useState({
+    activityName: "",
+    start_date: "",
+    end_date: "",
+    selectedEmployees: [],
+  });
+  const [employeesList, setEmployeesList] = useState([]);
+  const [locationsListFromApi, setLocationsListFromApi] = useState([]);
+  const [addLoading, setAddLoading] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
+
+  const decodedLocationName = locationName ? decodeURIComponent(locationName) : "";
 
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample activities data
-  const activitiesData = {
-    "Gaza Office": [
-      {
-        id: 1,
-        name: "Team Building Workshop",
-        employeeCount: 10,
-        startDate: "12/14/2025",
-        endDate: "12/16/2024",
-        status: "Active",
-        canEdit: false
-      },
-      {
-        id: 2,
-        name: "Safety Training",
-        employeeCount: 5,
-        startDate: "12/19/2025",
-        endDate: "12/25/2025",
-        status: "Active",
-        canEdit: true
-      }
-    ],
-    "Field Site A": [
-      {
-        id: 3,
-        name: "Field Operations Training",
-        employeeCount: 8,
-        startDate: "12/21/2025",
-        endDate: "12/23/2025",
-        status: "Active",
-        canEdit: true
-      }
-    ],
-    "Training Center": []
+  // Fetch activities for this location from API
+  useEffect(() => {
+    if (!decodedLocationName) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getLocations()
+      .then((locations) => {
+        if (cancelled) return;
+        const loc = Array.isArray(locations)
+          ? locations.find((l) => (l.name || "").trim() === decodedLocationName.trim())
+          : null;
+        if (!loc?.id) {
+          setActivities([]);
+          setLocationId(null);
+          setLoading(false);
+          return;
+        }
+        setLocationId(loc.id);
+        setLocationsListFromApi(Array.isArray(locations) ? locations : []);
+        getEmployees().then((r) => {
+          if (!cancelled) setEmployeesList(Array.isArray(r?.data) ? r.data : []);
+        }).catch(() => {});
+        return getLocationActivities({ location_id: loc.id }).then((list) => {
+          if (!cancelled) setActivities(Array.isArray(list) ? list : []);
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.response?.data?.message || err?.message || "Failed to load activities");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [decodedLocationName]);
+
+  const refreshActivities = () => {
+    if (!decodedLocationName) return;
+    getLocations()
+      .then((locations) => {
+        const loc = Array.isArray(locations)
+          ? locations.find((l) => (l.name || "").trim() === decodedLocationName.trim())
+          : null;
+        if (loc?.id) return getLocationActivities({ location_id: loc.id });
+        return [];
+      })
+      .then((list) => setActivities(Array.isArray(list) ? list : []))
+      .catch(() => {});
   };
-
-  const decodedLocationName = locationName ? decodeURIComponent(locationName) : "";
-  const activities = activitiesData[decodedLocationName] || [];
-
-  // Sample employees data
-  const employeesData = [
-    { id: 1, name: "Mohamed Ali", role: "Office • Data Entry" },
-    { id: 2, name: "Amal Ahmed", role: "Field Operation • Trainer" },
-    { id: 3, name: "Amjad Saeed", role: "HR • HR Manager" }
-  ];
-
-  // Sample locations for dropdown
-  const locationsList = ["Gaza Office", "Field Site A", "Training Center"];
 
   // Handle employee checkbox
   const handleEmployeeCheckboxChange = (employeeId) => {
@@ -114,14 +147,21 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
   // Handle edit button click
   const handleEditClick = (activity) => {
     setSelectedActivity(activity);
-    // Convert dates from "mm/dd/yyyy" to "yyyy-mm-dd" format for date input
-    const convertDate = (dateStr) => {
+    const startRaw = activity.startDate ?? activity.start_date ?? "";
+    const endRaw = activity.endDate ?? activity.end_date ?? "";
+    // Support both "mm/dd/yyyy" and "yyyy-mm-dd" (ISO)
+    const toInputDate = (dateStr) => {
       if (!dateStr) return "";
-      const [month, day, year] = dateStr.split('/');
-      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      if (String(dateStr).includes("-")) return dateStr.split("T")[0];
+      const parts = String(dateStr).split("/");
+      if (parts.length === 3) {
+        const [m, d, y] = parts;
+        return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+      }
+      return dateStr;
     };
-    const startDate = convertDate(activity.startDate);
-    const endDate = convertDate(activity.endDate);
+    const startDate = toInputDate(startRaw);
+    const endDate = toInputDate(endRaw);
     const dates = [];
     if (startDate && endDate) {
       const start = new Date(startDate);
@@ -133,10 +173,11 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
       }
     }
     
+    const empIds = activity.employee_ids ?? activity.employeeIds ?? (Array.isArray(activity.employees) ? activity.employees.map((e) => e?.id ?? e).filter(Boolean) : []);
     setEditFormData({
-      activityName: activity.name,
+      activityName: activity.name ?? activity.activity_name ?? "",
       location: decodedLocationName,
-      selectedEmployees: [1, 2, 3], // Default selected employees
+      selectedEmployees: Array.isArray(empIds) ? empIds : [],
       numberOfDays: dates.length || 1,
       activityDates: dates.length > 0 ? dates : [""]
     });
@@ -168,7 +209,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
         {/* Desktop Layout */}
         <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
           <Sidebar 
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
           />
@@ -203,10 +244,10 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                       <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
               </div>
@@ -226,7 +267,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                       textAlign: 'left'
                     }}
                   >
-                    Edit {selectedActivity.name}
+                    Edit {selectedActivity.name ?? selectedActivity.activity_name ?? "Activity"}
                   </h1>
                   <button
                     type="button"
@@ -307,9 +348,10 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                           }}
                         >
                           <option value="" disabled style={{ color: '#454545' }}>Select Location</option>
-                          {locationsList.map((location) => (
-                            <option key={location} value={location} style={{ color: '#727272' }}>{location}</option>
-                          ))}
+                          {(locationsListFromApi || []).map((loc) => {
+                            const locName = loc?.name ?? loc;
+                            return <option key={loc?.id ?? locName} value={locName} style={{ color: '#727272' }}>{locName}</option>;
+                          })}
                         </select>
                         <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -342,39 +384,43 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                         }}
                       >
                         <div className="p-[12px] space-y-[12px]">
-                          {employeesData.map((employee) => (
-                            <div key={employee.id} className="flex items-center gap-[12px]">
-                              <input 
-                                type="checkbox"
-                                checked={editFormData.selectedEmployees.includes(employee.id)}
-                                onChange={() => handleEmployeeCheckboxChange(employee.id)}
-                                className="w-[16px] h-[16px] rounded border-[#E0E0E0] flex-shrink-0"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div 
-                                  style={{ 
-                                    fontFamily: 'Inter, sans-serif',
-                                    fontSize: '14px',
-                                    fontWeight: 500,
-                                    color: '#000000',
-                                    marginBottom: '2px'
-                                  }}
-                                >
-                                  {employee.name}
-                                </div>
-                                <div 
-                                  style={{ 
-                                    fontFamily: 'Inter, sans-serif',
-                                    fontSize: '12px',
-                                    fontWeight: 400,
-                                    color: '#6B7280'
-                                  }}
-                                >
-                                  {employee.role}
+                          {(employeesList || []).map((employee) => {
+                            const empName = employee.name ?? employee.employee_name ?? `Employee ${employee.id}`;
+                            const empRole = [employee.department, employee.position].filter(Boolean).join(" • ") || (employee.role ?? "");
+                            return (
+                              <div key={employee.id} className="flex items-center gap-[12px]">
+                                <input 
+                                  type="checkbox"
+                                  checked={editFormData.selectedEmployees.includes(employee.id)}
+                                  onChange={() => handleEmployeeCheckboxChange(employee.id)}
+                                  className="w-[16px] h-[16px] rounded border-[#E0E0E0] flex-shrink-0"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div 
+                                    style={{ 
+                                      fontFamily: 'Inter, sans-serif',
+                                      fontSize: '14px',
+                                      fontWeight: 500,
+                                      color: '#000000',
+                                      marginBottom: '2px'
+                                    }}
+                                  >
+                                    {empName}
+                                  </div>
+                                  <div 
+                                    style={{ 
+                                      fontFamily: 'Inter, sans-serif',
+                                      fontSize: '12px',
+                                      fontWeight: 400,
+                                      color: '#6B7280'
+                                    }}
+                                  >
+                                    {empRole}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                       <div 
@@ -536,8 +582,21 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                       type="submit"
                       onClick={(e) => {
                         e.preventDefault();
-                        console.log('Update activity:', editFormData);
-                        setShowEditPage(false);
+                        if (!selectedActivity?.id) return;
+                        const payload = {
+                          name: editFormData.activityName,
+                          activity_name: editFormData.activityName,
+                          start_date: editFormData.activityDates[0] || undefined,
+                          end_date: editFormData.activityDates[editFormData.activityDates.length - 1] || undefined,
+                          employee_ids: editFormData.selectedEmployees,
+                        };
+                        updateLocationActivity(selectedActivity.id, payload)
+                          .then(() => {
+                            setShowEditPage(false);
+                            setSelectedActivity(null);
+                            refreshActivities();
+                          })
+                          .catch((err) => setError(err?.response?.data?.message || err?.message || "Failed to update"));
                       }}
                       className="text-white focus:outline-none"
                       style={{ 
@@ -659,10 +718,14 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
               <div className="flex items-center justify-center gap-[20px] px-[20px]">
                 <button
                   onClick={() => {
-                    if (selectedActivity) {
-                      console.log('Deleting activity:', selectedActivity);
-                      setShowEditPage(false);
-                      setSelectedActivity(null);
+                    if (selectedActivity?.id) {
+                      deleteLocationActivity(selectedActivity.id)
+                        .then(() => {
+                          setShowEditPage(false);
+                          setSelectedActivity(null);
+                          refreshActivities();
+                        })
+                        .catch(() => {});
                     }
                     setShowWarningModal(false);
                   }}
@@ -715,7 +778,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar 
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -752,10 +815,10 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                       <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
               </div>
@@ -776,34 +839,76 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
           {/* Page Content */}
           <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ overflowX: 'hidden', maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
             {/* Page Header */}
-            <div className="mb-[24px] pb-[16px] border-b border-[#E0E0E0]">
-              <h1 
-                className="text-[28px] font-semibold mb-[4px]"
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 600,
-                  color: '#003934'
-                }}
-              >
-                Activities at {decodedLocationName}
-              </h1>
-              <p 
-                className="text-[14px]"
-                style={{ 
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 400,
-                  color: '#6B7280'
-                }}
-              >
-                {activities.length} activities found
-              </p>
+            <div className="mb-[24px] pb-[16px] border-b border-[#E0E0E0] flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h1 
+                  className="text-[28px] font-semibold mb-[4px]"
+                  style={{ 
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 600,
+                    color: '#003934'
+                  }}
+                >
+                  Activities at {decodedLocationName}
+                </h1>
+                <p 
+                  className="text-[14px]"
+                  style={{ 
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 400,
+                    color: '#6B7280'
+                  }}
+                >
+                  {activities.length} activities found
+                </p>
+              </div>
+              {locationId != null && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddFormData({ activityName: "", start_date: "", end_date: "", selectedEmployees: [] });
+                    setShowAddModal(true);
+                  }}
+                  className="px-[20px] py-[8px] rounded-[5px] hover:opacity-90 transition-opacity"
+                  style={{
+                    backgroundColor: '#00564F',
+                    color: '#FFFFFF',
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    height: '36px'
+                  }}
+                >
+                  Add Activity
+                </button>
+              )}
             </div>
 
+            {/* Error */}
+            {error && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Activities List */}
-            {activities.length > 0 ? (
+            {loading ? (
+              <div className="bg-white border border-[#E0E0E0] rounded-[10px] p-[40px] text-center">
+                <p className="text-[14px] text-[#6B7280]">Loading activities...</p>
+              </div>
+            ) : activities.length > 0 ? (
               <div className="space-y-[16px]">
                 {activities.map((activity) => {
-                  const isPastEndDate = new Date(activity.endDate) < new Date();
+                  const name = activity.name ?? activity.activity_name ?? "";
+                  const employeeCount = activity.employee_count ?? activity.employeeCount ?? 0;
+                  const startDate = activity.start_date ?? activity.startDate ?? "";
+                  const endDate = activity.end_date ?? activity.endDate ?? "";
+                  const status = activity.status ?? "Active";
+                  const approvalStatus = (activity.approval_status ?? activity.approvalStatus ?? status ?? "").toString().toLowerCase();
+                  const isPendingApproval = approvalStatus === "pending";
+                  const canEdit = activity.canEdit !== false;
+                  const isPastEndDate = endDate ? new Date(endDate) < new Date() : false;
+                  const isActionLoading = actionLoadingId === activity.id;
                   return (
                     <div 
                       key={activity.id}
@@ -821,7 +926,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                           lineHeight: '100%'
                         }}
                       >
-                        {activity.status}
+                        {status}
                       </div>
 
                       {/* Activity Title */}
@@ -833,7 +938,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                           color: '#181818'
                         }}
                       >
-                        {activity.name}
+                        {name}
                       </h3>
 
                       {/* Activity Details */}
@@ -850,7 +955,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                               color: '#636363'
                             }}
                           >
-                            {activity.employeeCount} employees
+                            {employeeCount} employees
                           </span>
                         </div>
                         <div className="flex items-center gap-[6px]">
@@ -865,7 +970,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                               color: '#636363'
                             }}
                           >
-                            {activity.startDate} - {activity.endDate}
+                            {startDate} - {endDate}
                           </span>
                         </div>
                       </div>
@@ -874,7 +979,7 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                       <div className="flex items-center gap-[12px] mb-[8px]">
                         <button
                           onClick={() => {
-                            navigate(`/locations/assignment/activities/${encodeURIComponent(decodedLocationName)}/employees/${encodeURIComponent(activity.name)}`);
+                            navigate(`/locations/assignment/activities/${encodeURIComponent(decodedLocationName)}/employees/${encodeURIComponent(name)}`);
                           }}
                           className="px-[16px] py-[6px] rounded-[5px] flex items-center gap-[8px] hover:opacity-90 transition-opacity"
                           style={{
@@ -890,14 +995,14 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                           View Employees
                         </button>
                         <button
-                          disabled={!activity.canEdit || isPastEndDate}
-                          onClick={() => !activity.canEdit || isPastEndDate ? null : handleEditClick(activity)}
+                          disabled={!canEdit || isPastEndDate}
+                          onClick={() => !canEdit || isPastEndDate ? null : handleEditClick(activity)}
                           className={`px-[16px] py-[6px] rounded-[5px] flex items-center gap-[8px] transition-opacity ${
-                            !activity.canEdit || isPastEndDate ? 'opacity-70 cursor-not-allowed' : 'hover:opacity-90 cursor-pointer'
+                            !canEdit || isPastEndDate ? 'opacity-70 cursor-not-allowed' : 'hover:opacity-90 cursor-pointer'
                           }`}
                           style={{
                             backgroundColor: '#AEAEAEB2',
-                            color: (!activity.canEdit || isPastEndDate) ? '#939292' : '#444444',
+                            color: (!canEdit || isPastEndDate) ? '#939292' : '#444444',
                             fontFamily: 'Inter, sans-serif',
                             fontSize: '14px',
                             fontWeight: 500,
@@ -907,6 +1012,52 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
                           <img src={EditIcon} alt="Edit" className="w-[16px] h-[16px] object-contain" />
                           Edit Activity
                         </button>
+                        {isPendingApproval && (
+                          <>
+                            <button
+                              disabled={isActionLoading}
+                              onClick={() => {
+                                setActionLoadingId(activity.id);
+                                approveLocationActivity(activity.id)
+                                  .then(() => refreshActivities())
+                                  .catch(() => {})
+                                  .finally(() => setActionLoadingId(null));
+                              }}
+                              className="px-[16px] py-[6px] rounded-[5px] flex items-center gap-[8px] hover:opacity-90 transition-opacity disabled:opacity-70"
+                              style={{
+                                backgroundColor: '#00564F',
+                                color: '#FFFFFF',
+                                fontFamily: 'Inter, sans-serif',
+                                fontSize: '14px',
+                                fontWeight: 500,
+                                height: '27px'
+                              }}
+                            >
+                              {isActionLoading ? "..." : "Approve"}
+                            </button>
+                            <button
+                              disabled={isActionLoading}
+                              onClick={() => {
+                                setActionLoadingId(activity.id);
+                                rejectLocationActivity(activity.id)
+                                  .then(() => refreshActivities())
+                                  .catch(() => {})
+                                  .finally(() => setActionLoadingId(null));
+                              }}
+                              className="px-[16px] py-[6px] rounded-[5px] flex items-center gap-[8px] hover:opacity-90 transition-opacity disabled:opacity-70"
+                              style={{
+                                backgroundColor: '#A20000',
+                                color: '#FFFFFF',
+                                fontFamily: 'Inter, sans-serif',
+                                fontSize: '14px',
+                                fontWeight: 500,
+                                height: '27px'
+                              }}
+                            >
+                              {isActionLoading ? "..." : "Reject"}
+                            </button>
+                          </>
+                        )}
                       </div>
 
                       {/* Warning Message */}
@@ -964,6 +1115,120 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
           </div>
         </main>
       </div>
+
+      {/* Add Activity Modal */}
+      {showAddModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => !addLoading && setShowAddModal(false)}
+        >
+          <div
+            className="bg-white rounded-[10px] shadow-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-[#E0E0E0]">
+              <h2 className="text-[20px] font-semibold" style={{ fontFamily: 'Inter, sans-serif', color: '#003934' }}>
+                Add Activity
+              </h2>
+            </div>
+            <form
+              className="p-6 space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!locationId || !addFormData.activityName?.trim()) return;
+                setAddLoading(true);
+                createLocationActivity({
+                  location_id: locationId,
+                  name: addFormData.activityName.trim(),
+                  activity_name: addFormData.activityName.trim(),
+                  start_date: addFormData.start_date || undefined,
+                  end_date: addFormData.end_date || undefined,
+                  employee_ids: addFormData.selectedEmployees,
+                })
+                  .then(() => {
+                    refreshActivities();
+                    setShowAddModal(false);
+                    setAddFormData({ activityName: "", start_date: "", end_date: "", selectedEmployees: [] });
+                  })
+                  .catch((err) => setError(err?.response?.data?.message || err?.message || "Failed to create activity"))
+                  .finally(() => setAddLoading(false));
+              }}
+            >
+              <div>
+                <label className="block text-[14px] font-medium text-[#181818] mb-1">Activity Name *</label>
+                <input
+                  type="text"
+                  value={addFormData.activityName}
+                  onChange={(e) => setAddFormData((p) => ({ ...p, activityName: e.target.value }))}
+                  className="w-full h-[40px] px-3 rounded-[6px] border border-[#E0E0E0] focus:outline-none focus:border-[#004D40]"
+                  placeholder="Activity name"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[14px] font-medium text-[#181818] mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={addFormData.start_date}
+                  onChange={(e) => setAddFormData((p) => ({ ...p, start_date: e.target.value }))}
+                  className="w-full h-[40px] px-3 rounded-[6px] border border-[#E0E0E0] focus:outline-none focus:border-[#004D40]"
+                />
+              </div>
+              <div>
+                <label className="block text-[14px] font-medium text-[#181818] mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={addFormData.end_date}
+                  onChange={(e) => setAddFormData((p) => ({ ...p, end_date: e.target.value }))}
+                  className="w-full h-[40px] px-3 rounded-[6px] border border-[#E0E0E0] focus:outline-none focus:border-[#004D40]"
+                />
+              </div>
+              {employeesList.length > 0 && (
+                <div>
+                  <label className="block text-[14px] font-medium text-[#181818] mb-2">Employees</label>
+                  <div className="max-h-[160px] overflow-y-auto border border-[#E0E0E0] rounded-[6px] p-2 space-y-1">
+                    {employeesList.map((emp) => (
+                      <label key={emp.id} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={addFormData.selectedEmployees.includes(emp.id)}
+                          onChange={(e) => {
+                            setAddFormData((p) => ({
+                              ...p,
+                              selectedEmployees: e.target.checked
+                                ? [...p.selectedEmployees, emp.id]
+                                : p.selectedEmployees.filter((id) => id !== emp.id),
+                            }));
+                          }}
+                        />
+                        <span className="text-[14px] text-[#333]">{emp.name ?? emp.employee_name ?? `Employee ${emp.id}`}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={addLoading || !addFormData.activityName?.trim()}
+                  className="px-5 py-2 rounded-[5px] text-white font-medium disabled:opacity-70"
+                  style={{ backgroundColor: '#00564F' }}
+                >
+                  {addLoading ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  disabled={addLoading}
+                  onClick={() => setShowAddModal(false)}
+                  className="px-5 py-2 rounded-[5px] text-white font-medium bg-[#7A7A7A] disabled:opacity-70"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Layout */}
       <div className="lg:hidden">

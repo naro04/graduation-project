@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -18,12 +19,11 @@ const ReloadIcon = new URL("../images/icons/reload.png", import.meta.url).href;
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
 
 import LogoutModal from "./LogoutModal";
-// Logout icon for modal
-// const LogoutIcon2 = new URL("../images/icons/logout2.png", import.meta.url).href;
+import { getApiKeys, createApiKey, deleteApiKey, updateApiKey, regenerateApiKey } from "../services/apiKeys";
 
 const roleDisplayNames = {
   superAdmin: "Super Admin",
-  hr: "HR Manager",
+  hr: "HR Admin",
   manager: "Manager",
   fieldEmployee: "Field Employee",
   officer: "Officer"
@@ -31,6 +31,8 @@ const roleDisplayNames = {
 
 const APIKeysPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("8-4");
   const [visibleKeys, setVisibleKeys] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
@@ -42,65 +44,51 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
   const userDropdownRef = useRef(null);
   const desktopDropdownRef = useRef(null);
 
-  // Sample API Keys Data
-  const [apiKeys, setApiKeys] = useState([
-    {
-      id: 1,
-      keyName: "Production API",
-      apiKey: "sk_live_5123456789abcdefghij",
-      permissions: ["Read", "Write"],
-      createdDate: "Dec 10, 2024",
-      status: "Active"
-    },
-    {
-      id: 2,
-      keyName: "Mobile App Integration",
-      apiKey: "sk_live_9876543210fedcba",
-      permissions: ["Read Only"],
-      createdDate: "Nov 25, 2024",
-      status: "Active"
-    },
-    {
-      id: 3,
-      keyName: "Testing Environment",
-      apiKey: "sk_test_abcdefghij1234567890",
-      permissions: ["Read", "Write", "Delete"],
-      createdDate: "Oct 15, 2024",
-      status: "Revoked"
-    },
-    {
-      id: 4,
-      keyName: "Production API",
-      apiKey: "sk_live_5123456789abcdefghij",
-      permissions: ["Read", "Write"],
-      createdDate: "Dec 10, 2024",
-      status: "Active"
-    },
-    {
-      id: 5,
-      keyName: "Production API",
-      apiKey: "sk_live_5123456789abcdefghij",
-      permissions: ["Read", "Write"],
-      createdDate: "Dec 10, 2024",
-      status: "Active"
-    },
-    {
-      id: 6,
-      keyName: "Development API",
-      apiKey: "sk_dev_1234567890abcdefghij",
-      permissions: ["Read", "Write", "Delete"],
-      createdDate: "Sep 20, 2024",
-      status: "Active"
-    },
-    {
-      id: 7,
-      keyName: "Analytics Integration",
-      apiKey: "sk_live_analytics123456789",
-      permissions: ["Read Only"],
-      createdDate: "Aug 5, 2024",
-      status: "Active"
+  const [apiKeys, setApiKeys] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState(null);
+  const [createSuccess, setCreateSuccess] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [rotatingId, setRotatingId] = useState(null);
+
+  const normalizeApiKey = (item) => {
+    const id = item.id ?? item._id ?? "";
+    const createdAt = item.created_at ?? item.createdAt;
+    const dateStr = createdAt
+      ? new Date(createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "—";
+    return {
+      id: String(id),
+      keyName: String(item.name ?? item.key_name ?? item.keyName ?? "—"),
+      apiKey: String(item.api_key ?? item.apiKey ?? ""),
+      permissions: Array.isArray(item.permissions) ? item.permissions : (item.permissions ? [item.permissions] : ["Read", "Write"]),
+      createdDate: dateStr,
+      status: String(item.status ?? "Active"),
+    };
+  };
+
+  const fetchApiKeys = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await getApiKeys();
+      const arr = Array.isArray(list) ? list : [];
+      setApiKeys(arr.map(normalizeApiKey));
+    } catch (err) {
+      setError(err.response?.data?.message ?? err.message ?? "Failed to load API keys");
+      setApiKeys([]);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
+
+  useEffect(() => {
+    fetchApiKeys();
+  }, []);
 
   const toggleKeyVisibility = (id) => {
     setVisibleKeys(prev => ({
@@ -120,23 +108,60 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
     return key.substring(0, 12) + "•".repeat(12);
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this API key?")) {
-      setApiKeys(apiKeys.filter(key => key.id !== id));
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this API key?")) return;
+    setDeletingId(id);
+    try {
+      await deleteApiKey(id);
+      await fetchApiKeys();
+    } catch (err) {
+      setError(err.response?.data?.message ?? err.message ?? "Failed to delete API key");
+    } finally {
+      setDeletingId(null);
     }
   };
 
   const handleGenerateNew = () => {
-    // Generate new API key logic here
-    const newKey = {
-      id: apiKeys.length + 1,
-      keyName: `New API Key ${apiKeys.length + 1}`,
-      apiKey: `sk_live_${Math.random().toString(36).substring(2, 22)}`,
-      permissions: ["Read", "Write"],
-      createdDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      status: "Active"
-    };
-    setApiKeys([newKey, ...apiKeys]);
+    setNewKeyName("");
+    setCreateError(null);
+    setCreateSuccess(null);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCreateSubmit = async (e) => {
+    e?.preventDefault();
+    if (!newKeyName?.trim()) return;
+    setCreateLoading(true);
+    setCreateError(null);
+    setCreateSuccess(null);
+    try {
+      const created = await createApiKey({ name: newKeyName.trim() });
+      setCreateSuccess(created?.api_key ? "API key created. Copy it now — it won't be shown again." : "API key created.");
+      await fetchApiKeys();
+      if (created?.api_key) {
+        try { await navigator.clipboard.writeText(created.api_key); } catch (_) {}
+      }
+      setTimeout(() => {
+        setIsCreateModalOpen(false);
+        setCreateSuccess(null);
+      }, 2000);
+    } catch (err) {
+      setCreateError(err.response?.data?.message ?? err.message ?? "Failed to create API key");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleRotate = async (id) => {
+    setRotatingId(id);
+    try {
+      await regenerateApiKey(id);
+      await fetchApiKeys();
+    } catch (err) {
+      setError(err.response?.data?.message ?? err.message ?? "Failed to rotate API key");
+    } finally {
+      setRotatingId(null);
+    }
   };
 
   // Pagination
@@ -170,7 +195,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
     <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
-        <Sidebar userRole={userRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
+        <Sidebar userRole={effectiveRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
 
         <main className="flex-1 flex flex-col bg-[#F5F7FA]" style={{ minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}>
           {/* Header */}
@@ -213,14 +238,14 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                 />
                 <div>
                   <div className="flex items-center gap-[6px]">
-                    <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                    <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 mt-[2px] ${isDesktopDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -329,10 +354,19 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
+            {error && (
+              <div className="mb-4 px-4 py-2 rounded-[8px] bg-[#FEE2E2] text-[#DC2626] text-[14px]">
+                {error}
+              </div>
+            )}
+            {loading && (
+              <div className="mb-4 text-[14px] text-[#6B7280]">Loading API keys...</div>
+            )}
             {/* Generate New API Key Button */}
             <div className="mb-[32px]">
               <button
                 onClick={handleGenerateNew}
+                disabled={loading}
                 className="flex items-center gap-[8px] px-[20px] py-[12px] rounded-[8px] text-white transition-colors"
                 style={{ 
                   fontFamily: 'Inter, sans-serif', 
@@ -468,6 +502,13 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                     </tr>
                   </thead>
                   <tbody>
+                    {!loading && currentKeys.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-[24px] text-center text-[14px] text-[#6B7280]">
+                          No API keys yet. Click &quot;Generate New API Key&quot; to create one.
+                        </td>
+                      </tr>
+                    )}
                     {currentKeys.map((key) => (
                       <tr key={key.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB] transition-colors">
                         <td className="p-[16px]" style={{ borderRight: '1px solid #E0E0E0' }}>
@@ -492,7 +533,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                                 color: '#333333'
                               }}
                             >
-                              {visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)}
+                              {key.apiKey ? (visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)) : "••••••••"}
                             </span>
                             <button
                               onClick={() => toggleKeyVisibility(key.id)}
@@ -556,18 +597,17 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                         <td className="p-[16px]">
                           <div className="flex items-center justify-center gap-0">
                             <button
-                              onClick={() => {
-                                // Handle reload action
-                                console.log("Reload API key:", key.id);
-                              }}
-                              className="w-[26px] h-[26px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                              onClick={() => handleRotate(key.id)}
+                              disabled={rotatingId === key.id}
+                              className="w-[26px] h-[26px] flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-50"
                               style={{ borderRight: '1px solid #6B7280', paddingRight: '8px', marginRight: '8px' }}
-                              title="Reload"
+                              title="Rotate key"
                             >
-                              <img src={ReloadIcon} alt="Reload" className="w-full h-full object-contain" />
+                              <img src={ReloadIcon} alt="Rotate" className="w-full h-full object-contain" />
                             </button>
                             <button
                               onClick={() => handleDelete(key.id)}
+                              disabled={deletingId === key.id}
                               className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
                               title="Delete"
                             >
@@ -713,7 +753,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -788,11 +828,16 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
             </div>
           </div>
 
+          {error && (
+            <div className="mb-4 px-4 py-2 rounded-[8px] bg-[#FEE2E2] text-[#DC2626] text-[14px]">{error}</div>
+          )}
+          {loading && <div className="mb-4 text-[14px] text-[#6B7280]">Loading API keys...</div>}
           {/* Generate New API Key Button - Mobile */}
           <div className="mb-6">
             <button
               onClick={handleGenerateNew}
-              className="flex items-center gap-2 px-5 py-3 rounded-[8px] text-white transition-colors w-full justify-center"
+              disabled={loading}
+              className="flex items-center gap-2 px-5 py-3 rounded-[8px] text-white transition-colors w-full justify-center disabled:opacity-50"
               style={{
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 500,
@@ -841,17 +886,17 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                   {/* Actions */}
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => {
-                        console.log("Reload API key:", key.id);
-                      }}
-                      className="w-[24px] h-[24px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                      title="Reload"
+                      onClick={() => handleRotate(key.id)}
+                      disabled={rotatingId === key.id}
+                      className="w-[24px] h-[24px] flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-50"
+                      title="Rotate"
                     >
-                      <img src={ReloadIcon} alt="Reload" className="w-[18px] h-[18px] object-contain" />
+                      <img src={ReloadIcon} alt="Rotate" className="w-[18px] h-[18px] object-contain" />
                     </button>
                     <button
                       onClick={() => handleDelete(key.id)}
-                      className="w-[24px] h-[24px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                      disabled={deletingId === key.id}
+                      className="w-[24px] h-[24px] flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-50"
                       title="Delete"
                     >
                       <img src={DeleteIcon} alt="Delete" className="w-[18px] h-[18px] object-contain" />
@@ -885,7 +930,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                         color: '#333333'
                       }}
                     >
-                      {visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)}
+                      {key.apiKey ? (visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)) : "••••••••"}
                     </span>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
@@ -1019,6 +1064,47 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
       </div>
 
       {/* Logout Confirmation Modal */}
+      {/* Create API Key Modal */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !createLoading && setIsCreateModalOpen(false)}>
+          <div
+            className="bg-white rounded-[12px] w-[90%] max-w-[400px] p-[24px] shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            style={{ fontFamily: "Inter, sans-serif" }}
+          >
+            <h3 className="text-[18px] font-semibold text-[#000000] mb-4">Create API Key</h3>
+            <form onSubmit={handleCreateSubmit}>
+              <label className="block text-[14px] font-medium text-[#333333] mb-2">Key name</label>
+              <input
+                type="text"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                placeholder="e.g. Production API"
+                className="w-full h-[44px] px-4 rounded-[8px] border border-[#E0E0E0] text-[14px] focus:outline-none focus:border-[#004D40] mb-4"
+              />
+              {createError && <p className="text-[14px] text-[#DC2626] mb-2">{createError}</p>}
+              {createSuccess && <p className="text-[14px] text-[#059669] mb-2">{createSuccess}</p>}
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => !createLoading && setIsCreateModalOpen(false)}
+                  className="px-4 py-2 rounded-[8px] border border-[#E0E0E0] text-[14px] text-[#333333] hover:bg-[#F5F7FA]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createLoading || !newKeyName?.trim()}
+                  className="px-4 py-2 rounded-[8px] bg-[#0C8DFE] text-white text-[14px] hover:bg-[#0A7AE6] disabled:opacity-50"
+                >
+                  {createLoading ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
