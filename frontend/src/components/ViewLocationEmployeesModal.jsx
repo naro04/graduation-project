@@ -7,10 +7,9 @@ const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).hr
 const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
 const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
 
-const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, employees = [] }) => {
+const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, locationId, employees = [], employeesLoading = false, onRemove }) => {
     if (!isOpen) return null;
 
-    // Mock employee photos mapping (in real app, this would come from employee data)
     const photoMap = {
         "Mohamed Ali": MohamedAliPhoto,
         "Amal Ahmed": AmalAhmedPhoto,
@@ -49,7 +48,9 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, employees =
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-[24px] bg-[#FFFFFF]">
-                    {employees.length === 0 ? (
+                    {employeesLoading ? (
+                        <p className="text-center text-gray-500 py-8">Loading employees...</p>
+                    ) : employees.length === 0 ? (
                         <p className="text-center text-gray-500 py-8">No employees found at this location.</p>
                     ) : (
                         <>
@@ -57,7 +58,7 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, employees =
                             <div className="hidden md:block bg-white border border-[#E0E0E0] rounded-[4px] overflow-hidden">
                                 {/* Table Header */}
                                 <div
-                                    className="grid grid-cols-[2fr_1fr_1fr] border-b border-[#E0E0E0]"
+                                    className="grid grid-cols-[2fr_1fr_1fr_minmax(80px,auto)] border-b border-[#E0E0E0]"
                                     style={{
                                         backgroundColor: '#ECEAEA'
                                     }}
@@ -86,18 +87,30 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, employees =
                                         className="text-[14px] font-semibold text-center"
                                         style={{
                                             padding: '12px 16px',
+                                            borderRight: '1px solid #E0E0E0',
                                             color: '#000000'
                                         }}
                                     >
                                         Position
                                     </div>
+                                    {onRemove && (
+                                        <div className="text-[14px] font-semibold text-center" style={{ padding: '12px 16px', color: '#000000' }}>
+                                            Action
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Table Rows */}
-                                {employees.map((employee, index) => (
+                                {employees.map((employee, index) => {
+                                    const empId = employee.employee_id ?? employee.id;
+                                    const name = employee.employee_name ?? employee.name ?? '';
+                                    const department = employee.department_name ?? employee.department ?? '';
+                                    const position = employee.position_name ?? employee.position ?? '';
+                                    const photo = employee.avatar_url ?? employee.photo ?? photoMap[name] ?? MohamedAliPhoto;
+                                    return (
                                     <div
-                                        key={employee.id || index}
-                                        className={`grid grid-cols-[2fr_1fr_1fr] border-b border-[#E0E0E0] last:border-b-0 ${index % 2 === 0 ? 'bg-white' : 'bg-[#F9FAFB]'
+                                        key={empId || index}
+                                        className={`grid grid-cols-[2fr_1fr_1fr_minmax(80px,auto)] border-b border-[#E0E0E0] last:border-b-0 ${index % 2 === 0 ? 'bg-white' : 'bg-[#F9FAFB]'
                                             }`}
                                     >
                                         <div
@@ -108,17 +121,13 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, employees =
                                             }}
                                         >
                                             <img
-                                                src={photoMap[employee.name] || MohamedAliPhoto}
-                                                alt={employee.name}
+                                                src={photo}
+                                                alt={name}
                                                 className="w-[40px] h-[40px] rounded-full object-cover"
+                                                onError={(e) => { e.target.src = MohamedAliPhoto; }}
                                             />
-                                            <span
-                                                className="text-[14px]"
-                                                style={{
-                                                    color: '#000000'
-                                                }}
-                                            >
-                                                {employee.name}
+                                            <span className="text-[14px]" style={{ color: '#000000' }}>
+                                                {name}
                                             </span>
                                         </div>
                                         <div
@@ -129,53 +138,83 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, employees =
                                                 color: '#000000'
                                             }}
                                         >
-                                            {employee.department}
+                                            {department}
                                         </div>
                                         <div
                                             className="flex items-center justify-center text-center text-[14px]"
                                             style={{
                                                 padding: '12px 16px',
+                                                borderRight: onRemove ? '1px solid #E0E0E0' : undefined,
                                                 color: '#000000'
                                             }}
                                         >
-                                            {employee.position}
+                                            {position}
                                         </div>
+                                        {onRemove && empId && (
+                                            <div className="flex items-center justify-center p-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onRemove(empId)}
+                                                    className="text-[13px] text-red-600 hover:text-red-700 hover:underline"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             {/* Mobile Card View */}
                             <div className="md:hidden space-y-3">
-                                {employees.map((employee, index) => (
+                                {employees.map((employee, index) => {
+                                    const empId = employee.employee_id ?? employee.id;
+                                    const name = employee.employee_name ?? employee.name ?? '';
+                                    const department = employee.department_name ?? employee.department ?? '';
+                                    const position = employee.position_name ?? employee.position ?? '';
+                                    const photo = employee.avatar_url ?? employee.photo ?? photoMap[name] ?? MohamedAliPhoto;
+                                    return (
                                     <div
-                                        key={employee.id || index}
+                                        key={empId || index}
                                         className="bg-white border border-[#E0E0E0] rounded-[8px] p-4"
                                     >
                                         <div className="flex items-center gap-3 mb-3">
                                             <img
-                                                src={photoMap[employee.name] || MohamedAliPhoto}
-                                                alt={employee.name}
+                                                src={photo}
+                                                alt={name}
                                                 className="w-[48px] h-[48px] rounded-full object-cover"
+                                                onError={(e) => { e.target.src = MohamedAliPhoto; }}
                                             />
                                             <div className="flex-1">
                                                 <h3 className="text-[15px] font-semibold text-[#000000] mb-1">
-                                                    {employee.name}
+                                                    {name}
                                                 </h3>
                                                 <p className="text-[13px] text-[#6B7280]">
-                                                    {employee.department}
+                                                    {department}
                                                 </p>
                                             </div>
+                                            {onRemove && empId && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onRemove(empId)}
+                                                    className="text-[13px] text-red-600 hover:text-red-700"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <div className="pt-3 border-t border-[#F0F0F0]">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[12px] text-[#6B7280]">Position:</span>
                                                 <span className="text-[13px] font-semibold text-[#000000]">
-                                                    {employee.position}
+                                                    {position}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </>
                     )}

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getLocationActivityReports } from "../services/locationActivities";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -15,6 +17,8 @@ const ExportIcon = new URL("../images/icons/export.png", import.meta.url).href;
 
 const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("7-2");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("All Type");
@@ -30,6 +34,9 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   const [isBulkActionsDropdownOpen, setIsBulkActionsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [reportsData, setReportsData] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsError, setReportsError] = useState(null);
   const typeDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const exportAllDropdownRef = useRef(null);
@@ -40,14 +47,45 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample field activity data - matching the image
-  const fieldActivityData = [
+  // Fetch reports from API
+  useEffect(() => {
+    let cancelled = false;
+    setReportsLoading(true);
+    setReportsError(null);
+    getLocationActivityReports({ from: fromDate, to: toDate })
+      .then((list) => {
+        if (!cancelled) setReportsData(Array.isArray(list) ? list : []);
+      })
+      .catch((err) => {
+        if (!cancelled) setReportsError(err?.response?.data?.message || err?.message || "Failed to load reports");
+      })
+      .finally(() => {
+        if (!cancelled) setReportsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [fromDate, toDate]);
+
+  // Normalize report rows for table (API may use different field names)
+  const fieldActivityData = React.useMemo(() => {
+    return (reportsData || []).map((r) => ({
+      id: r.id ?? r.report_id,
+      activity: r.activity ?? r.activity_name ?? r.name ?? "",
+      type: r.type ?? r.activity_type ?? "",
+      location: r.location ?? r.location_name ?? "",
+      responsibleEmployee: r.responsible_employee ?? r.responsibleEmployee ?? r.employee_name ?? "",
+      plannedDate: r.planned_date ?? r.plannedDate ?? "",
+      actualDate: r.actual_date ?? r.actualDate ?? "-",
+      attendees: r.attendees ?? r.attendee_count ?? ""
+    }));
+  }, [reportsData]);
+
+  const _sampleFieldActivityData = [
     {
       id: 1,
       activity: "Workshop A",
@@ -213,7 +251,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -261,14 +299,14 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -901,10 +939,20 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
 
+            {reportsError && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {reportsError}
+              </div>
+            )}
+
+            <>
             {/* Field Activity Table */}
             <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #B5B1B1' }}>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              {reportsLoading ? (
+                <div className="p-12 text-center text-[#6B7280]">Loading reports...</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
@@ -996,7 +1044,8 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     )}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Pagination */}
@@ -1052,6 +1101,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 </button>
               </div>
             )}
+            </>
           </div>
         </main>
       </div>
@@ -1134,7 +1184,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}

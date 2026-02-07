@@ -1,72 +1,92 @@
-// Employees Service
-// Handles all employee-related API calls
+// Employees Service – يستخدم apiClient (نفس base URL والتوكن)
+import { apiClient } from "./apiClient";
 
-import { apiRequest } from './api.js';
-
-/**
- * Get all employees
- * @returns {Promise<object>} - Response object with status, results, and data array
- */
-const getEmployees = async () => {
-  try {
-    console.log('📤 Fetching employees from /employees');
-    
-    const response = await apiRequest('/employees', {
-      method: 'GET',
-    });
-
-    console.log('✅ Employees loaded successfully:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Failed to fetch employees:', error);
-    
-    // Handle specific error cases
-    if (error.status === 401) {
-      throw new Error('Session expired. Please login again.');
-    } else if (error.status === 500) {
-      throw new Error('Internal server error. Please try again later or contact support.');
-    } else if (error.status === 404) {
-      throw new Error('Employees endpoint not found. Please contact support.');
-    } else if (error.message) {
-      throw error;
-    } else {
-      throw new Error('Failed to fetch employees. Please try again.');
-    }
-  }
-};
+const BASE = "/employees";
 
 /**
- * Create a new employee
- * @param {object} employeeData - Employee data to create
- * @returns {Promise<object>} - Response object with status and data
+ * GET http://localhost:5000/api/v1/employees
+ * قائمة كل الموظفين
  */
-const createEmployee = async (employeeData) => {
-  try {
-    console.log('📤 Creating employee:', employeeData);
-    
-    const response = await apiRequest('/employees', {
-      method: 'POST',
-      body: JSON.stringify(employeeData),
-    });
+export async function getEmployees(params = {}) {
+  const res = await apiClient.get(BASE, { params });
+  const raw = res.data?.data ?? res.data;
+  const list = Array.isArray(raw) ? raw : raw?.items ?? raw?.records ?? [];
+  return { data: list };
+}
 
-    console.log('✅ Employee created successfully:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Failed to create employee:', error);
-    
-    // Handle specific error cases
-    if (error.status === 401) {
-      throw new Error('Session expired. Please login again.');
-    } else if (error.status === 400) {
-      throw new Error(error.message || 'Invalid employee data. Please check all fields.');
-    } else if (error.status === 500) {
-      throw new Error('Internal server error. Please try again later or contact support.');
-    } else if (error.message) {
-      throw error;
-    } else {
-      throw new Error('Failed to create employee. Please try again.');
-    }
-  }
-};
+/**
+ * POST http://localhost:5000/api/v1/employees
+ * إنشاء موظف جديد
+ */
+export async function createEmployee(payload) {
+  const res = await apiClient.post(BASE, payload);
+  const data = res.data?.data ?? res.data;
+  return data != null ? { data } : res.data;
+}
 
-export { getEmployees, createEmployee };
+/**
+ * GET http://localhost:5000/api/v1/employees/team/members
+ * أعضاء الفريق التابعين لي (للمدير)
+ */
+export async function getTeamMembers(params = {}) {
+  const res = await apiClient.get(`${BASE}/team/members`, { params });
+  const raw = res.data?.data ?? res.data;
+  return Array.isArray(raw) ? raw : raw?.items ?? raw?.records ?? [];
+}
+
+/**
+ * GET http://localhost:5000/api/v1/employees/reports
+ * تقارير HR
+ */
+export async function getHRReports(params = {}) {
+  const res = await apiClient.get(`${BASE}/reports`, { params });
+  const raw = res.data?.data ?? res.data;
+  if (Array.isArray(raw)) return raw;
+  return raw?.reports ?? raw?.items ?? raw?.records ?? [];
+}
+
+/**
+ * POST http://localhost:5000/api/v1/employees/bulk-action
+ * إجراء جماعي على موظفين
+ * @param {{ action: string, ids: string[] }} payload
+ */
+export async function bulkActionEmployees(payload) {
+  const res = await apiClient.post(`${BASE}/bulk-action`, payload);
+  return res.data?.data ?? res.data;
+}
+
+/**
+ * GET http://localhost:5000/api/v1/employees/:id
+ * موظف واحد بالمعرف
+ */
+export async function getEmployeeById(id) {
+  const res = await apiClient.get(`${BASE}/${id}`);
+  return res.data?.data ?? res.data;
+}
+
+/**
+ * PUT http://localhost:5000/api/v1/employees/:id
+ * تحديث موظف (كامل)
+ */
+export async function updateEmployee(id, payload) {
+  const res = await apiClient.put(`${BASE}/${id}`, payload);
+  return res.data?.data ?? res.data;
+}
+
+/**
+ * PATCH http://localhost:5000/api/v1/employees/:id
+ * تحديث جزئي لموظف
+ */
+export async function patchEmployee(id, payload) {
+  const res = await apiClient.patch(`${BASE}/${id}`, payload);
+  return res.data?.data ?? res.data;
+}
+
+/**
+ * DELETE http://localhost:5000/api/v1/employees/:id
+ * حذف/تعطيل موظف
+ */
+export async function deleteEmployee(id) {
+  const res = await apiClient.delete(`${BASE}/${id}`);
+  return res.data?.data ?? res.data;
+}

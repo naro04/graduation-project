@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getDashboardStats } from "../services/dashboard.js";
-import { getCurrentUser, logout } from "../services/auth.js";
+import { getCurrentUser, getMe, logout } from "../services/auth.js";
 
 // Logo images
 const LogoMobile = new URL("../images/LogoMobile.jpg", import.meta.url).href;
@@ -33,6 +33,18 @@ const ActivitiesIcon = new URL("../images/icons/Activities1 (1).png", import.met
 
 import LogoutModal from "./LogoutModal";
 
+// Map API role (e.g. "Manager", "manager") to app role key for menu/display
+const normalizeRoleKey = (role) => {
+  if (!role || typeof role !== "string") return "superAdmin";
+  const r = role.toLowerCase().trim();
+  if (r === "super admin" || r === "superadmin") return "superAdmin";
+  if (r === "hr") return "hr";
+  if (r === "manager") return "manager";
+  if (r === "field employee" || r === "fieldemployee" || r === "field worker") return "fieldEmployee";
+  if (r === "officer" || r === "office staff") return "officer";
+  return "superAdmin";
+};
+
 const DashboardPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const [activeMenu, setActiveMenu] = useState(1);
@@ -48,17 +60,27 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
   const dropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
+  // Use role from logged-in user so Manager sees "Manager" and Manager menu, not Super Admin
+  const effectiveUserRole = currentUser
+    ? normalizeRoleKey(currentUser.role ?? currentUser.roles?.[0])
+    : userRole;
+
   // Fetch dashboard data on component mount
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         setIsLoading(true);
         
-        // Get current user data
-        const user = getCurrentUser();
-        if (user) {
-          setCurrentUser(user);
+        // Get current user data (and refresh from API if no role so Manager shows correctly)
+        let user = getCurrentUser();
+        if (user && (user.role == null && !user.roles?.length)) {
+          try {
+            const meRes = await getMe();
+            const meUser = meRes?.data?.user ?? meRes?.user ?? meRes?.data;
+            if (meUser) user = meUser;
+          } catch (_) {}
         }
+        if (user) setCurrentUser(user);
         
         // Fetch dashboard stats
         const stats = await getDashboardStats();
@@ -123,7 +145,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
@@ -428,7 +450,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveUserRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           onLogoutClick={() => setIsLogoutModalOpen(true)}
@@ -487,7 +509,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                         />
                       </div>
                       <p className="text-[12px] font-normal text-[#6B7280]">
-                        {currentUser?.role || roleDisplayNames[userRole] || "User"}
+                        {roleDisplayNames[effectiveUserRole] || currentUser?.role || "User"}
                       </p>
                     </div>
                   </div>
@@ -1143,9 +1165,15 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                   </p>
                 </button>
 
-                {/* Activities Card */}
+                {/* Activities Card — لا صفحة مستقلة لـ Activities؛ التوجيه حسب الدور لأول فرعي */}
                 <button
-                  onClick={() => navigate("/activities")}
+                  onClick={() => {
+                    const role = normalizeRoleKey(userRole);
+                    if (role === "manager") navigate("/approvals/activities");
+                    else if (role === "fieldEmployee") navigate("/activities/log");
+                    else if (role === "officer") navigate("/dashboard");
+                    else navigate("/activities");
+                  }}
                   className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[16px] flex items-center gap-[12px] cursor-pointer"
                 >
                   <img
@@ -1244,7 +1272,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveUserRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
