@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LogoutModal from "./LogoutModal";
+import {
+  getDepartments,
+  createDepartment,
+  updateDepartment,
+  deleteDepartment,
+  bulkActionDepartments,
+} from "../services/departments";
 
 // Logo images
 const LogoMobile = new URL("../images/LogoMobile.jpg", import.meta.url).href;
@@ -22,6 +30,8 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 
 const DepartmentsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("2-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -52,61 +62,65 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
     description: ""
   });
 
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitError, setSubmitError] = useState(null);
+  const [submitSuccess, setSubmitSuccess] = useState(null);
+
+  const normalizeDepartment = (item) => {
+    const statusRaw = (item.status || "active").toString().toLowerCase();
+    const isReviewed = item.is_reviewed === true || item.is_reviewed === "true";
+    const statusDisplay =
+      statusRaw === "under_review" || isReviewed
+        ? "Under Review"
+        : statusRaw === "active"
+          ? "Active"
+          : "Inactive";
+    return {
+      id: item.id,
+      name: item.name || "",
+      employeeCount: item.employee_count ?? item.employeeCount ?? item.employees_count ?? 0,
+      status: statusDisplay,
+      statusRaw: statusRaw,
+      description: item.description || "",
+    };
+  };
+
+  const fetchDepartments = useCallback(async () => {
+    try {
+      setLoading(true);
+      setSubmitError(null);
+      const raw = await getDepartments();
+      const list = Array.isArray(raw) ? raw : [];
+      setDepartments(list.map(normalizeDepartment));
+    } catch (err) {
+      console.error("Failed to fetch departments:", err);
+      setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to load departments");
+      setDepartments([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDepartments();
+  }, [fetchDepartments]);
+
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample departments data
-  const departmentsData = [
-    {
-      id: 1,
-      name: "Human Resource",
-      employeeCount: 5,
-      status: "Active"
-    },
-    {
-      id: 2,
-      name: "Field Operations",
-      employeeCount: 8,
-      status: "Active"
-    },
-    {
-      id: 3,
-      name: "Office Administration",
-      employeeCount: 9,
-      status: "Active"
-    },
-    {
-      id: 4,
-      name: "Project Management",
-      employeeCount: 0,
-      status: "Inactive"
-    },
-    {
-      id: 5,
-      name: "Finance",
-      employeeCount: 4,
-      status: "Active"
-    },
-    {
-      id: 6,
-      name: "Information Technology",
-      employeeCount: 4,
-      status: "Active"
-    }
-  ];
-
-  const filteredDepartments = departmentsData.filter(department => {
+  const filteredDepartments = departments.filter(department => {
     const matchesSearch = !searchQuery ||
       department.name.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesDepartment = selectedDepartmentFilter === "All Departments" || department.name === selectedDepartmentFilter;
-    const matchesStatus = selectedStatus === "All Status" || department.status === selectedStatus;
+    const matchesStatus = selectedStatus === "All Status" || (department.status || "").trim() === (selectedStatus || "").trim();
 
     return matchesSearch && matchesDepartment && matchesStatus;
   });
@@ -187,7 +201,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           onLogoutClick={() => setIsLogoutModalOpen(true)}
@@ -230,14 +244,14 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -288,6 +302,14 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
               </p>
             </div>
 
+            {(submitError || submitSuccess) && (
+              <div className={`mb-[16px] px-[16px] py-[12px] rounded-[8px] text-[14px] ${submitError ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
+                {submitError || submitSuccess}
+              </div>
+            )}
+            {loading && (
+              <div className="mb-[16px] text-[14px] text-[#6B7280]">Loading departments...</div>
+            )}
             <div className="mb-[20px] flex flex-col gap-[20px]">
               <div className="flex items-center justify-end">
                 <button
@@ -316,8 +338,8 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                     {isDepartmentDropdownOpen && (
-                      <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full">
-                        {["Human Resource", "Field Operations", "Office Administration", "Project Management", "Finance", "Information Technology", "All Departments"].map((dept) => (
+                      <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full max-h-[200px] overflow-y-auto">
+                        {["All Departments", ...departments.map((d) => d.name).filter(Boolean)].map((dept) => (
                           <button
                             key={dept}
                             onClick={() => {
@@ -353,7 +375,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                     </svg>
                     {isStatusDropdownOpen && (
                       <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full">
-                        {["All Status", "Active", "Inactive"].map((status) => (
+                        {["All Status", "Active", "Under Review", "Inactive"].map((status) => (
                           <button
                             key={status}
                             onClick={() => {
@@ -408,36 +430,39 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                     </svg>
                   </button>
                   {isBulkActionsDropdownOpen && (
-                    <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[8px] shadow-lg z-20 min-w-[180px]">
-                      <div className="px-[16px] py-[8px] border-b border-[#E0E0E0]">
-                        <p className="text-[14px] text-[#000000]" style={{ fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>Bulk Actions</p>
-                      </div>
+                    <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[8px] shadow-lg z-20 min-w-[200px]">
                       <button
-                        onClick={() => {
-                          console.log('Delete selected departments:', selectedDepartments);
-                          setSelectedDepartments([]);
-                          setIsBulkActionsDropdownOpen(false);
+                        onClick={async () => {
+                          try {
+                            await bulkActionDepartments({ action: "delete", ids: selectedDepartments });
+                            await fetchDepartments();
+                            setSelectedDepartments([]);
+                            setIsBulkActionsDropdownOpen(false);
+                          } catch (err) {
+                            setSubmitError(err.response?.data?.message ?? err.message ?? "Bulk delete failed");
+                          }
                         }}
-                        className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] flex items-center gap-[8px]"
-                        style={{ fontWeight: 400, fontFamily: 'Inter, sans-serif' }}
+                        className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] flex items-center gap-[8px] first:rounded-t-[8px]"
+                        style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400 }}
                       >
-                        <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        <span style={{ fontSize: '16px' }}>✗</span>
                         Delete selected
                       </button>
                       <button
-                        onClick={() => {
-                          console.log('Mark as reviewed:', selectedDepartments);
-                          setSelectedDepartments([]);
-                          setIsBulkActionsDropdownOpen(false);
+                        onClick={async () => {
+                          try {
+                            await bulkActionDepartments({ action: "review", ids: selectedDepartments });
+                            await fetchDepartments();
+                            setSelectedDepartments([]);
+                            setIsBulkActionsDropdownOpen(false);
+                          } catch (err) {
+                            setSubmitError(err.response?.data?.message ?? err.message ?? "Bulk action failed");
+                          }
                         }}
-                        className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] flex items-center gap-[8px] rounded-b-[8px]"
-                        style={{ fontWeight: 400, fontFamily: 'Inter, sans-serif' }}
+                        className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] flex items-center gap-[8px] last:rounded-b-[8px]"
+                        style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400 }}
                       >
-                        <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
+                        <span style={{ fontSize: '16px' }}>✓</span>
                         Mark as reviewed
                       </button>
                     </div>
@@ -507,7 +532,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                                 setFormData({
                                   name: department.name || "",
                                   status: department.status || "Active",
-                                  description: ""
+                                  description: department.description || ""
                                 });
                                 setShowEditDepartmentPage(true);
                               }}
@@ -646,7 +671,30 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
 
             {/* Modal Content */}
             <div className="p-[32px]">
-              <form>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setSubmitError(null);
+                  if (!formData.name?.trim()) {
+                    setSubmitError("Department name is required.");
+                    return;
+                  }
+                  try {
+                    await createDepartment({
+                      name: formData.name.trim(),
+                      status: (formData.status || "Active").toLowerCase(),
+                      description: formData.description?.trim() || undefined,
+                    });
+                    await fetchDepartments();
+                    setShowAddDepartmentPage(false);
+                    setFormData({ name: "", status: "Active", description: "" });
+                    setSubmitSuccess("Department added.");
+                    setTimeout(() => setSubmitSuccess(null), 3000);
+                  } catch (err) {
+                    setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to add department");
+                  }
+                }}
+              >
                 {/* Form Fields - Single Column */}
                 <div className="space-y-[16px]">
                   {/* Department Name */}
@@ -855,7 +903,32 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
 
             {/* Modal Content */}
             <div className="p-[32px]">
-              <form>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setSubmitError(null);
+                  if (!editingDepartment?.id || !formData.name?.trim()) {
+                    setSubmitError("Department name is required.");
+                    return;
+                  }
+                  try {
+                    const newStatus = (formData.status || "Active").toLowerCase();
+                    await updateDepartment(editingDepartment.id, {
+                      name: formData.name.trim(),
+                      status: newStatus,
+                      description: formData.description?.trim() || undefined,
+                      ...(newStatus === "active" || newStatus === "inactive" ? { is_reviewed: false } : {}),
+                    });
+                    await fetchDepartments();
+                    setShowEditDepartmentPage(false);
+                    setEditingDepartment(null);
+                    setSubmitSuccess("Department updated.");
+                    setTimeout(() => setSubmitSuccess(null), 3000);
+                  } catch (err) {
+                    setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to update department");
+                  }
+                }}
+              >
                 {/* Form Fields - Single Column */}
                 <div className="space-y-[16px]">
                   {/* Department Name */}
@@ -1109,9 +1182,16 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
 
             <div className="flex items-center justify-center gap-[20px] px-[20px]">
               <button
-                onClick={() => {
-                  if (departmentToDelete) {
-                    console.log('Deleting department:', departmentToDelete);
+                onClick={async () => {
+                  if (departmentToDelete?.id) {
+                    try {
+                      await deleteDepartment(departmentToDelete.id);
+                      await fetchDepartments();
+                      setSubmitSuccess("Department deleted.");
+                      setTimeout(() => setSubmitSuccess(null), 3000);
+                    } catch (err) {
+                      setSubmitError(err.response?.data?.message ?? err.message ?? "Failed to delete department");
+                    }
                   }
                   setShowWarningModal(false);
                   setDepartmentToDelete(null);
@@ -1241,7 +1321,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1327,7 +1407,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
               </svg>
               {isStatusDropdownOpen && (
                 <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full">
-                  {["All Status", "Active", "Inactive"].map((status) => (
+                  {["All Status", "Active", "Under Review", "Inactive"].map((status) => (
                     <button
                       key={status}
                       onClick={() => {
@@ -1372,7 +1452,12 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                     <p className="text-[14px] font-medium text-[#111827] mb-[4px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
                       {department.name}
                     </p>
-                    <span className={`inline-block px-[12px] py-[4px] rounded-[6px] text-[12px] font-medium ${department.status === 'Active' ? 'bg-[#D1FAE5] text-[#065F46]' : 'bg-[#FEE2E2] text-[#991B1B]'}`} style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
+                    <span
+                    className={`inline-block px-[12px] py-[4px] rounded-[6px] text-[12px] font-medium ${
+                      department.status === 'Active' ? 'bg-[#D1FAE5] text-[#065F46]' : department.status === 'Under Review' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#991B1B]'
+                    }`}
+                    style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}
+                  >
                       {department.status}
                     </span>
                   </div>
