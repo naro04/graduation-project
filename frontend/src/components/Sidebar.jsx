@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getMenuByRole } from "../config/menuConfig";
+import { getEffectiveRole } from "../services/auth.js";
 
 // Logo
 const LogoDesktop = new URL("../images/LogoDesktop.png", import.meta.url).href;
@@ -25,7 +26,9 @@ const LogoutIcon = new URL("../images/icons/Log out.png", import.meta.url).href;
 const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile = false, onClose, onLogoutClick }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const menu = getMenuByRole(userRole);
+  // Always use logged-in user's role for menu so Manager stays Manager on every page
+  const effectiveRole = getEffectiveRole(userRole);
+  const menu = getMenuByRole(effectiveRole);
   const [expandedMenus, setExpandedMenus] = useState([]);
 
   // Close all expanded menus when activeMenu is null (on profile page)

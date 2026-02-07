@@ -1,11 +1,17 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import AddAssignLocationModal from "./AddAssignLocationModal";
 import ViewActivitiesModal from "./ViewActivitiesModal";
 import EditActivityModal from "./EditActivityModal";
 import ViewEmployeesModal from "./ViewEmployeesModal";
 import ViewLocationEmployeesModal from "./ViewLocationEmployeesModal";
+import { getLocationAssignments, createLocationAssignment, deleteLocationAssignment } from "../services/locationAssignments";
+import { getLocationActivities, getLocationActivityById } from "../services/locationActivities";
+import { getLocations } from "../services/locations";
+import { getLocationEmployees } from "../services/locations";
+import { getEmployees } from "../services/employees";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -22,6 +28,8 @@ const AssignIcon = new URL("../images/icons/employee2.png", import.meta.url).hre
 
 const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("5-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -38,13 +46,25 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const [showAddAssignmentPage, setShowAddAssignmentPage] = useState(false);
   const [showViewActivitiesModal, setShowViewActivitiesModal] = useState(false);
   const [selectedLocationForView, setSelectedLocationForView] = useState(null);
+  const [activitiesForView, setActivitiesForView] = useState([]);
+  const [activitiesForViewLoading, setActivitiesForViewLoading] = useState(false);
   const [showEditActivityModal, setShowEditActivityModal] = useState(false);
   const [selectedActivityForEdit, setSelectedActivityForEdit] = useState(null);
   const [showViewEmployeesModal, setShowViewEmployeesModal] = useState(false);
   const [selectedActivityForViewEmployees, setSelectedActivityForViewEmployees] = useState(null);
   const [showViewLocationEmployeesModal, setShowViewLocationEmployeesModal] = useState(false);
   const [selectedLocationForEmployees, setSelectedLocationForEmployees] = useState(null);
+  const [selectedLocationIdForEmployees, setSelectedLocationIdForEmployees] = useState(null);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [assignmentsRaw, setAssignmentsRaw] = useState([]);
+  const [locationsList, setLocationsList] = useState([]);
+  const [employeesList, setEmployeesList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [employeesAtLocation, setEmployeesAtLocation] = useState([]);
+  const [employeesAtLocationLoading, setEmployeesAtLocationLoading] = useState(false);
+  const [activityEmployeesForModal, setActivityEmployeesForModal] = useState([]);
+  const [activityEmployeesLoading, setActivityEmployeesLoading] = useState(false);
   const typeDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const locationDropdownRef = useRef(null);
@@ -54,47 +74,103 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample location assignments data
-  const locationAssignmentsData = [
-    {
-      id: 1,
-      locationName: "Gaza Office",
-      employeeCount: 15,
-      type: "Office",
-      status: "Active"
-    },
-    {
-      id: 2,
-      locationName: "Field Site A",
-      employeeCount: 10,
-      type: "Field",
-      status: "Active"
-    },
-    {
-      id: 3,
-      locationName: "Training Center",
-      employeeCount: 5,
-      type: "Office",
-      status: "Inactive"
-    }
-  ];
+  // Fetch assignments, locations, employees
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      getLocationAssignments().catch(() => []),
+      getLocations().catch(() => []),
+      getEmployees()
+      .then((r) => {
+        const d = r?.data;
+        return Array.isArray(d) ? d : (d?.items ?? d?.employees ?? d?.records ?? []);
+      })
+      .catch(() => [])
+    ])
+      .then(([assignments, locations, employees]) => {
+        if (cancelled) return;
+        setAssignmentsRaw(Array.isArray(assignments) ? assignments : []);
+        setLocationsList(Array.isArray(locations) ? locations : []);
+        setEmployeesList(Array.isArray(employees) ? employees : []);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.response?.data?.message || err?.message || "Failed to load");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
-  // Sample employees data
-  const employeesData = [
-    { id: 1, name: "Mohamed Ali", role: "Office • Data Entry" },
-    { id: 2, name: "Amal Ahmed", role: "Field Operation • Trainer" },
-    { id: 3, name: "Amjad Saeed", role: "HR • HR Manager" }
-  ];
+  // Build table rows: group assignments by location, merge with location info
+  const locationAssignmentsData = React.useMemo(() => {
+    const locs = Array.isArray(locationsList) ? locationsList : [];
+    const raw = Array.isArray(assignmentsRaw) ? assignmentsRaw : [];
+    const byLocation = {};
+    raw.forEach((a) => {
+      const locId = a.location_id ?? a.locationId ?? a.location?.id;
+      const locName = a.location_name ?? a.locationName ?? a.location?.name ?? "";
+      if (locId == null && !locName) return;
+      const key = locId ?? locName;
+      if (!byLocation[key]) {
+        const loc = locs.find((l) => (l.id ?? l.location_id) === locId || (l.name ?? "") === locName);
+        byLocation[key] = {
+          id: locId ?? key,
+          location_id: locId,
+          locationName: locName || (loc?.name ?? ""),
+          employeeCount: 0,
+          type: (loc?.type ?? loc?.type_name ?? a.type) ?? "—",
+          status: (loc?.status ?? a.status) ?? "Active"
+        };
+      }
+      byLocation[key].employeeCount += 1;
+    });
+    // Include locations that have no assignments (0 employees)
+    locs.forEach((loc) => {
+      const id = loc.id ?? loc.location_id;
+      const name = loc.name ?? loc.location_name ?? "";
+      const key = id ?? name;
+      if (key != null && !byLocation[key]) {
+        byLocation[key] = {
+          id,
+          location_id: id,
+          locationName: name,
+          employeeCount: 0,
+          type: loc.type ?? loc.type_name ?? "—",
+          status: loc.status ?? "Active"
+        };
+      }
+    });
+    return Object.values(byLocation).sort((a, b) => (a.locationName || "").localeCompare(b.locationName || ""));
+  }, [assignmentsRaw, locationsList]);
 
+  const refreshAssignments = () => {
+    return getLocationAssignments()
+      .then((list) => setAssignmentsRaw(Array.isArray(list) ? list : []))
+      .catch(() => setAssignmentsRaw([]));
+  };
 
-  // Sample locations for dropdown
-  const locationsList = ["Gaza Office", "Field Site A", "Training Center"];
+  // Employees for modal (id, name, role)
+  const employeesData = React.useMemo(() => {
+    return (employeesList || []).map((e) => ({
+      id: e.id ?? e.employee_id,
+      name: e.name ?? e.employee_name ?? e.full_name ?? "",
+      role: [e.department, e.position].filter(Boolean).join(" • ") || (e.role ?? "")
+    }));
+  }, [employeesList]);
+
+  // Locations for dropdown (id, name)
+  const locationsForDropdown = React.useMemo(() => {
+    return (locationsList || []).map((l) => ({ id: l.id ?? l.location_id, name: l.name ?? l.location_name ?? "" }));
+  }, [locationsList]);
 
   // Handle checkbox selection
   const handleCheckboxChange = (assignmentId) => {
@@ -116,90 +192,18 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
     }
   };
 
-  // Sample activities data (Mocked here for parent page access)
-  const activitiesDataMap = {
-    "Gaza Office": [
-      {
-        id: 1,
-        name: "Team Building Workshop",
-        employeeCount: 10,
-        startDate: "12/14/2025",
-        endDate: "12/16/2024",
-        status: "Active",
-        canEdit: false
-      },
-      {
-        id: 2,
-        name: "Safety Training",
-        employeeCount: 5,
-        startDate: "12/19/2025",
-        endDate: "12/25/2025",
-        status: "Active",
-        canEdit: true
-      }
-    ],
-    "Field Site A": [
-      {
-        id: 3,
-        name: "Field Operations Training",
-        employeeCount: 8,
-        startDate: "12/21/2025",
-        endDate: "12/23/2025",
-        status: "Active",
-        canEdit: true
-      }
-    ],
-    "Training Center": []
-  };
-
-  // Mock employees data for activities
-  const activityEmployeesMap = {
-    1: [ // Team Building Workshop
-      { id: 1, name: "Mohamed Ali", department: "Office", position: "Data Entry" },
-      { id: 2, name: "Amal Ahmed", department: "Field Operation", position: "Trainer" },
-      { id: 3, name: "Amjad Saeed", department: "HR", position: "HR Manager" },
-      { id: 4, name: "Jana Hassan", department: "IT", position: "System Administration" },
-      { id: 5, name: "Hasan Jaber", department: "Project Management", position: "Project Manager" }
-    ],
-    2: [ // Safety Training
-      { id: 1, name: "Mohamed Ali", department: "Office", position: "Data Entry" },
-      { id: 2, name: "Amal Ahmed", department: "Field Operation", position: "Trainer" },
-      { id: 3, name: "Amjad Saeed", department: "HR", position: "HR Manager" },
-      { id: 4, name: "Jana Hassan", department: "IT", position: "System Administration" },
-      { id: 5, name: "Hasan Jaber", department: "Project Management", position: "Project Manager" }
-    ],
-    3: [ // Field Operations Training
-      { id: 2, name: "Amal Ahmed", department: "Field Operation", position: "Trainer" },
-      { id: 5, name: "Hasan Jaber", department: "Project Management", position: "Project Manager" }
-    ]
-  };
-
-  // Mock employees data for locations
-  const locationEmployeesMap = {
-    "Gaza Office": [
-      { id: 1, name: "Mohamed Ali", department: "Office", position: "Data Entry" },
-      { id: 2, name: "Amal Ahmed", department: "Field Operation", position: "Trainer" },
-      { id: 3, name: "Amjad Saeed", department: "HR", position: "HR Manager" },
-      { id: 4, name: "Jana Hassan", department: "IT", position: "System Administration" },
-      { id: 5, name: "Hasan Jaber", department: "Project Management", position: "Project Manager" },
-      { id: 1, name: "Mohamed Ali", department: "Office", position: "Data Entry" },
-      { id: 2, name: "Amal Ahmed", department: "Field Operation", position: "Trainer" },
-      { id: 3, name: "Amjad Saeed", department: "HR", position: "HR Manager" },
-      { id: 4, name: "Jana Hassan", department: "IT", position: "System Administration" },
-      { id: 5, name: "Hasan Jaber", department: "Project Management", position: "Project Manager" }
-    ],
-    "Field Site A": [
-      { id: 2, name: "Amal Ahmed", department: "Field Operation", position: "Trainer" },
-      { id: 5, name: "Hasan Jaber", department: "Project Management", position: "Project Manager" }
-    ],
-    "Training Center": [
-      { id: 4, name: "Jana Hassan", department: "IT", position: "System Administration" }
-    ]
-  };
-
-  const handleViewActivities = (locationName) => {
+  const handleViewActivities = (locationName, locationId) => {
+    const id = locationId ?? locationsForDropdown.find((l) => (l.name || "") === (locationName || ""))?.id;
     setSelectedLocationForView(locationName);
     setShowViewActivitiesModal(true);
+    setActivitiesForView([]);
+    if (id) {
+      setActivitiesForViewLoading(true);
+      getLocationActivities({ location_id: id })
+        .then((list) => setActivitiesForView(Array.isArray(list) ? list : []))
+        .catch(() => setActivitiesForView([]))
+        .finally(() => setActivitiesForViewLoading(false));
+    }
   };
 
   const handleEditActivity = (activity) => {
@@ -220,15 +224,73 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   };
 
   const handleViewEmployees = (activity) => {
-    // Close the View Activities modal and open View Employees modal
     setShowViewActivitiesModal(false);
     setSelectedActivityForViewEmployees(activity);
     setShowViewEmployeesModal(true);
+    setActivityEmployeesForModal([]);
+    if (activity?.id) {
+      setActivityEmployeesLoading(true);
+      getLocationActivityById(activity.id)
+        .then((data) => {
+          const list = data?.employees ?? data?.employee_ids ?? [];
+          const arr = Array.isArray(list) ? list : [];
+          setActivityEmployeesForModal(
+            arr.map((e) => ({
+              id: e?.id ?? e?.employee_id ?? e,
+              name: e?.name ?? e?.employee_name ?? e?.full_name ?? "—",
+              department: e?.department ?? "",
+              position: e?.position ?? e?.role ?? ""
+            }))
+          );
+        })
+        .catch(() => setActivityEmployeesForModal([]))
+        .finally(() => setActivityEmployeesLoading(false));
+    }
   };
 
-  const handleViewLocationEmployees = (locationName) => {
+  const handleViewLocationEmployees = (locationName, locationId) => {
+    const id = locationId ?? locationsForDropdown.find((l) => (l.name || "") === (locationName || ""))?.id;
     setSelectedLocationForEmployees(locationName);
+    setSelectedLocationIdForEmployees(id);
     setShowViewLocationEmployeesModal(true);
+    if (id) {
+      setEmployeesAtLocationLoading(true);
+      getLocationEmployees(id)
+        .then((list) => setEmployeesAtLocation(Array.isArray(list) ? list : []))
+        .catch(() => setEmployeesAtLocation([]))
+        .finally(() => setEmployeesAtLocationLoading(false));
+    } else {
+      setEmployeesAtLocation([]);
+    }
+  };
+
+  const handleRemoveEmployeeFromLocation = (employeeId) => {
+    const locationId = selectedLocationIdForEmployees;
+    if (!employeeId || !locationId) return;
+    deleteLocationAssignment(employeeId, locationId)
+      .then(() => getLocationEmployees(locationId))
+      .then((list) => setEmployeesAtLocation(Array.isArray(list) ? list : []))
+      .then(refreshAssignments)
+      .catch(() => {});
+  };
+
+  const handleAddAssignmentSave = (locationId, employeeIds) => {
+    if (!locationId || !Array.isArray(employeeIds) || employeeIds.length === 0) {
+      return Promise.reject(new Error("Please select a location and at least one employee."));
+    }
+    return Promise.all(
+      employeeIds.map((empId) => createLocationAssignment({ employee_id: String(empId), location_id: String(locationId) }))
+    )
+      .then(() => refreshAssignments())
+      .then(() => {
+        setShowAddAssignmentPage(false);
+        setError(null);
+      })
+      .catch((err) => {
+        const msg = err?.response?.data?.message || err?.message || "Failed to assign";
+        setError(msg);
+        throw err;
+      });
   };
 
 
@@ -238,8 +300,8 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   // Status options
   const statusOptions = ["All Status", "Active", "Inactive"];
 
-  // Location options
-  const locationOptions = ["All Locations", ...locationsList];
+  // Location options for filter
+  const locationOptions = ["All Locations", ...locationsForDropdown.map((l) => l.name).filter(Boolean)];
 
   // Filter data
   const filteredData = locationAssignmentsData.filter(assignment => {
@@ -291,7 +353,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -333,14 +395,14 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -605,8 +667,17 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
 
+            {error && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Table */}
             <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
+              {loading ? (
+                <div className="p-12 text-center text-[#6B7280]">Loading assignments...</div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -681,7 +752,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                         <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
                           <div className="flex items-center justify-center gap-[8px]">
                             <button
-                              onClick={() => handleViewActivities(assignment.locationName)}
+                              onClick={() => handleViewActivities(assignment.locationName, assignment.location_id)}
                               className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
                               title="View"
                             >
@@ -689,7 +760,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                             </button>
                             <div className="w-[1px] h-[22px] bg-[#E0E0E0]"></div>
                             <button
-                              onClick={() => handleViewLocationEmployees(assignment.locationName)}
+                              onClick={() => handleViewLocationEmployees(assignment.locationName, assignment.location_id)}
                               className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
                               title="View Employees"
                             >
@@ -702,6 +773,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
 
             {/* Pagination */}
@@ -955,7 +1027,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-2 pt-3 border-t border-[#F3F4F6]">
                   <button
-                    onClick={() => handleViewActivities(assignment.locationName)}
+                    onClick={() => handleViewActivities(assignment.locationName, assignment.location_id)}
                     className="w-full h-[38px] rounded-[8px] bg-[#00897B] text-white text-[13px] font-medium hover:bg-[#00796B] transition-colors flex items-center justify-center gap-2"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -965,7 +1037,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                     View Activities
                   </button>
                   <button
-                    onClick={() => handleViewLocationEmployees(assignment.locationName)}
+                    onClick={() => handleViewLocationEmployees(assignment.locationName, assignment.location_id)}
                     className="w-full h-[38px] rounded-[8px] bg-[#0C8DFE] text-white text-[13px] font-medium hover:bg-[#0076E4] transition-colors flex items-center justify-center gap-2"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1023,7 +1095,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1037,14 +1109,16 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
         isOpen={showAddAssignmentPage}
         onClose={() => setShowAddAssignmentPage(false)}
         employees={employeesData}
-        locations={locationsList}
+        locations={locationsForDropdown}
+        onSave={handleAddAssignmentSave}
       />
 
       <ViewActivitiesModal
         isOpen={showViewActivitiesModal}
         onClose={() => setShowViewActivitiesModal(false)}
         locationName={selectedLocationForView}
-        activities={selectedLocationForView ? (activitiesDataMap[selectedLocationForView] || []) : []}
+        activities={activitiesForView}
+        activitiesLoading={activitiesForViewLoading}
         onEditActivity={handleEditActivity}
         onViewEmployees={handleViewEmployees}
       />
@@ -1064,15 +1138,19 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
       <ViewEmployeesModal
         isOpen={showViewEmployeesModal}
         onClose={() => setShowViewEmployeesModal(false)}
-        activityName={selectedActivityForViewEmployees?.name}
-        employees={selectedActivityForViewEmployees ? (activityEmployeesMap[selectedActivityForViewEmployees.id] || []) : []}
+        activityName={selectedActivityForViewEmployees?.name ?? selectedActivityForViewEmployees?.activity_name}
+        employees={activityEmployeesForModal}
+        employeesLoading={activityEmployeesLoading}
       />
 
       <ViewLocationEmployeesModal
         isOpen={showViewLocationEmployeesModal}
         onClose={() => setShowViewLocationEmployeesModal(false)}
         locationName={selectedLocationForEmployees}
-        employees={selectedLocationForEmployees ? (locationEmployeesMap[selectedLocationForEmployees] || []) : []}
+        locationId={selectedLocationIdForEmployees}
+        employees={employeesAtLocation}
+        employeesLoading={employeesAtLocationLoading}
+        onRemove={handleRemoveEmployeeFromLocation}
       />
 
       {/* Delete Confirmation Modal */}

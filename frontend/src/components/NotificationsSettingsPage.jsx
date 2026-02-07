@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getNotificationSettings, updateNotificationSettings } from "../services/notifications";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -19,7 +21,7 @@ import LogoutModal from "./LogoutModal";
 
 const roleDisplayNames = {
   superAdmin: "Super Admin",
-  hr: "HR Manager",
+  hr: "HR Admin",
   manager: "Manager",
   fieldEmployee: "Field Employee",
   officer: "Officer"
@@ -27,6 +29,7 @@ const roleDisplayNames = {
 
 const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
   const [activeMenu, setActiveMenu] = useState("8-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -34,6 +37,12 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const userDropdownRef = useRef(null);
   const desktopDropdownRef = useRef(null);
+
+  // API state
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Attendance Notifications State
   const [attendanceNotifications, setAttendanceNotifications] = useState({
@@ -84,14 +93,127 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
     }
   };
 
-  const handleSaveSettings = () => {
-    // Save settings logic here
-    console.log('Saving notification settings:', {
-      attendanceNotifications,
-      leaveNotifications,
-      activityNotifications
-    });
-    // You can add API call here to save settings
+  // Transform API data to component state (قراءة كل الإعدادات من الـ API بعد الـ reload)
+  const transformApiToState = (apiSettings) => {
+    const s = apiSettings || {};
+    return {
+      attendanceNotifications: {
+        checkInOut: {
+          email: s.attendance_check_in_out_email ?? true,
+          inApp: s.attendance_check_in_out_in_app ?? true
+        },
+        lateArrival: {
+          email: s.attendance_late_arrival_email ?? true,
+          inApp: s.attendance_late_arrival_in_app ?? true
+        },
+        earlyDeparture: {
+          email: s.attendance_early_departure_email ?? false,
+          inApp: s.attendance_early_departure_in_app ?? true
+        }
+      },
+      leaveNotifications: {
+        newLeaveRequest: {
+          email: s.leave_new_request_email ?? true,
+          inApp: s.leave_new_request_in_app ?? true
+        },
+        requestApproved: {
+          email: s.leave_request_approved_email ?? true,
+          inApp: s.leave_request_approved_in_app ?? true
+        },
+        requestRejected: {
+          email: s.leave_request_rejected_email ?? true,
+          inApp: s.leave_request_rejected_in_app ?? true
+        }
+      },
+      activityNotifications: {
+        newActivityAssigned: {
+          email: s.activity_new_assigned_email ?? true,
+          inApp: s.activity_new_assigned_in_app ?? true
+        },
+        activityCompleted: {
+          email: s.activity_completed_email ?? false,
+          inApp: s.activity_completed_in_app ?? true
+        },
+        activityOverdue: {
+          email: s.activity_overdue_email ?? true,
+          inApp: s.activity_overdue_in_app ?? true
+        }
+      }
+    };
+  };
+
+  // Transform component state to API format (إرسال كل الإعدادات حتى تُحفظ وتظهر بعد الـ reload)
+  const transformStateToApi = (state) => {
+    const a = state.attendanceNotifications || {};
+    const l = state.leaveNotifications || {};
+    const act = state.activityNotifications || {};
+    return {
+      attendance_check_in_out_email: a.checkInOut?.email ?? true,
+      attendance_check_in_out_in_app: a.checkInOut?.inApp ?? true,
+      attendance_late_arrival_email: a.lateArrival?.email ?? true,
+      attendance_late_arrival_in_app: a.lateArrival?.inApp ?? true,
+      attendance_early_departure_email: a.earlyDeparture?.email ?? false,
+      attendance_early_departure_in_app: a.earlyDeparture?.inApp ?? true,
+      leave_new_request_email: l.newLeaveRequest?.email ?? true,
+      leave_new_request_in_app: l.newLeaveRequest?.inApp ?? true,
+      leave_request_approved_email: l.requestApproved?.email ?? true,
+      leave_request_approved_in_app: l.requestApproved?.inApp ?? true,
+      leave_request_rejected_email: l.requestRejected?.email ?? true,
+      leave_request_rejected_in_app: l.requestRejected?.inApp ?? true,
+      activity_new_assigned_email: act.newActivityAssigned?.email ?? true,
+      activity_new_assigned_in_app: act.newActivityAssigned?.inApp ?? true,
+      activity_completed_email: act.activityCompleted?.email ?? false,
+      activity_completed_in_app: act.activityCompleted?.inApp ?? true,
+      activity_overdue_email: act.activityOverdue?.email ?? true,
+      activity_overdue_in_app: act.activityOverdue?.inApp ?? true
+    };
+  };
+
+  // Fetch notification settings from API
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await getNotificationSettings();
+        const transformedState = transformApiToState(response);
+        setAttendanceNotifications(transformedState.attendanceNotifications);
+        setLeaveNotifications(transformedState.leaveNotifications);
+        setActivityNotifications(transformedState.activityNotifications);
+      } catch (err) {
+        console.error('Failed to fetch notification settings:', err);
+        setError(err.response?.data?.message ?? err.message ?? 'Failed to load notification settings. Using defaults.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  const handleSaveSettings = async () => {
+    try {
+      setIsSaving(true);
+      setError(null);
+      setSaveSuccess(false);
+
+      const apiPayload = transformStateToApi({
+        attendanceNotifications,
+        leaveNotifications,
+        activityNotifications
+      });
+
+      await updateNotificationSettings(apiPayload);
+
+      setSaveSuccess(true);
+      // Hide success message after 3 seconds
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save notification settings:', err);
+      setError(err.response?.data?.message ?? err.message ?? 'Failed to save settings. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleResetToDefaults = () => {
@@ -369,7 +491,7 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
     <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
-        <Sidebar userRole={userRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
+        <Sidebar userRole={effectiveRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} onLogoutClick={() => setIsLogoutModalOpen(true)} />
 
         <main className="flex-1 flex flex-col bg-[#F5F7FA]" style={{ minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}>
           {/* Header */}
@@ -412,14 +534,14 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
                 />
                 <div>
                   <div className="flex items-center gap-[6px]">
-                    <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                    <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 mt-[2px] ${isDesktopDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -486,6 +608,12 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
             </p>
           </div>
 
+          {isLoading && (
+            <div className="mb-6 text-[14px] text-[#6B7280]" style={{ fontFamily: 'Inter, sans-serif' }}>
+              Loading notification settings...
+            </div>
+          )}
+
           {/* Notification Cards */}
           <NotificationCard
             title="Attendance Notifications"
@@ -511,18 +639,38 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
             category="activity"
           />
 
+          {/* Success/Error Messages */}
+          {saveSuccess && (
+            <div className="bg-green-50 border border-green-200 rounded-[8px] p-4 mb-6">
+              <p className="text-green-800 text-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
+                Settings saved successfully!
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-[8px] p-4 mb-6">
+              <p className="text-red-800 text-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
+                {error}
+              </p>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex items-center gap-[12px] mt-[32px]">
             <button
               onClick={handleSaveSettings}
-              className="px-[24px] py-[12px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors"
-              style={{ 
-                fontFamily: 'Inter, sans-serif', 
-                fontWeight: 500, 
+              disabled={isSaving || isLoading}
+              className={`px-[24px] py-[12px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors ${
+                isSaving || isLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 500,
                 fontSize: '14px'
               }}
             >
-              Save Settings
+              {isSaving ? 'Saving...' : 'Save Settings'}
             </button>
             <button
               onClick={handleResetToDefaults}
@@ -615,7 +763,7 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -652,6 +800,12 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
               Manage how you receive notifications about system activities
             </p>
           </div>
+
+          {isLoading && (
+            <div className="mb-6 text-[14px] text-[#6B7280]" style={{ fontFamily: 'Inter, sans-serif' }}>
+              Loading notification settings...
+            </div>
+          )}
 
           {/* Notification Cards - Mobile */}
           <div className="space-y-4 mb-6">
@@ -1061,18 +1215,38 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
             </div>
           </div>
 
+          {/* Success/Error Messages - Mobile */}
+          {saveSuccess && (
+            <div className="bg-green-50 border border-green-200 rounded-[8px] p-4 mb-4">
+              <p className="text-green-800 text-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
+                Settings saved successfully!
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-[8px] p-4 mb-4">
+              <p className="text-red-800 text-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
+                {error}
+              </p>
+            </div>
+          )}
+
           {/* Action Buttons - Mobile */}
           <div className="flex flex-col gap-3">
             <button
               onClick={handleSaveSettings}
-              className="w-full px-[24px] py-[12px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors"
+              disabled={isSaving || isLoading}
+              className={`w-full px-[24px] py-[12px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors ${
+                isSaving || isLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               style={{
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 500,
                 fontSize: '14px'
               }}
             >
-              Save Settings
+              {isSaving ? 'Saving...' : 'Save Settings'}
             </button>
             <button
               onClick={handleResetToDefaults}

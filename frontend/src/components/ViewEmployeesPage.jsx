@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -19,13 +20,15 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 
 const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const { locationName, activityName } = useParams();
   const [activeMenu, setActiveMenu] = useState("5-3");
 
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
@@ -48,7 +51,7 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar 
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -85,10 +88,10 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                       <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
               </div>

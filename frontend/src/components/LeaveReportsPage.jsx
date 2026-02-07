@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getLeaveReports } from "../services/leaves";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -20,6 +22,8 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 
 const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("7-3");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLeaveType, setSelectedLeaveType] = useState("All Leave Type");
@@ -40,72 +44,89 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const exportSelectedDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
+  const [leaveReportsData, setLeaveReportsData] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+
+  const fetchReports = async () => {
+    try {
+      setReportsLoading(true);
+      const data = await getLeaveReports({ from_date: fromDate, to_date: toDate });
+      const list = Array.isArray(data) ? data : [];
+      setLeaveReportsData(
+        list.map((item) => ({
+          id: item.id,
+          employeeName: item.employee_name ?? item.employeeName ?? "—",
+          employeePhoto: item.avatar_url ?? item.employeePhoto ?? AmeerJamalPhoto,
+          leaveType: item.leave_type ?? item.leaveType ?? "—",
+          dateRange: item.date_range ?? (item.start_date && item.end_date ? `${item.start_date} - ${item.end_date}` : "—"),
+          totalDays: item.total_days ?? item.totalDays ?? 0,
+          submittedDate: item.submitted_date ?? item.submittedDate ?? "—",
+          status: item.status ?? "Pending",
+          startDate: item.start_date ?? item.startDate ?? null,
+        }))
+      );
+    } catch (err) {
+      console.error("Failed to fetch leave reports:", err);
+      setLeaveReportsData([]);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, [fromDate, toDate]);
+
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Leave distribution data for pie chart
-  const leaveDistribution = {
-    annual: 53,
-    sick: 25,
-    personal: 10,
-    emergency: 12
+  // Normalize leave type from API to chart key (annual | sick | personal | emergency)
+  const normalizeLeaveTypeKey = (type) => {
+    if (!type || typeof type !== "string") return null;
+    const t = type.toLowerCase().trim();
+    if (t.includes("annual")) return "annual";
+    if (t.includes("sick")) return "sick";
+    if (t.includes("personal")) return "personal";
+    if (t.includes("emergency")) return "emergency";
+    return null;
   };
 
-  // Monthly leave requests trend data (line chart) - matching the image
-  const monthlyLeaveTrendData = [
-    { month: "Jan", requests: 2.5 },
-    { month: "Feb", requests: 6 },
-    { month: "Mar", requests: 9.5 },
-    { month: "Apr", requests: 8.5 },
-    { month: "May", requests: 7 },
-    { month: "Jun", requests: 5.5 },
-    { month: "Jul", requests: 4 },
-    { month: "Aug", requests: 2.5 },
-    { month: "Sep", requests: 1 },
-    { month: "Oct", requests: 5 },
-    { month: "Nov", requests: 10 },
-    { month: "Dec", requests: 15 }
-  ];
+  // Leave distribution from API data (pie chart)
+  const leaveDistribution = React.useMemo(() => {
+    const counts = { annual: 0, sick: 0, personal: 0, emergency: 0 };
+    (leaveReportsData || []).forEach((r) => {
+      const key = normalizeLeaveTypeKey(r.leaveType);
+      if (key && counts[key] !== undefined) counts[key]++;
+    });
+    const total = counts.annual + counts.sick + counts.personal + counts.emergency;
+    if (total === 0) return { annual: 0, sick: 0, personal: 0, emergency: 0 };
+    return {
+      annual: Math.round((counts.annual / total) * 100),
+      sick: Math.round((counts.sick / total) * 100),
+      personal: Math.round((counts.personal / total) * 100),
+      emergency: Math.round((counts.emergency / total) * 100),
+    };
+  }, [leaveReportsData]);
 
-  // Sample leave reports data
-  const leaveReportsData = [
-    {
-      id: 1,
-      employeeName: "Ameer Jamal",
-      employeePhoto: AmeerJamalPhoto,
-      leaveType: "Annual Leave",
-      dateRange: "12/24/2025 - 12/29/2025",
-      totalDays: 6,
-      submittedDate: "12/14/2025",
-      status: "Pending"
-    },
-    {
-      id: 2,
-      employeeName: "Amal Ahmed",
-      employeePhoto: AmalAhmedPhoto,
-      leaveType: "Sick Leave",
-      dateRange: "12/19/2025 - 12/21/2025",
-      totalDays: 3,
-      submittedDate: "12/18/2025",
-      status: "Rejected"
-    },
-    {
-      id: 3,
-      employeeName: "Hasan Jaber",
-      employeePhoto: HasanJaberPhoto,
-      leaveType: "Annual Leave",
-      dateRange: "12/17/2025 - 12/19/2025",
-      totalDays: 3,
-      submittedDate: "12/9/2025",
-      status: "Approved"
-    }
-  ];
+  // Monthly leave requests trend from API data (line chart)
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthlyLeaveTrendData = React.useMemo(() => {
+    const counts = Array(12).fill(0);
+    (leaveReportsData || []).forEach((r) => {
+      const d = r.startDate ? new Date(r.startDate) : null;
+      if (d && !isNaN(d.getTime())) {
+        const monthIndex = d.getMonth();
+        counts[monthIndex]++;
+      }
+    });
+    return monthNames.map((month, i) => ({ month, requests: counts[i] }));
+  }, [leaveReportsData]);
 
   // Leave types
   const leaveTypes = ["All Leave Type", "Annual Leave", "Sick Leave", "Personal Leave", "Emergency Leave"];
@@ -113,13 +134,14 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   // Status options
   const statusOptions = ["All Status", "Pending", "Approved", "Rejected"];
 
-  // Calculate pie chart segments
+  // Calculate pie chart segments (from API-derived distribution)
   const totalDistribution = leaveDistribution.annual + leaveDistribution.sick +
     leaveDistribution.personal + leaveDistribution.emergency;
-  const annualAngle = (leaveDistribution.annual / totalDistribution) * 360;
-  const sickAngle = (leaveDistribution.sick / totalDistribution) * 360;
-  const personalAngle = (leaveDistribution.personal / totalDistribution) * 360;
-  const emergencyAngle = (leaveDistribution.emergency / totalDistribution) * 360;
+  const safeTotal = totalDistribution || 1;
+  const annualAngle = (leaveDistribution.annual / safeTotal) * 360;
+  const sickAngle = (leaveDistribution.sick / safeTotal) * 360;
+  const personalAngle = (leaveDistribution.personal / safeTotal) * 360;
+  const emergencyAngle = (leaveDistribution.emergency / safeTotal) * 360;
 
   // Calculate cumulative angles for pie chart
   // Annual (53%) - Dark Teal - largest segment
@@ -211,12 +233,16 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
     return chartHeight - (value / maxValue) * chartHeight;
   };
 
+  // Max value for trend chart (scale Y-axis to API data)
+  const trendMax = Math.max(1, ...monthlyLeaveTrendData.map((d) => d.requests));
+  const trendYAxisValues = Array.from({ length: 6 }, (_, i) => Math.round((1 - i / 5) * trendMax));
+
   return (
     <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -259,14 +285,14 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -421,53 +447,39 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="flex items-center justify-center gap-[40px]" style={{ height: '250px' }}>
                   <div className="relative flex-shrink-0" style={{ width: '200px', height: '200px' }}>
                     <svg width="200" height="200" viewBox="0 0 200 200">
-                      {/* Annual Leave Segment (53%) - Dark Teal */}
-                      {(() => {
-                        const start = getCoordinates(annualStartAngle, 80);
-                        const end = getCoordinates(annualStartAngle + annualAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${annualAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#00564F"
-                          />
-                        );
-                      })()}
-
-                      {/* Sick Leave Segment (25%) - Light Teal */}
-                      {(() => {
-                        const start = getCoordinates(sickStartAngle, 80);
-                        const end = getCoordinates(sickStartAngle + sickAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${sickAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#8CCCC6"
-                          />
-                        );
-                      })()}
-
-                      {/* Personal Leave Segment (10%) - Gray */}
-                      {(() => {
-                        const start = getCoordinates(personalStartAngle, 80);
-                        const end = getCoordinates(personalStartAngle + personalAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${personalAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#626262"
-                          />
-                        );
-                      })()}
-
-                      {/* Emergency Leave Segment (12%) - Dark Red */}
-                      {(() => {
-                        const start = getCoordinates(emergencyStartAngle, 80);
-                        const end = getCoordinates(emergencyStartAngle + emergencyAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${emergencyAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#670505"
-                          />
-                        );
-                      })()}
+                      {totalDistribution === 0 ? (
+                        <>
+                          <circle cx="100" cy="100" r="80" fill="#E5E7EB" />
+                          <text x="100" y="100" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fill: '#6B7280' }}>No data</text>
+                        </>
+                      ) : (
+                        <>
+                          {annualAngle > 0 && (
+                            <path
+                              d={`M 100 100 L ${getCoordinates(annualStartAngle, 80).x} ${getCoordinates(annualStartAngle, 80).y} A 80 80 0 ${annualAngle > 180 ? 1 : 0} 1 ${getCoordinates(annualStartAngle + annualAngle, 80).x} ${getCoordinates(annualStartAngle + annualAngle, 80).y} Z`}
+                              fill="#00564F"
+                            />
+                          )}
+                          {sickAngle > 0 && (
+                            <path
+                              d={`M 100 100 L ${getCoordinates(sickStartAngle, 80).x} ${getCoordinates(sickStartAngle, 80).y} A 80 80 0 ${sickAngle > 180 ? 1 : 0} 1 ${getCoordinates(sickStartAngle + sickAngle, 80).x} ${getCoordinates(sickStartAngle + sickAngle, 80).y} Z`}
+                              fill="#8CCCC6"
+                            />
+                          )}
+                          {personalAngle > 0 && (
+                            <path
+                              d={`M 100 100 L ${getCoordinates(personalStartAngle, 80).x} ${getCoordinates(personalStartAngle, 80).y} A 80 80 0 ${personalAngle > 180 ? 1 : 0} 1 ${getCoordinates(personalStartAngle + personalAngle, 80).x} ${getCoordinates(personalStartAngle + personalAngle, 80).y} Z`}
+                              fill="#626262"
+                            />
+                          )}
+                          {emergencyAngle > 0 && (
+                            <path
+                              d={`M 100 100 L ${getCoordinates(emergencyStartAngle, 80).x} ${getCoordinates(emergencyStartAngle, 80).y} A 80 80 0 ${emergencyAngle > 180 ? 1 : 0} 1 ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).x} ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).y} Z`}
+                              fill="#670505"
+                            />
+                          )}
+                        </>
+                      )}
                     </svg>
                   </div>
 
@@ -518,7 +530,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="relative" style={{ height: '250px' }}>
                   {/* Y-axis Labels */}
                   <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
-                    {[25, 20, 15, 10, 5, 0].map((value) => (
+                    {trendYAxisValues.map((value) => (
                       <div
                         key={value}
                         className="text-right pr-[8px]"
@@ -539,7 +551,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                     {/* Grid Lines */}
                     <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                      {[25, 20, 15, 10, 5, 0].map((value, index) => {
+                      {trendYAxisValues.map((value, index) => {
                         const y = (index / 5) * 100;
                         return (
                           <line
@@ -575,11 +587,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                           />
                         </marker>
                       </defs>
-                      {/* Leave Requests Line - Straight segments */}
+                      {/* Leave Requests Line - from API data */}
                       <polyline
                         points={monthlyLeaveTrendData.map((data, index) => {
                           const x = (index / 11) * 1000;
-                          const y = valueToY(data.requests, 25, 200);
+                          const y = valueToY(data.requests, trendMax, 200);
                           return `${x},${y}`;
                         }).join(' ')}
                         fill="none"
@@ -1072,7 +1084,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1099,53 +1111,39 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
               <div className="flex flex-col items-center gap-4">
                 <div className="relative flex-shrink-0" style={{ width: '150px', height: '150px' }}>
                   <svg width="150" height="150" viewBox="0 0 200 200">
-                    {/* Annual Leave Segment (53%) - Dark Teal */}
-                    {(() => {
-                      const start = getCoordinates(annualStartAngle, 80);
-                      const end = getCoordinates(annualStartAngle + annualAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${annualAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#00564F"
-                        />
-                      );
-                    })()}
-
-                    {/* Sick Leave Segment (25%) - Light Teal */}
-                    {(() => {
-                      const start = getCoordinates(sickStartAngle, 80);
-                      const end = getCoordinates(sickStartAngle + sickAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${sickAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#8CCCC6"
-                        />
-                      );
-                    })()}
-
-                    {/* Personal Leave Segment (10%) - Gray */}
-                    {(() => {
-                      const start = getCoordinates(personalStartAngle, 80);
-                      const end = getCoordinates(personalStartAngle + personalAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${personalAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#626262"
-                        />
-                      );
-                    })()}
-
-                    {/* Emergency Leave Segment (12%) - Dark Red */}
-                    {(() => {
-                      const start = getCoordinates(emergencyStartAngle, 80);
-                      const end = getCoordinates(emergencyStartAngle + emergencyAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${emergencyAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#670505"
-                        />
-                      );
-                    })()}
+                    {totalDistribution === 0 ? (
+                      <>
+                        <circle cx="100" cy="100" r="80" fill="#E5E7EB" />
+                        <text x="100" y="100" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fill: '#6B7280' }}>No data</text>
+                      </>
+                    ) : (
+                      <>
+                        {annualAngle > 0 && (
+                          <path
+                            d={`M 100 100 L ${getCoordinates(annualStartAngle, 80).x} ${getCoordinates(annualStartAngle, 80).y} A 80 80 0 ${annualAngle > 180 ? 1 : 0} 1 ${getCoordinates(annualStartAngle + annualAngle, 80).x} ${getCoordinates(annualStartAngle + annualAngle, 80).y} Z`}
+                            fill="#00564F"
+                          />
+                        )}
+                        {sickAngle > 0 && (
+                          <path
+                            d={`M 100 100 L ${getCoordinates(sickStartAngle, 80).x} ${getCoordinates(sickStartAngle, 80).y} A 80 80 0 ${sickAngle > 180 ? 1 : 0} 1 ${getCoordinates(sickStartAngle + sickAngle, 80).x} ${getCoordinates(sickStartAngle + sickAngle, 80).y} Z`}
+                            fill="#8CCCC6"
+                          />
+                        )}
+                        {personalAngle > 0 && (
+                          <path
+                            d={`M 100 100 L ${getCoordinates(personalStartAngle, 80).x} ${getCoordinates(personalStartAngle, 80).y} A 80 80 0 ${personalAngle > 180 ? 1 : 0} 1 ${getCoordinates(personalStartAngle + personalAngle, 80).x} ${getCoordinates(personalStartAngle + personalAngle, 80).y} Z`}
+                            fill="#626262"
+                          />
+                        )}
+                        {emergencyAngle > 0 && (
+                          <path
+                            d={`M 100 100 L ${getCoordinates(emergencyStartAngle, 80).x} ${getCoordinates(emergencyStartAngle, 80).y} A 80 80 0 ${emergencyAngle > 180 ? 1 : 0} 1 ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).x} ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).y} Z`}
+                            fill="#670505"
+                          />
+                        )}
+                      </>
+                    )}
                   </svg>
                 </div>
 
@@ -1188,7 +1186,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
               <div className="relative" style={{ height: '200px' }}>
                 {/* Y-axis Labels */}
                 <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '25px' }}>
-                  {[25, 20, 15, 10, 5, 0].map((value) => (
+                  {trendYAxisValues.map((value) => (
                     <div
                       key={value}
                       className="text-right pr-[4px]"
@@ -1208,7 +1206,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="ml-[30px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                   {/* Grid Lines */}
                   <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                    {[25, 20, 15, 10, 5, 0].map((value, index) => {
+                    {trendYAxisValues.map((value, index) => {
                       const y = (index / 5) * 100;
                       return (
                         <line
@@ -1239,11 +1237,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                         <path d="M 0 0 L 12 6 L 0 12 Z" fill="#00564F" stroke="none" />
                       </marker>
                     </defs>
-                    {/* Leave Requests Line */}
+                    {/* Leave Requests Line - from API data */}
                     <polyline
                       points={monthlyLeaveTrendData.map((data, index) => {
                         const x = (index / 11) * 1000;
-                        const y = valueToY(data.requests, 25, 200);
+                        const y = valueToY(data.requests, trendMax, 200);
                         return `${x},${y}`;
                       }).join(' ')}
                       fill="none"

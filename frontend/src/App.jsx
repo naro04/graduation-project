@@ -1,7 +1,17 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { getEffectiveRole } from './services/auth.js'
 import LoginPage from './components/LoginPage.jsx'
 import RegisterPage from './components/RegisterPage.jsx'
+
+// Activities ليس له صفحة مستقلة لـ manager / fieldEmployee / officer — نوجّه لأول فرعي أو الداشبورد
+function ActivitiesOrRedirect() {
+  const role = getEffectiveRole('superAdmin');
+  if (role === 'manager') return <Navigate to="/approvals/activities" replace />;
+  if (role === 'fieldEmployee') return <Navigate to="/activities/log" replace />;
+  if (role === 'officer') return <Navigate to="/dashboard" replace />;
+  return <ActivitiesPage userRole="superAdmin" />;
+}
 import ForgotPasswordPage from './components/ForgotPasswordPage.jsx'
 import DashboardPage from './components/DashboardPage.jsx'
 import ProfilePageWithSidebar from './components/ProfilePageWithSidebar.jsx'
@@ -21,6 +31,8 @@ import LocationAssignmentPage from './components/LocationAssignmentPage.jsx'
 import LocationActivitiesPage from './components/LocationActivitiesPage.jsx'
 import ViewEmployeesPage from './components/ViewEmployeesPage.jsx'
 import ViewLocationEmployeesPage from './components/ViewLocationEmployeesPage.jsx'
+import TeamMembersPage from './components/TeamMembersPage.jsx'
+import TeamAttendancePage from './components/TeamAttendancePage.jsx'
 import LeaveManagementPage from './components/LeaveRequestsPage.jsx'
 import RequestLeavePage from './components/RequestLeavePage.jsx'
 import MyLeavePage from './components/MyLeavePage.jsx'
@@ -71,9 +83,12 @@ function App() {
         <Route path="/attendance/gps-location" element={<GPSLocationDetailsPage userRole="superAdmin" />} />
         <Route path="/attendance/my" element={<MyAttendancePage userRole="superAdmin" />} />
         
-        {/* Activities routes */}
-        <Route path="/activities" element={<ActivitiesPage userRole="superAdmin" />} />
+        {/* Activities: لا صفحة مستقلة لبعض الأدوار — إعادة توجيه لأول فرعي */}
+        <Route path="/activities" element={<ActivitiesOrRedirect />} />
         <Route path="/activities/details" element={<ActivityDetailsPage userRole="superAdmin" />} />
+        <Route path="/activities/log" element={<ActivitiesPage userRole="superAdmin" />} />
+        <Route path="/activities/my" element={<ActivitiesPage userRole="superAdmin" />} />
+        <Route path="/approvals/activities" element={<ActivitiesPage userRole="superAdmin" />} />
         
         {/* Locations Management routes */}
         <Route path="/locations/all" element={<LocationsPage userRole="superAdmin" />} />
@@ -83,6 +98,12 @@ function App() {
         <Route path="/locations/assignment/activities/:locationName/employees/:activityName" element={<ViewEmployeesPage userRole="superAdmin" />} />
         <Route path="/locations/assignment/employees/:locationName" element={<ViewLocationEmployeesPage userRole="superAdmin" />} />
         
+        {/* My Team (Manager) routes */}
+        <Route path="/my-team/members" element={<TeamMembersPage userRole="manager" />} />
+        <Route path="/my-team/attendance" element={<TeamAttendancePage userRole="manager" />} />
+        <Route path="/my-team/activities" element={<ActivitiesPage userRole="superAdmin" />} />
+        <Route path="/my-team/leave" element={<LeaveManagementPage userRole="superAdmin" />} />
+
         {/* Leave Management routes */}
         <Route path="/leave/requests" element={<LeaveManagementPage userRole="superAdmin" />} />
         <Route path="/leave/request" element={<RequestLeavePage userRole="superAdmin" />} />
@@ -93,6 +114,7 @@ function App() {
         <Route path="/reports/activities" element={<FieldActivityReportsPage userRole="superAdmin" />} />
         <Route path="/reports/leave" element={<LeaveReportsPage userRole="superAdmin" />} />
         <Route path="/reports/hr" element={<HRReportsPage userRole="superAdmin" />} />
+        <Route path="/reports/team" element={<AttendanceReportPage userRole="superAdmin" />} />
         
         {/* System Configuration routes */}
         <Route path="/more/config" element={<SystemConfigurationPage userRole="superAdmin" />} />

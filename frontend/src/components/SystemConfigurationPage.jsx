@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -18,12 +19,14 @@ const LocationIcon = new URL("../images/icons/location (3).png", import.meta.url
 const DocumentIcon = new URL("../images/icons/document.png", import.meta.url).href;
 
 import LogoutModal from "./LogoutModal";
-// Logout icon for modal
-// Logout icon for modal
-// const LogoutIcon2 = new URL("../images/icons/logout2.png", import.meta.url).href;
+import { getSystemSettings, updateSystemSettings, getSystemSettingsHistory } from "../services/systemSettings";
+
+const STATE_STORAGE_KEY = "hr_system_config_state";
 
 const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("8-2");
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [attendanceSettings, setAttendanceSettings] = useState({
@@ -104,10 +107,20 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
   const userDropdownRef = useRef(null);
   const desktopDropdownRef = useRef(null);
 
+  // System settings API state
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
+  const [recentChanges, setRecentChanges] = useState([]);
+  const [saveError, setSaveError] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
@@ -152,44 +165,114 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
     }
   ];
 
-  // Recent configuration changes data
-  const recentChanges = [
-    {
-      id: 1,
-      title: "Work Hours Updated",
-      author: "Hassan Ahmed",
-      date: "Dec 20, 2024",
-      time: "2:30 PM"
-    },
-    {
-      id: 2,
-      title: "Leave Approval Flow Modified",
-      author: "Lama Jaber",
-      date: "Dec 18, 2024",
-      time: "11:15 AM"
-    },
-    {
-      id: 3,
-      title: "GPS Accuracy Changed",
-      author: "Rami Khaled",
-      date: "Dec 15, 2024",
-      time: "4:45 PM"
-    },
-    {
-      id: 4,
-      title: "Activity Types Updated",
-      author: "Sara Ali",
-      date: "Dec 12, 2024",
-      time: "9:20 AM"
-    },
-    {
-      id: 5,
-      title: "Time Zone Modified",
-      author: "Omar Hassan",
-      date: "Dec 10, 2024",
-      time: "3:15 PM"
-    }
+  // Default recent changes (fallback if API returns empty or different shape)
+  const DEFAULT_RECENT_CHANGES = [
+    { id: 1, title: "Work Hours Updated", author: "Hassan Ahmed", date: "Dec 20, 2024", time: "2:30 PM" },
+    { id: 2, title: "Leave Approval Flow Modified", author: "Lama Jaber", date: "Dec 18, 2024", time: "11:15 AM" },
+    { id: 3, title: "GPS Accuracy Changed", author: "Rami Khaled", date: "Dec 15, 2024", time: "4:45 PM" },
+    { id: 4, title: "Activity Types Updated", author: "Sara Ali", date: "Dec 12, 2024", time: "9:20 AM" },
+    { id: 5, title: "Time Zone Modified", author: "Omar Hassan", date: "Dec 10, 2024", time: "3:15 PM" },
   ];
+
+  const normalizeHistoryItem = (item) => {
+    const d = item.changed_at ? new Date(item.changed_at) : null;
+    return {
+      id: item.id ?? item._id ?? Math.random(),
+      title: String(item.title ?? item.description ?? item.change_type ?? "Configuration change"),
+      author: String(item.changed_by_name ?? item.author ?? item.user_name ?? item.changed_by ?? "—"),
+      date: item.date ?? (d ? d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"),
+      time: item.time ?? (d ? d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—"),
+    };
+  };
+
+  const toCamelCase = (str) =>
+    String(str).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+
+  const objectKeysToCamelCase = (obj) => {
+    if (obj === null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(objectKeysToCamelCase);
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [toCamelCase(k), objectKeysToCamelCase(v)])
+    );
+  };
+
+  // تحويل استجابة الـ API (مسطحة أو متداخلة) إلى شكل متداخل بمفاتيح camelCase لملء الـ state — حتى يظهر المحفوظ بعد الـ refresh
+  const normalizeSettingsFromApi = (data) => {
+    if (!data || typeof data !== "object") return { attendance: {}, leave: {}, location_gps: {}, activity_rules: {}, general: {} };
+    if (data.attendance || data.leave) {
+      return {
+        attendance: objectKeysToCamelCase(data.attendance || {}),
+        leave: objectKeysToCamelCase(data.leave || {}),
+        location_gps: objectKeysToCamelCase(data.location_gps || {}),
+        activity_rules: objectKeysToCamelCase(data.activity_rules || {}),
+        general: objectKeysToCamelCase(data.general || {}),
+      };
+    }
+    const attendance = {};
+    const leave = {};
+    const location_gps = {};
+    const activity_rules = {};
+    const general = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith("attendance_")) attendance[toCamelCase(key.slice(11))] = value;
+      else if (key.startsWith("leave_")) leave[toCamelCase(key.slice(6))] = value;
+      else if (key.startsWith("location_gps_")) location_gps[toCamelCase(key.slice(12))] = value;
+      else if (key.startsWith("activity_rules_")) activity_rules[toCamelCase(key.slice(14))] = value;
+      else if (key.startsWith("general_")) general[toCamelCase(key.slice(8))] = value;
+    }
+    return { attendance, leave, location_gps, activity_rules, general };
+  };
+
+  const fetchSettings = async () => {
+    setSettingsLoading(true);
+    setSettingsError(null);
+    try {
+      const stateRaw = localStorage.getItem(STATE_STORAGE_KEY);
+      if (stateRaw) {
+        try {
+          const state = JSON.parse(stateRaw);
+          if (state && typeof state === "object") {
+            if (state.attendance && Object.keys(state.attendance).length) setAttendanceSettings((prev) => ({ ...prev, ...state.attendance }));
+            if (state.leave && Object.keys(state.leave).length) setLeaveRulesSettings((prev) => ({ ...prev, ...state.leave }));
+            if (state.location_gps && Object.keys(state.location_gps).length) setLocationGPSSettings((prev) => ({ ...prev, ...state.location_gps }));
+            if (state.activity_rules && Object.keys(state.activity_rules).length) setActivityRulesSettings((prev) => ({ ...prev, ...state.activity_rules }));
+            if (state.general && Object.keys(state.general).length) setGeneralSettings((prev) => ({ ...prev, ...state.general }));
+          }
+        } catch (_) {}
+      }
+      const data = await getSystemSettings();
+      const normalized = normalizeSettingsFromApi(data);
+      if (Object.keys(normalized.attendance).length) setAttendanceSettings((prev) => ({ ...prev, ...normalized.attendance }));
+      if (Object.keys(normalized.leave).length) setLeaveRulesSettings((prev) => ({ ...prev, ...normalized.leave }));
+      if (Object.keys(normalized.location_gps).length) setLocationGPSSettings((prev) => ({ ...prev, ...normalized.location_gps }));
+      if (Object.keys(normalized.activity_rules).length) setActivityRulesSettings((prev) => ({ ...prev, ...normalized.activity_rules }));
+      if (Object.keys(normalized.general).length) setGeneralSettings((prev) => ({ ...prev, ...normalized.general }));
+    } catch (err) {
+      setSettingsError(err.response?.data?.message ?? err.message ?? "Failed to load settings");
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const list = await getSystemSettingsHistory();
+      const arr = Array.isArray(list) ? list : [];
+      setRecentChanges(arr.length ? arr.map(normalizeHistoryItem) : DEFAULT_RECENT_CHANGES);
+    } catch (err) {
+      setHistoryError(err.response?.data?.message ?? err.message ?? "Failed to load history");
+      setRecentChanges(DEFAULT_RECENT_CHANGES);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+    fetchHistory();
+  }, []);
 
   const handleConfigure = (route, cardId) => {
     if (cardId === 1) {
@@ -214,34 +297,119 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
     }
   };
 
+  const toSnakeCase = (str) =>
+    String(str).replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+  const objectKeysToSnakeCase = (obj) => {
+    if (obj === null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(objectKeysToSnakeCase);
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [toSnakeCase(k), objectKeysToSnakeCase(v)])
+    );
+  };
+
+  const NUMERIC_KEYS = new Set([
+    "max_working_hours", "late_tolerance", "auto_sign_out_after",
+    "annual_leave_limit", "document_required_after",
+    "geofence_radius", "gps_accuracy_threshold",
+    "session_timeout", "max_login_attempts",
+  ]);
+
+  const cleanPayloadForApi = (obj, keyPath = "") => {
+    if (obj === null || obj === undefined) return undefined;
+    if (typeof obj !== "object") {
+      const key = keyPath.split(".").pop() || "";
+      if (NUMERIC_KEYS.has(key) && typeof obj === "string" && /^\d+$/.test(obj)) return Number(obj);
+      return obj;
+    }
+    if (Array.isArray(obj)) return obj.map((v, i) => cleanPayloadForApi(v, `${keyPath}[${i}]`)).filter((v) => v !== undefined);
+    const cleaned = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const next = cleanPayloadForApi(v, keyPath ? `${keyPath}.${k}` : k);
+      if (next !== undefined && next !== null) cleaned[k] = next;
+    }
+    return cleaned;
+  };
+
+  const getFullSettingsPayload = () => ({
+    attendance: attendanceSettings,
+    leave: leaveRulesSettings,
+    location_gps: locationGPSSettings,
+    activity_rules: activityRulesSettings,
+    general: generalSettings,
+  });
+
+  // تحويل الكائن المتداخل إلى مفاتيح مسطحة — الـ backend يتوقع "allowed system setting keys" (غالباً flat)
+  const flattenPayload = (obj, prefix = "") => {
+    if (obj === null || typeof obj !== "object") return prefix ? { [prefix]: obj } : {};
+    if (Array.isArray(obj)) return prefix ? { [prefix]: obj } : {};
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const key = prefix ? `${prefix}_${k}` : k;
+      if (v !== null && v !== undefined && typeof v === "object" && !Array.isArray(v) && (typeof v !== "object" || Object.keys(v).length > 0)) {
+        Object.assign(out, flattenPayload(v, key));
+      } else if (v !== undefined && v !== null) {
+        out[key] = v;
+      }
+    }
+    return out;
+  };
+
+  const handleSaveSettings = async (_payload, closeModal) => {
+    setSaveError(null);
+    setSaveSuccess(null);
+    setIsSaving(true);
+    try {
+      const fullPayload = getFullSettingsPayload();
+      const snake = objectKeysToSnakeCase(fullPayload);
+      const cleaned = cleanPayloadForApi(snake) ?? snake;
+      const body = flattenPayload(cleaned);
+      if (import.meta.env.DEV) console.log("PUT /system-settings body (flat):", JSON.stringify(body, null, 2));
+      const result = await updateSystemSettings(body);
+      const msg = result?.message ?? (typeof result === "object" && result !== null && "success" in result && result.success === false ? (result.message || "Update was not applied.") : null);
+      if (msg && (String(msg).toLowerCase().includes("valid fields") || String(msg).toLowerCase().includes("not applied"))) {
+        setSaveError(msg);
+        return;
+      }
+      try {
+        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(getFullSettingsPayload()));
+      } catch (_) {}
+      setSaveSuccess("Settings saved successfully.");
+      closeModal();
+      await fetchHistory();
+      await fetchSettings();
+    } catch (err) {
+      const data = err.response?.data;
+      const msg =
+        data?.message ??
+        (typeof data?.error === "string" ? data.error : null) ??
+        (Array.isArray(data?.errors) ? data.errors.map((e) => e.message || e.msg).join(", ") : null) ??
+        err.message ??
+        "Failed to save settings";
+      setSaveError(msg);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveAttendanceSettings = () => {
-    // Save settings logic here
-    console.log('Saving attendance settings:', attendanceSettings);
-    setIsAttendanceModalOpen(false);
+    handleSaveSettings({ attendance: attendanceSettings }, () => setIsAttendanceModalOpen(false));
   };
 
   const handleSaveLeaveRulesSettings = () => {
-    // Save settings logic here
-    console.log('Saving leave rules settings:', leaveRulesSettings);
-    setIsLeaveRulesModalOpen(false);
+    handleSaveSettings({ leave: leaveRulesSettings }, () => setIsLeaveRulesModalOpen(false));
   };
 
   const handleSaveLocationGPSSettings = () => {
-    // Save settings logic here
-    console.log('Saving location GPS settings:', locationGPSSettings);
-    setIsLocationGPSModalOpen(false);
+    handleSaveSettings({ location_gps: locationGPSSettings }, () => setIsLocationGPSModalOpen(false));
   };
 
   const handleSaveActivityRulesSettings = () => {
-    // Save settings logic here
-    console.log('Saving activity rules settings:', activityRulesSettings);
-    setIsActivityRulesModalOpen(false);
+    handleSaveSettings({ activity_rules: activityRulesSettings }, () => setIsActivityRulesModalOpen(false));
   };
 
   const handleSaveGeneralSettings = () => {
-    // Save settings logic here
-    console.log('Saving general settings:', generalSettings);
-    setIsGeneralSettingsModalOpen(false);
+    handleSaveSettings({ general: generalSettings }, () => setIsGeneralSettingsModalOpen(false));
   };
 
   const handleCloseModal = () => {
@@ -314,7 +482,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           onLogoutClick={() => setIsLogoutModalOpen(true)}
@@ -357,14 +525,14 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 mt-[2px] ${isDesktopDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -434,6 +602,20 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                 Configure system-wide settings and rules for your organization
               </p>
             </div>
+
+            {/* API feedback */}
+            {(settingsError || historyError || saveError || saveSuccess) && (
+              <div className="mb-[20px] space-y-2">
+                {saveSuccess && (
+                  <p className="text-[14px] text-[#059669] bg-[#D1FAE5] px-4 py-2 rounded-[8px]">{saveSuccess}</p>
+                )}
+                {(saveError || settingsError || historyError) && (
+                  <p className="text-[14px] text-[#DC2626] bg-[#FEE2E2] px-4 py-2 rounded-[8px]">
+                    {saveError || settingsError || historyError}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Configuration Cards Grid */}
             <div className="flex flex-wrap gap-[20px] mb-[32px]">
@@ -526,6 +708,9 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                 Recent Configuration Changes
               </h2>
 
+              {historyLoading ? (
+                <p className="text-[14px] text-[#6B7280] py-4">Loading history...</p>
+              ) : (
               <div className="space-y-0">
                 {recentChanges.map((change, index) => (
                   <div
@@ -585,6 +770,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           </div>
         </main>
@@ -664,7 +850,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -792,6 +978,9 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
               Recent Configuration Changes
             </h2>
 
+            {historyLoading ? (
+              <p className="text-[14px] text-[#6B7280] py-4">Loading history...</p>
+            ) : (
             <div className="space-y-0">
               {recentChanges.map((change, index) => (
                 <div
@@ -854,6 +1043,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
       </div>
@@ -1181,7 +1371,8 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
               </button>
               <button
                 onClick={handleSaveAttendanceSettings}
-                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors"
+                disabled={isSaving}
+                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 500,
@@ -1535,7 +1726,8 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
               </button>
               <button
                 onClick={handleSaveLeaveRulesSettings}
-                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors"
+                disabled={isSaving}
+                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 500,
@@ -1819,7 +2011,8 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
               </button>
               <button
                 onClick={handleSaveLocationGPSSettings}
-                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors"
+                disabled={isSaving}
+                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 500,
@@ -2114,7 +2307,8 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
               </button>
               <button
                 onClick={handleSaveActivityRulesSettings}
-                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors"
+                disabled={isSaving}
+                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 500,
@@ -2987,7 +3181,8 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
               </button>
               <button
                 onClick={handleSaveGeneralSettings}
-                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors"
+                disabled={isSaving}
+                className="px-[40px] py-[8px] rounded-[8px] bg-[#00564F] text-white hover:bg-[#004D40] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 500,

@@ -19,7 +19,6 @@ const LocationErrorModal = ({ isOpen, onClose, onSelectLocation }) => {
                 style={{
                     background: "linear-gradient(180deg, #DEFFFC 0%, #CDCDCD 100%)",
                     borderRadius: "0px",
-                    // Dimensions from screenshot approx 519x393, using max-w-[500px] and auto height for responsiveness
                     minHeight: "350px"
                 }}
                 onClick={(e) => e.stopPropagation()}
@@ -29,12 +28,12 @@ const LocationErrorModal = ({ isOpen, onClose, onSelectLocation }) => {
                     style={{
                         width: "48px",
                         height: "48px",
-                        backgroundColor: "#D9D9D966", // Semi-transparent grey
-                        borderRadius: "50%", // Circle
+                        backgroundColor: "#D9D9D966",
+                        borderRadius: "50%",
                         padding: "8px"
                     }}
                 >
-                    <img src={LocationErrorIcon} alt="Location Error" className="w-full h-full object-contain" />
+                    <img src={LocationErrorIcon} alt="Location" className="w-full h-full object-contain" />
                 </div>
 
                 <h2
@@ -54,11 +53,11 @@ const LocationErrorModal = ({ isOpen, onClose, onSelectLocation }) => {
                     style={{
                         fontFamily: "Inter, sans-serif",
                         fontWeight: 500,
-                        color: "#7A7A7A", // Using the grey color from the screenshot specs
+                        color: "#7A7A7A",
                         lineHeight: "1.2"
                     }}
                 >
-                    Please select your current work location to continue
+                    Use the button below to record your current location and complete check-in
                 </p>
 
                 <button
@@ -70,12 +69,12 @@ const LocationErrorModal = ({ isOpen, onClose, onSelectLocation }) => {
                         fontSize: "16px",
                         color: "#000000",
                         backgroundColor: "transparent",
-                        border: "1px solid #00564F", // Thinner 1px border
-                        borderColor: "#00564F", // Explicit borderColor
+                        border: "1px solid #00564F",
+                        borderColor: "#00564F",
                         minWidth: "160px"
                     }}
                 >
-                    Select Location
+                    Use my location
                 </button>
             </div>
         </div>

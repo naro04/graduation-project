@@ -1,4 +1,13 @@
 // Menu Configuration for all Roles - with Submenus Support
+//
+// خمسة أدوار (5 roles): نفس السايد بار، مع اختلافات بسيطة في العناصر وصلاحيات أقل تدريجياً:
+// 1. superAdmin  - كل الصلاحيات (Dashboard, User Mgmt, Attendance, Activities, Locations, Leave, Reports, More)
+// 2. hr          - HR: بدون Roles & Permissions، بدون Locations، بدون System Config/API Keys/Notifications
+// 3. manager     - مدير فريق: My Team بدل User Mgmt، Activities بدون منيو (عنصر واحد)، تقارير الفريق، بدون Locations
+// 4. fieldEmployee - موظف ميداني: حضوري + أنشطتي + إجازات + المزيد فقط
+// 5. officer     - موظف مكتب: أقل صلاحيات (Dashboard, My Attendance, Leave, More فقط)
+//
+// Sidebar.jsx يستخدم getMenuByRole(getEffectiveRole(userRole)) لعرض القائمة المناسبة.
 
 export const menuConfig = {
   // Super Admin - كل الصلاحيات
@@ -41,7 +50,11 @@ export const menuConfig = {
         name: "Activities", 
         icon: "Activities.png", 
         path: "/activities", 
-        hasSubmenu: false
+        hasSubmenu: true,
+        subItems: [
+          { id: "4-1", name: "All Activities", path: "/activities" },
+          { id: "4-2", name: "Field Activity Reports", path: "/reports/activities" },
+        ]
       },
       { 
         id: 5, 
@@ -99,7 +112,7 @@ export const menuConfig = {
 
   // HR Admin
   hr: {
-    role: "HR",
+    role: "HR Admin",
     items: [
       { id: 1, name: "Dashboard", icon: "Dashboard.png", path: "/dashboard", hasSubmenu: false },
       { 
@@ -125,12 +138,13 @@ export const menuConfig = {
           { id: "3-3", name: "My Attendance", path: "/attendance/my" },
         ]
       },
+      // Activities: بدون منيو — عنصر واحد يفتح صفحة كل الأنشطة (زي المنجر)
       { 
         id: 4, 
         name: "Activities", 
         icon: "Activities.png", 
         path: "/activities", 
-        hasSubmenu: false
+        hasSubmenu: false 
       },
       { 
         id: 5, 
@@ -140,7 +154,6 @@ export const menuConfig = {
         hasSubmenu: true,
         subItems: [
           { id: "5-1", name: "Leave Requests", path: "/leave/requests" },
-          { id: "5-2", name: "Request Leave", path: "/leave/request" },
           { id: "5-3", name: "My Leave", path: "/leave/my" },
         ]
       },
@@ -201,17 +214,13 @@ export const menuConfig = {
           { id: "3-2", name: "My Attendance", path: "/attendance/my" },
         ]
       },
+      // Activities: للمنجر بدون منيو — عنصر واحد مباشر (زي التصميم)، يفتح صفحة الموافقة
       { 
         id: 4, 
         name: "Activities", 
         icon: "Activities.png", 
-        path: "/activities", 
-        hasSubmenu: true,
-        subItems: [
-          { id: "4-1", name: "Activity Approval", path: "/approvals/activities" },
-          { id: "4-2", name: "Log Activity", path: "/activities/log" },
-          { id: "4-3", name: "My Activities", path: "/activities/my" },
-        ]
+        path: "/approvals/activities", 
+        hasSubmenu: false 
       },
       { 
         id: 5, 
@@ -221,7 +230,6 @@ export const menuConfig = {
         hasSubmenu: true,
         subItems: [
           { id: "5-1", name: "Leave Requests", path: "/leave/requests" },
-          { id: "5-2", name: "Request Leave", path: "/leave/request" },
           { id: "5-3", name: "My Leave", path: "/leave/my" },
         ]
       },
@@ -267,25 +275,21 @@ export const menuConfig = {
           { id: "2-1", name: "My Attendance", path: "/attendance/my" },
         ]
       },
+      // Activities: بدون منيو — عنصر واحد يفتح Log Activity (زي المنجر والـ HR)
       { 
         id: 3, 
         name: "Activities", 
         icon: "Activities.png", 
-        path: "/activities", 
-        hasSubmenu: true,
-        subItems: [
-          { id: "3-1", name: "Log Activity", path: "/activities/log" },
-          { id: "3-2", name: "My Activities", path: "/activities/my" },
-        ]
+        path: "/activities/log", 
+        hasSubmenu: false 
       },
       { 
         id: 4, 
         name: "Leave", 
         icon: "Leave Management.png", 
-        path: "/leave", 
+        path: "/leave/my", 
         hasSubmenu: true,
         subItems: [
-          { id: "4-1", name: "Request Leave", path: "/leave/request" },
           { id: "4-2", name: "My Leave", path: "/leave/my" },
         ]
       },
@@ -323,10 +327,9 @@ export const menuConfig = {
         id: 3, 
         name: "Leave", 
         icon: "Leave Management.png", 
-        path: "/leave", 
+        path: "/leave/my", 
         hasSubmenu: true,
         subItems: [
-          { id: "3-1", name: "Request Leave", path: "/leave/request" },
           { id: "3-2", name: "My Leave", path: "/leave/my" },
         ]
       },

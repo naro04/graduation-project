@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getHRReports } from "../services/employees";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -24,6 +26,8 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 
 const HRReportsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("7-4");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("All Departments");
@@ -45,68 +49,112 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
   const exportSelectedDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
+  const [hrReportsData, setHrReportsData] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsError, setReportsError] = useState(null);
+
+  const fetchReports = async () => {
+    try {
+      setReportsLoading(true);
+      setReportsError(null);
+      const data = await getHRReports({ from_date: fromDate, to_date: toDate });
+      const list = Array.isArray(data) ? data : [];
+      setHrReportsData(
+        list.map((item) => ({
+          id: item.id ?? item.employee_id,
+          employeeName: item.employee_name ?? item.employeeName ?? "—",
+          employeePhoto: item.avatar_url ?? item.employeePhoto ?? item.profile_image ?? AmeerJamalPhoto,
+          department: item.department ?? item.department_name ?? "—",
+          position: item.position ?? item.position_title ?? item.job_title ?? "—",
+          attendanceRate: Number(item.attendance_rate ?? item.attendanceRate ?? 0) || 0,
+          leaveDaysTaken: Number(item.leave_days_taken ?? item.leaveDaysTaken ?? item.leave_days ?? 0) || 0,
+          status: item.status ?? "Active",
+        }))
+      );
+    } catch (err) {
+      const msg = err?.response?.data?.message ?? err?.message ?? "Failed to load HR reports";
+      const isUnauth = err?.response?.status === 401;
+      setReportsError(isUnauth ? "يرجى تسجيل الدخول للوصول إلى تقارير HR." : msg);
+      setHrReportsData([]);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, [fromDate, toDate]);
+
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Employee distribution by department for pie chart
-  const departmentDistribution = {
-    office: 42,
-    fieldOperations: 25,
-    finance: 5,
-    it: 5,
-    hr: 10,
-    projectManager: 17
+  // Normalize department name from API to chart key
+  const normalizeDeptKey = (dept) => {
+    if (!dept || typeof dept !== "string") return null;
+    const d = dept.toLowerCase().trim();
+    if (d.includes("office")) return "office";
+    if (d.includes("field")) return "fieldOperations";
+    if (d.includes("finance")) return "finance";
+    if (d.includes("it")) return "it";
+    if (d.includes("hr") || d === "human resources") return "hr";
+    if (d.includes("project")) return "projectManager";
+    return null;
   };
 
-  // Attendance vs Leave Correlation data for bar chart
-  const attendanceLeaveData = [
-    { department: "HR", attendance: 95, leaveDays: 8 },
-    { department: "IT", attendance: 92, leaveDays: 6 },
-    { department: "Office", attendance: 94, leaveDays: 7 },
-    { department: "Finance", attendance: 96, leaveDays: 5 },
-    { department: "Field Ops", attendance: 88, leaveDays: 12 },
-    { department: "Project Mgmt", attendance: 90, leaveDays: 10 }
-  ];
+  const deptKeyToLabel = {
+    office: "Office",
+    fieldOperations: "Field Operations",
+    finance: "Finance",
+    it: "IT",
+    hr: "HR",
+    projectManager: "Project Manager",
+  };
 
-  // Sample HR reports data
-  const hrReportsData = [
-    {
-      id: 1,
-      employeeName: "Ameer Jamal",
-      employeePhoto: AmeerJamalPhoto,
-      department: "Office",
-      position: "Data Entry",
-      attendanceRate: 94,
-      leaveDaysTaken: 8,
-      status: "Active"
-    },
-    {
-      id: 2,
-      employeeName: "Amal Ahmed",
-      employeePhoto: AmalAhmedPhoto,
-      department: "Field Operations",
-      position: "Trainer",
-      attendanceRate: 96,
-      leaveDaysTaken: 5,
-      status: "Active"
-    },
-    {
-      id: 3,
-      employeeName: "Hasan Jaber",
-      employeePhoto: HasanJaberPhoto,
-      department: "HR",
-      position: "HR Manager",
-      attendanceRate: 92,
-      leaveDaysTaken: 10,
-      status: "Inactive"
-    }
-  ];
+  // Employee distribution by department from API (pie chart)
+  const departmentDistribution = React.useMemo(() => {
+    const counts = { office: 0, fieldOperations: 0, finance: 0, it: 0, hr: 0, projectManager: 0 };
+    (hrReportsData || []).forEach((r) => {
+      const key = normalizeDeptKey(r.department);
+      if (key && counts[key] !== undefined) counts[key]++;
+    });
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (total === 0) return { office: 0, fieldOperations: 0, finance: 0, it: 0, hr: 0, projectManager: 0 };
+    return {
+      office: Math.round((counts.office / total) * 100),
+      fieldOperations: Math.round((counts.fieldOperations / total) * 100),
+      finance: Math.round((counts.finance / total) * 100),
+      it: Math.round((counts.it / total) * 100),
+      hr: Math.round((counts.hr / total) * 100),
+      projectManager: Math.round((counts.projectManager / total) * 100),
+    };
+  }, [hrReportsData]);
+
+  // Attendance vs Leave per department from API (bar chart)
+  const attendanceLeaveData = React.useMemo(() => {
+    const byDept = {};
+    const order = ["hr", "it", "office", "finance", "fieldOperations", "projectManager"];
+    order.forEach((k) => { byDept[k] = { department: deptKeyToLabel[k], attendance: 0, leaveDays: 0, count: 0 }; });
+    (hrReportsData || []).forEach((r) => {
+      const key = normalizeDeptKey(r.department);
+      if (key && byDept[key]) {
+        byDept[key].attendance += r.attendanceRate ?? 0;
+        byDept[key].leaveDays += r.leaveDaysTaken ?? 0;
+        byDept[key].count++;
+      }
+    });
+    return order.map((k) => {
+      const d = byDept[k];
+      const avgAtt = d.count ? Math.round(d.attendance / d.count) : 0;
+      const avgLeave = d.count ? Math.round(d.leaveDays / d.count) : 0;
+      return { department: d.department, attendance: avgAtt, leaveDays: Math.min(100, avgLeave * 5) };
+    });
+  }, [hrReportsData]);
 
   // Departments
   const departments = ["All Departments", "Office", "Field Operations", "Finance", "IT", "HR", "Project Manager"];
@@ -118,12 +166,13 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
   const totalDistribution = departmentDistribution.office + departmentDistribution.fieldOperations +
     departmentDistribution.finance + departmentDistribution.it +
     departmentDistribution.hr + departmentDistribution.projectManager;
-  const officeAngle = (departmentDistribution.office / totalDistribution) * 360;
-  const fieldOpsAngle = (departmentDistribution.fieldOperations / totalDistribution) * 360;
-  const financeAngle = (departmentDistribution.finance / totalDistribution) * 360;
-  const itAngle = (departmentDistribution.it / totalDistribution) * 360;
-  const hrAngle = (departmentDistribution.hr / totalDistribution) * 360;
-  const projectManagerAngle = (departmentDistribution.projectManager / totalDistribution) * 360;
+  const safeTotal = totalDistribution || 1;
+  const officeAngle = (departmentDistribution.office / safeTotal) * 360;
+  const fieldOpsAngle = (departmentDistribution.fieldOperations / safeTotal) * 360;
+  const financeAngle = (departmentDistribution.finance / safeTotal) * 360;
+  const itAngle = (departmentDistribution.it / safeTotal) * 360;
+  const hrAngle = (departmentDistribution.hr / safeTotal) * 360;
+  const projectManagerAngle = (departmentDistribution.projectManager / safeTotal) * 360;
 
   // Calculate cumulative angles for pie chart
   const officeStartAngle = -90;
@@ -219,7 +268,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           onLogoutClick={() => setIsLogoutModalOpen(true)}
@@ -263,14 +312,14 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -406,6 +455,12 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
+            {reportsError && (
+              <div className="mb-4 p-4 rounded-lg border text-sm bg-[#FEE2E2] border-[#EF4444] text-[#B91C1C]">
+                {reportsError}
+              </div>
+            )}
+
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-[20px] mb-[32px]">
               {/* Employee Distribution by Department (Pie Chart) */}
@@ -425,77 +480,33 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="flex items-center justify-center gap-[40px]" style={{ height: '250px' }}>
                   <div className="relative flex-shrink-0" style={{ width: '200px', height: '200px' }}>
                     <svg width="200" height="200" viewBox="0 0 200 200">
-                      {/* Office Segment (42) - #00564F */}
-                      {(() => {
-                        const start = getCoordinates(officeStartAngle, 80);
-                        const end = getCoordinates(officeStartAngle + officeAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${officeAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#00564F"
-                          />
-                        );
-                      })()}
-
-                      {/* Field Operations Segment (25) - #8CCCC6 */}
-                      {(() => {
-                        const start = getCoordinates(fieldOpsStartAngle, 80);
-                        const end = getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${fieldOpsAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#8CCCC6"
-                          />
-                        );
-                      })()}
-
-                      {/* Finance Segment (5) - #1B223F */}
-                      {(() => {
-                        const start = getCoordinates(financeStartAngle, 80);
-                        const end = getCoordinates(financeStartAngle + financeAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${financeAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#1B223F"
-                          />
-                        );
-                      })()}
-
-                      {/* IT Segment (5) - #B1B1B1 */}
-                      {(() => {
-                        const start = getCoordinates(itStartAngle, 80);
-                        const end = getCoordinates(itStartAngle + itAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${itAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#B1B1B1"
-                          />
-                        );
-                      })()}
-
-                      {/* HR Segment (10) - Dark Red */}
-                      {(() => {
-                        const start = getCoordinates(hrStartAngle, 80);
-                        const end = getCoordinates(hrStartAngle + hrAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${hrAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#670505"
-                          />
-                        );
-                      })()}
-
-                      {/* Project Manager Segment (17) - Gray */}
-                      {(() => {
-                        const start = getCoordinates(projectManagerStartAngle, 80);
-                        const end = getCoordinates(projectManagerStartAngle + projectManagerAngle, 80);
-                        return (
-                          <path
-                            d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${projectManagerAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                            fill="#626262"
-                          />
-                        );
-                      })()}
+                      {totalDistribution === 0 ? (
+                        <>
+                          <circle cx="100" cy="100" r="80" fill="#E5E7EB" />
+                          <text x="100" y="100" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fill: '#6B7280' }}>No data</text>
+                        </>
+                      ) : (
+                        <>
+                          {officeAngle > 0 && (
+                            <path d={`M 100 100 L ${getCoordinates(officeStartAngle, 80).x} ${getCoordinates(officeStartAngle, 80).y} A 80 80 0 ${officeAngle > 180 ? 1 : 0} 1 ${getCoordinates(officeStartAngle + officeAngle, 80).x} ${getCoordinates(officeStartAngle + officeAngle, 80).y} Z`} fill="#00564F" />
+                          )}
+                          {fieldOpsAngle > 0 && (
+                            <path d={`M 100 100 L ${getCoordinates(fieldOpsStartAngle, 80).x} ${getCoordinates(fieldOpsStartAngle, 80).y} A 80 80 0 ${fieldOpsAngle > 180 ? 1 : 0} 1 ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).x} ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).y} Z`} fill="#8CCCC6" />
+                          )}
+                          {financeAngle > 0 && (
+                            <path d={`M 100 100 L ${getCoordinates(financeStartAngle, 80).x} ${getCoordinates(financeStartAngle, 80).y} A 80 80 0 ${financeAngle > 180 ? 1 : 0} 1 ${getCoordinates(financeStartAngle + financeAngle, 80).x} ${getCoordinates(financeStartAngle + financeAngle, 80).y} Z`} fill="#1B223F" />
+                          )}
+                          {itAngle > 0 && (
+                            <path d={`M 100 100 L ${getCoordinates(itStartAngle, 80).x} ${getCoordinates(itStartAngle, 80).y} A 80 80 0 ${itAngle > 180 ? 1 : 0} 1 ${getCoordinates(itStartAngle + itAngle, 80).x} ${getCoordinates(itStartAngle + itAngle, 80).y} Z`} fill="#B1B1B1" />
+                          )}
+                          {hrAngle > 0 && (
+                            <path d={`M 100 100 L ${getCoordinates(hrStartAngle, 80).x} ${getCoordinates(hrStartAngle, 80).y} A 80 80 0 ${hrAngle > 180 ? 1 : 0} 1 ${getCoordinates(hrStartAngle + hrAngle, 80).x} ${getCoordinates(hrStartAngle + hrAngle, 80).y} Z`} fill="#670505" />
+                          )}
+                          {projectManagerAngle > 0 && (
+                            <path d={`M 100 100 L ${getCoordinates(projectManagerStartAngle, 80).x} ${getCoordinates(projectManagerStartAngle, 80).y} A 80 80 0 ${projectManagerAngle > 180 ? 1 : 0} 1 ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).x} ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).y} Z`} fill="#626262" />
+                          )}
+                        </>
+                      )}
                     </svg>
                   </div>
 
@@ -1004,7 +1015,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                     ) : (
                       <tr>
                         <td colSpan="7" className="px-[12px] py-[40px] text-center" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 400, color: '#6B7280' }}>
-                          No HR reports found
+                          {reportsLoading ? "Loading..." : "No HR reports found"}
                         </td>
                       </tr>
                     )}
@@ -1148,7 +1159,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1165,6 +1176,12 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
             <p className="text-[12px] text-[#6B7280]">Analyze employee performance, attendance, and availability</p>
           </div>
 
+          {reportsError && (
+            <div className="mb-4 p-4 rounded-lg border text-sm bg-[#FEE2E2] border-[#EF4444] text-[#B91C1C]">
+              {reportsError}
+            </div>
+          )}
+
           {/* Charts Section - Mobile */}
           <div className="flex flex-col gap-4 mb-6">
             {/* Employee Distribution by Department Chart - Mobile */}
@@ -1176,77 +1193,21 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
               <div className="flex flex-col items-center gap-4">
                 <div className="relative flex-shrink-0" style={{ width: '150px', height: '150px' }}>
                   <svg width="150" height="150" viewBox="0 0 200 200">
-                    {/* Office Segment (42) - #00564F */}
-                    {(() => {
-                      const start = getCoordinates(officeStartAngle, 80);
-                      const end = getCoordinates(officeStartAngle + officeAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${officeAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#00564F"
-                        />
-                      );
-                    })()}
-
-                    {/* Field Operations Segment (25) - #8CCCC6 */}
-                    {(() => {
-                      const start = getCoordinates(fieldOpsStartAngle, 80);
-                      const end = getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${fieldOpsAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#8CCCC6"
-                        />
-                      );
-                    })()}
-
-                    {/* Finance Segment (5) - #1B223F */}
-                    {(() => {
-                      const start = getCoordinates(financeStartAngle, 80);
-                      const end = getCoordinates(financeStartAngle + financeAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${financeAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#1B223F"
-                        />
-                      );
-                    })()}
-
-                    {/* IT Segment (5) - #B1B1B1 */}
-                    {(() => {
-                      const start = getCoordinates(itStartAngle, 80);
-                      const end = getCoordinates(itStartAngle + itAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${itAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#B1B1B1"
-                        />
-                      );
-                    })()}
-
-                    {/* HR Segment (10) - Dark Red */}
-                    {(() => {
-                      const start = getCoordinates(hrStartAngle, 80);
-                      const end = getCoordinates(hrStartAngle + hrAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${hrAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#670505"
-                        />
-                      );
-                    })()}
-
-                    {/* Project Manager Segment (17) - Gray */}
-                    {(() => {
-                      const start = getCoordinates(projectManagerStartAngle, 80);
-                      const end = getCoordinates(projectManagerStartAngle + projectManagerAngle, 80);
-                      return (
-                        <path
-                          d={`M 100 100 L ${start.x} ${start.y} A 80 80 0 ${projectManagerAngle > 180 ? 1 : 0} 1 ${end.x} ${end.y} Z`}
-                          fill="#626262"
-                        />
-                      );
-                    })()}
+                    {totalDistribution === 0 ? (
+                      <>
+                        <circle cx="100" cy="100" r="80" fill="#E5E7EB" />
+                        <text x="100" y="100" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fill: '#6B7280' }}>No data</text>
+                      </>
+                    ) : (
+                      <>
+                        {officeAngle > 0 && <path d={`M 100 100 L ${getCoordinates(officeStartAngle, 80).x} ${getCoordinates(officeStartAngle, 80).y} A 80 80 0 ${officeAngle > 180 ? 1 : 0} 1 ${getCoordinates(officeStartAngle + officeAngle, 80).x} ${getCoordinates(officeStartAngle + officeAngle, 80).y} Z`} fill="#00564F" />}
+                        {fieldOpsAngle > 0 && <path d={`M 100 100 L ${getCoordinates(fieldOpsStartAngle, 80).x} ${getCoordinates(fieldOpsStartAngle, 80).y} A 80 80 0 ${fieldOpsAngle > 180 ? 1 : 0} 1 ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).x} ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).y} Z`} fill="#8CCCC6" />}
+                        {financeAngle > 0 && <path d={`M 100 100 L ${getCoordinates(financeStartAngle, 80).x} ${getCoordinates(financeStartAngle, 80).y} A 80 80 0 ${financeAngle > 180 ? 1 : 0} 1 ${getCoordinates(financeStartAngle + financeAngle, 80).x} ${getCoordinates(financeStartAngle + financeAngle, 80).y} Z`} fill="#1B223F" />}
+                        {itAngle > 0 && <path d={`M 100 100 L ${getCoordinates(itStartAngle, 80).x} ${getCoordinates(itStartAngle, 80).y} A 80 80 0 ${itAngle > 180 ? 1 : 0} 1 ${getCoordinates(itStartAngle + itAngle, 80).x} ${getCoordinates(itStartAngle + itAngle, 80).y} Z`} fill="#B1B1B1" />}
+                        {hrAngle > 0 && <path d={`M 100 100 L ${getCoordinates(hrStartAngle, 80).x} ${getCoordinates(hrStartAngle, 80).y} A 80 80 0 ${hrAngle > 180 ? 1 : 0} 1 ${getCoordinates(hrStartAngle + hrAngle, 80).x} ${getCoordinates(hrStartAngle + hrAngle, 80).y} Z`} fill="#670505" />}
+                        {projectManagerAngle > 0 && <path d={`M 100 100 L ${getCoordinates(projectManagerStartAngle, 80).x} ${getCoordinates(projectManagerStartAngle, 80).y} A 80 80 0 ${projectManagerAngle > 180 ? 1 : 0} 1 ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).x} ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).y} Z`} fill="#626262" />}
+                      </>
+                    )}
                   </svg>
                 </div>
 
@@ -1576,7 +1537,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
               ))
             ) : (
               <div className="bg-white rounded-[12px] p-8 text-center text-[#6B7280]">
-                No HR reports found
+                {reportsLoading ? "Loading..." : "No HR reports found"}
               </div>
             )}
           </div>

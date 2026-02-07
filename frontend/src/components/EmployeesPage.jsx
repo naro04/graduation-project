@@ -2,8 +2,21 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
-import { logout } from "../services/auth.js";
-import { getEmployees, createEmployee } from "../services/employees.js";
+import { logout, getCurrentUser, getEffectiveRole } from "../services/auth.js";
+import { getEmployees, createEmployee, updateEmployee, deleteEmployee, bulkActionEmployees } from "../services/employees.js";
+import { uploadImage } from "../services/uploads.js";
+import { getDepartments } from "../services/departments.js";
+import { getPositions } from "../services/positions.js";
+import { getRoles } from "../services/rbac.js";
+
+const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
+
+function toAbsoluteAvatarUrl(avatarUrl) {
+  if (!avatarUrl || typeof avatarUrl !== "string") return null;
+  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
+  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
+  return `${API_ORIGIN}${path}`;
+}
 
 // Logo images
 const LogoMobile = new URL("../images/LogoMobile.jpg", import.meta.url).href;
@@ -34,6 +47,8 @@ const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).hr
 
 const EmployeesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState(2);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -58,9 +73,15 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
   const statusDropdownRef = useRef(null);
   const bulkActionsDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [profilePhotoFile, setProfilePhotoFile] = useState(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState(null);
   const [employeesData, setEmployeesData] = useState([]);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(true);
   const [employeesError, setEmployeesError] = useState(null);
+  const [departmentsList, setDepartmentsList] = useState([]);
+  const [positionsList, setPositionsList] = useState([]);
+  const [rolesList, setRolesList] = useState([]);
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [saveEmployeeError, setSaveEmployeeError] = useState(null);
   const [saveEmployeeSuccess, setSaveEmployeeSuccess] = useState(false);
@@ -103,7 +124,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
     });
   };
 
-  // Reset form when opening Add Employee page
+  // Reset form and profile photo when opening Add Employee page
   useEffect(() => {
     if (showAddEmployeePage) {
       setFormData({
@@ -114,8 +135,38 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
         role: "",
         status: "Active"
       });
+      if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+      setProfilePhotoFile(null);
+      setProfilePhotoPreview(null);
     }
   }, [showAddEmployeePage]);
+
+  // Reset profile photo when opening Edit modal
+  useEffect(() => {
+    if (showEditEmployeePage && editingEmployee) {
+      if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+      setProfilePhotoFile(null);
+      setProfilePhotoPreview(null);
+    }
+  }, [showEditEmployeePage, editingEmployee?.id]);
+
+  const handleProfilePhotoClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleProfilePhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setSaveEmployeeError("Please choose an image file (e.g. JPG, PNG).");
+      return;
+    }
+    if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+    setProfilePhotoFile(file);
+    setProfilePhotoPreview(URL.createObjectURL(file));
+    setSaveEmployeeError(null);
+    e.target.value = "";
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -146,7 +197,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
@@ -169,11 +220,10 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
           role: emp.role_name || "",
           position: emp.position_title || "",
           department: emp.department_name || "",
-          status: emp.status === "active" ? "Active" : "Inactive",
+          status: emp.status === "active" ? "Active" : (emp.status === "under_review" ? "Under Review" : "Inactive"),
           phone: emp.phone || "",
           joinDate: emp.hired_at || "",
-          photo: emp.avatar_url || EmployeeIcon,
-          // Store original data for reference
+          photo: toAbsoluteAvatarUrl(emp.avatar_url) || EmployeeIcon,
           originalData: emp
         }));
         
@@ -193,7 +243,17 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
     fetchEmployees();
   }, []);
 
-  // Handle form submission for adding employee
+  useEffect(() => {
+    Promise.all([getDepartments(), getPositions(), getRoles()])
+      .then(([depts, positions, roles]) => {
+        setDepartmentsList(Array.isArray(depts) ? depts : []);
+        setPositionsList(Array.isArray(positions) ? positions : []);
+        setRolesList(Array.isArray(roles) ? roles : []);
+      })
+      .catch((err) => console.error("Failed to load departments/positions/roles:", err));
+  }, []);
+
+  // Handle form submission for adding/editing employee
   const handleAddEmployeeSubmit = async (e) => {
     e.preventDefault();
     
@@ -203,56 +263,81 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
       return;
     }
 
+    const isEditing = showEditEmployeePage && editingEmployee?.id;
+
     try {
       setIsSavingEmployee(true);
       setSaveEmployeeError(null);
       setSaveEmployeeSuccess(false);
 
-      // Find department_id, position_id, and role_id from existing employees data
-      // This is a temporary solution - ideally we should fetch departments/positions/roles from API
+      // Resolve department_id, position_id, role_id from API lists (أو من الموظفين إذا القوائم فاضية)
       let departmentId = null;
       let positionId = null;
       let roleId = null;
+      const deptName = formData.department && formData.department !== "" && formData.department !== "Select Department" ? formData.department : null;
+      const posTitle = formData.position && formData.position !== "" && formData.position !== "Select Position" ? formData.position : null;
+      const roleName = formData.role && formData.role !== "" && formData.role !== "Select Role" ? formData.role : null;
 
-      // Try to find IDs from existing employees
-      if (formData.department && formData.department !== "" && formData.department !== "Select Department") {
-        const foundEmployee = employeesData.find(emp => emp.department === formData.department);
-        if (foundEmployee && foundEmployee.originalData) {
-          departmentId = foundEmployee.originalData.department_id;
+      if (deptName) {
+        const found = departmentsList.find(d => (d.name || "").trim() === deptName.trim());
+        if (found?.id) departmentId = found.id;
+        else {
+          const foundEmployee = employeesData.find(emp => (emp.department || "").trim() === deptName.trim());
+          if (foundEmployee?.originalData?.department_id) departmentId = foundEmployee.originalData.department_id;
+        }
+      }
+      if (posTitle) {
+        const found = positionsList.find(p => (p.title || p.name || "").trim() === posTitle.trim());
+        if (found?.id) positionId = found.id;
+        else {
+          const foundEmployee = employeesData.find(emp => (emp.position || "").trim() === posTitle.trim());
+          if (foundEmployee?.originalData?.position_id) positionId = foundEmployee.originalData.position_id;
+        }
+      }
+      if (roleName) {
+        const found = rolesList.find(r => (r.name || "").trim() === roleName.trim());
+        if (found?.id) roleId = found.id;
+        else {
+          const foundEmployee = employeesData.find(emp => (emp.role || "").trim() === roleName.trim());
+          if (foundEmployee?.originalData?.role_id) roleId = foundEmployee.originalData.role_id;
         }
       }
 
-      if (formData.position && formData.position !== "" && formData.position !== "Select Position") {
-        const foundEmployee = employeesData.find(emp => emp.position === formData.position);
-        if (foundEmployee && foundEmployee.originalData) {
-          positionId = foundEmployee.originalData.position_id;
+      let avatarUrl = null;
+      if (profilePhotoFile) {
+        const uploaded = await uploadImage(profilePhotoFile);
+        avatarUrl = typeof uploaded === "string" ? uploaded : (Array.isArray(uploaded) ? uploaded[0] : uploaded?.url ?? uploaded?.image_url ?? null);
+      } else if (isEditing) {
+        // عند التعديل بدون تغيير الصورة: نرسل الـ avatar_url الحالية عشان الباكند ما يمسحها
+        avatarUrl = editingEmployee?.originalData?.avatar_url ?? editingEmployee?.originalData?.avatarUrl;
+        if ((avatarUrl == null || avatarUrl === "") && editingEmployee?.photo && typeof editingEmployee.photo === "string" && editingEmployee.photo.startsWith("http")) {
+          try {
+            avatarUrl = new URL(editingEmployee.photo).pathname;
+          } catch {
+            avatarUrl = null;
+          }
         }
       }
 
-      if (formData.role && formData.role !== "" && formData.role !== "Select Role") {
-        const foundEmployee = employeesData.find(emp => emp.role === formData.role);
-        if (foundEmployee && foundEmployee.originalData) {
-          roleId = foundEmployee.originalData.role_id;
-        }
-      }
-
-      // Prepare employee data for API
       const employeeData = {
         first_name: formData.firstName,
         last_name: formData.lastName,
-        status: formData.status.toLowerCase(), // Convert "Active" to "active"
+        status: formData.status.toLowerCase(),
         ...(departmentId && { department_id: departmentId }),
         ...(positionId && { position_id: positionId }),
-        ...(roleId && { role_id: roleId })
+        ...(roleId && { role_id: roleId }),
+        ...(avatarUrl != null && avatarUrl !== "" && { avatar_url: avatarUrl })
       };
 
-      // Call API to create employee
-      const response = await createEmployee(employeeData);
+      const response = isEditing
+        ? await updateEmployee(editingEmployee.id, employeeData)
+        : await createEmployee(employeeData);
 
-      if (response && response.data) {
+      if (response != null) {
         setSaveEmployeeSuccess(true);
-        
-        // Reset form
+        if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+        setProfilePhotoFile(null);
+        setProfilePhotoPreview(null);
         setFormData({
           firstName: "",
           lastName: "",
@@ -262,18 +347,20 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
           status: "Active"
         });
 
-        // Close modal after a short delay
         setTimeout(async () => {
-          setShowAddEmployeePage(false);
+          if (isEditing) {
+            setShowEditEmployeePage(false);
+            setEditingEmployee(null);
+          } else {
+            setShowAddEmployeePage(false);
+          }
           setSaveEmployeeSuccess(false);
-
-          // Refresh employees list
           await fetchEmployees();
         }, 1500);
       }
     } catch (err) {
-      console.error('Failed to create employee:', err);
-      setSaveEmployeeError(err.message || 'Failed to create employee. Please try again.');
+      console.error(isEditing ? 'Failed to update employee:' : 'Failed to create employee:', err);
+      setSaveEmployeeError(err.response?.data?.message ?? err.message ?? (isEditing ? 'Failed to update employee. Please try again.' : 'Failed to create employee. Please try again.'));
     } finally {
       setIsSavingEmployee(false);
     }
@@ -288,7 +375,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
 
       const matchesDepartment = selectedDepartment === "All Departments" || employee.department === selectedDepartment;
       const matchesRole = selectedRole === "All Roles" || employee.role === selectedRole;
-      const matchesStatus = selectedStatus === "All Status" || employee.status === selectedStatus;
+      const matchesStatus = selectedStatus === "All Status" || (employee.status || "").trim() === (selectedStatus || "").trim();
 
       return matchesSearch && matchesDepartment && matchesRole && matchesStatus;
     });
@@ -393,11 +480,15 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
           {/* Action Buttons */}
           <div className="flex items-center justify-center gap-[20px] px-[20px]">
             <button
-              onClick={() => {
-                // Handle delete action
-                if (employeeToDelete) {
-                  // Delete employee logic here
-                  console.log('Deleting employee:', employeeToDelete);
+              onClick={async () => {
+                if (employeeToDelete?.id) {
+                  try {
+                    await deleteEmployee(employeeToDelete.id);
+                    await fetchEmployees();
+                  } catch (err) {
+                    console.error("Failed to delete employee:", err);
+                    setEmployeesError(err.response?.data?.message ?? err.message ?? "Failed to delete employee");
+                  }
                 }
                 setShowWarningModal(false);
                 setEmployeeToDelete(null);
@@ -455,11 +546,19 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
 
   return (
     <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
+      {/* ملف اختيار الصورة مشترك بين Add و Edit - لازم يكون دائماً في الـ DOM */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleProfilePhotoChange}
+        className="hidden"
+      />
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           onLogoutClick={() => setIsLogoutModalOpen(true)}
@@ -510,14 +609,14 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -689,7 +788,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                 </svg>
                 {isStatusDropdownOpen && (
                   <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full">
-                    {["All Status", "Active", "Inactive"].map((status) => (
+                    {["All Status", "Active", "Under Review", "Inactive"].map((status) => (
                       <button
                         key={status}
                         onClick={() => {
@@ -745,11 +844,16 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   {isBulkActionsDropdownOpen && (
                     <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[8px] shadow-lg z-20 min-w-[200px]">
                       <button
-                        onClick={() => {
-                          // Handle delete selected employees
-                          console.log('Delete selected employees', selectedEmployees);
-                          setSelectedEmployees([]);
-                          setIsBulkActionsDropdownOpen(false);
+                        onClick={async () => {
+                          try {
+                            await bulkActionEmployees({ action: "delete", ids: selectedEmployees });
+                            await fetchEmployees();
+                            setSelectedEmployees([]);
+                            setIsBulkActionsDropdownOpen(false);
+                          } catch (err) {
+                            console.error("Bulk delete failed:", err);
+                            setEmployeesError(err.response?.data?.message ?? err.message ?? "Bulk delete failed");
+                          }
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] flex items-center gap-[8px] first:rounded-t-[8px]"
                         style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400 }}
@@ -758,11 +862,16 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         Delete selected
                       </button>
                       <button
-                        onClick={() => {
-                          // Handle mark as reviewed or other action
-                          console.log('Mark as reviewed', selectedEmployees);
-                          setSelectedEmployees([]);
-                          setIsBulkActionsDropdownOpen(false);
+                        onClick={async () => {
+                          try {
+                            await bulkActionEmployees({ action: "review", ids: selectedEmployees });
+                            await fetchEmployees();
+                            setSelectedEmployees([]);
+                            setIsBulkActionsDropdownOpen(false);
+                          } catch (err) {
+                            console.error("Bulk action failed:", err);
+                            setEmployeesError(err.response?.data?.message ?? err.message ?? "Bulk action failed");
+                          }
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] flex items-center gap-[8px] last:rounded-b-[8px]"
                         style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400 }}
@@ -834,7 +943,12 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         <td className="py-[16px] px-[20px] text-center" style={{ borderRight: '1px solid #E0E0E0' }}>
                           <div className="flex items-center justify-center gap-[12px]">
                             <div className="w-[40px] h-[40px] rounded-full bg-[#E0E0E0] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                              <img src={employee.photo || EmployeeIcon} alt={employee.name} className="w-full h-full object-cover" />
+                              <img
+                                src={employee.photo || EmployeeIcon}
+                                alt={employee.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => { e.target.onerror = null; e.target.src = EmployeeIcon; }}
+                              />
                             </div>
                             <p className="text-[14px] font-medium" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, color: '#000000' }}>
                               {employee.name}
@@ -862,7 +976,15 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                           </p>
                         </td>
                         <td className="py-[16px] px-[20px] text-center" style={{ borderRight: '1px solid #E0E0E0' }}>
-                          <span className={`inline-block px-[8px] py-[4px] rounded-[4px] text-[12px] font-semibold`} style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: employee.status === 'Active' ? '#00564F' : '#4A4A4A', backgroundColor: employee.status === 'Active' ? '#68BFCCB2' : '#D2D2D2' }}>
+                          <span
+                            className={`inline-block px-[8px] py-[4px] rounded-[4px] text-[12px] font-semibold`}
+                            style={{
+                              fontFamily: 'Inter, sans-serif',
+                              fontWeight: 600,
+                              color: employee.status === 'Active' ? '#00564F' : employee.status === 'Under Review' ? '#92400E' : '#4A4A4A',
+                              backgroundColor: employee.status === 'Active' ? '#68BFCCB2' : employee.status === 'Under Review' ? '#FEF3C7' : '#D2D2D2'
+                            }}
+                          >
                             {employee.status}
                           </span>
                         </td>
@@ -1048,7 +1170,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -1102,7 +1224,12 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                 <div className="flex items-start justify-between mb-[12px]">
                   <div className="flex items-center gap-[12px]">
                     <div className="w-[40px] h-[40px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      <img src={employee.photo || EmployeeIcon} alt={employee.name} className="w-full h-full object-cover" />
+                      <img
+                        src={employee.photo || EmployeeIcon}
+                        alt={employee.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.target.onerror = null; e.target.src = EmployeeIcon; }}
+                      />
                     </div>
                     <div>
                       <p className="text-[14px] font-medium text-[#111827] mb-[2px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
@@ -1146,10 +1273,15 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   <span className="inline-block px-[12px] py-[4px] rounded-[6px] bg-[#E0F2FE] text-[#0369A1] text-[12px] font-medium" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
                     {employee.role}
                   </span>
-                  <span className={`inline-block px-[12px] py-[4px] rounded-[6px] text-[12px] font-medium ${employee.status === 'Active' ? 'bg-[#D1FAE5] text-[#065F46]' : 'bg-[#FEE2E2] text-[#991B1B]'}`} style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
+                  <span
+                    className={`inline-block px-[12px] py-[4px] rounded-[6px] text-[12px] font-medium ${
+                      employee.status === 'Active' ? 'bg-[#D1FAE5] text-[#065F46]' : employee.status === 'Under Review' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#991B1B]'
+                    }`}
+                    style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}
+                  >
                     {employee.status}
                   </span>
-                </div>
+                  </div>
                 <div className="space-y-[4px]">
                   <p className="text-[12px] text-[#6B7280]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>
                     <span className="font-medium text-[#374151]">Department:</span> {employee.department}
@@ -1182,14 +1314,10 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
           onClick={() => {
             setShowAddEmployeePage(false);
-            setFormData({
-              firstName: "",
-              lastName: "",
-              department: "",
-              position: "",
-              role: "",
-              status: "Active"
-            });
+            setFormData({ firstName: "", lastName: "", department: "", position: "", role: "", status: "Active" });
+            if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+            setProfilePhotoFile(null);
+            setProfilePhotoPreview(null);
           }}
         >
           <style>{`
@@ -1220,14 +1348,10 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
               <button
                 onClick={() => {
                   setShowAddEmployeePage(false);
-                  setFormData({
-                    firstName: "",
-                    lastName: "",
-                    department: "",
-                    position: "",
-                    role: "",
-                    status: "Active"
-                  });
+                  setFormData({ firstName: "", lastName: "", department: "", position: "", role: "", status: "Active" });
+                  if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+                  setProfilePhotoFile(null);
+                  setProfilePhotoPreview(null);
                 }}
                 className="w-[32px] h-[32px] rounded-full bg-[#F3F4F6] hover:bg-[#E5E7EB] flex items-center justify-center transition-colors"
               >
@@ -1245,21 +1369,33 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   <div
                     className="w-[120px] h-[120px] rounded-full bg-[#F5F5F5] flex items-center justify-center overflow-hidden"
                     style={{
-                      backgroundImage: 'repeating-linear-gradient(45deg, #E0E0E0 0px, #E0E0E0 10px, #F5F5F5 10px, #F5F5F5 20px)'
+                      backgroundImage: !profilePhotoPreview ? 'repeating-linear-gradient(45deg, #E0E0E0 0px, #E0E0E0 10px, #F5F5F5 10px, #F5F5F5 20px)' : 'none'
                     }}
                   >
-                    <img src={DefaultProfileImage} alt="Profile" className="w-full h-full object-cover" />
+                    <img src={profilePhotoPreview || DefaultProfileImage} alt="Profile" className="w-full h-full object-cover" />
                   </div>
-                  <div
-                    className="absolute bottom-0 right-0 w-[24px] h-[24px] bg-white rounded-full flex items-center justify-center border-2 border-white"
+                  <button
+                    type="button"
+                    onClick={handleProfilePhotoClick}
+                    className="absolute bottom-0 right-0 w-[24px] h-[24px] bg-white rounded-full flex items-center justify-center border-2 border-white cursor-pointer hover:bg-gray-50"
                     style={{ boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
                   >
-                    <img src={CameraIcon} alt="Camera" className="w-[16px] h-[16px] object-contain" />
-                  </div>
+                    <img src={CameraIcon} alt="Choose photo" className="w-[16px] h-[16px] object-contain" />
+                  </button>
                 </div>
               </div>
 
-              <form>
+              <form onSubmit={handleAddEmployeeSubmit}>
+                {saveEmployeeError && (
+                  <div className="mb-[16px] p-[12px] rounded-[8px] bg-red-50 border border-red-200">
+                    <p className="text-[14px] text-red-600">{saveEmployeeError}</p>
+                  </div>
+                )}
+                {saveEmployeeSuccess && (
+                  <div className="mb-[16px] p-[12px] rounded-[8px] bg-green-50 border border-green-200">
+                    <p className="text-[14px] text-green-600">Employee created successfully!</p>
+                  </div>
+                )}
                 {/* Form Fields - Single Column */}
                 <div className="space-y-[16px]">
                   {/* First Name */}
@@ -1509,14 +1645,10 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                     type="button"
                     onClick={() => {
                       setShowAddEmployeePage(false);
-                      setFormData({
-                        firstName: "",
-                        lastName: "",
-                        department: "",
-                        position: "",
-                        role: "",
-                        status: "Active"
-                      });
+                      setFormData({ firstName: "", lastName: "", department: "", position: "", role: "", status: "Active" });
+                      if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+                      setProfilePhotoFile(null);
+                      setProfilePhotoPreview(null);
                     }}
                     className="px-[40px] py-[6px] rounded-[5px] hover:opacity-90 transition-opacity border border-[#B5B1B1]"
                     style={{
@@ -1607,11 +1739,19 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   <div
                     className="w-[120px] h-[120px] rounded-full bg-[#F5F5F5] flex items-center justify-center overflow-hidden"
                     style={{
-                      backgroundImage: 'repeating-linear-gradient(45deg, #E0E0E0 0px, #E0E0E0 10px, #F5F5F5 10px, #F5F5F5 20px)'
+                      backgroundImage: !profilePhotoPreview ? 'repeating-linear-gradient(45deg, #E0E0E0 0px, #E0E0E0 10px, #F5F5F5 10px, #F5F5F5 20px)' : 'none'
                     }}
                   >
-                    <img src={editingEmployee.photo || DefaultProfileImage} alt="Profile" className="w-full h-full object-cover" />
+                    <img src={profilePhotoPreview || editingEmployee.photo || DefaultProfileImage} alt="Profile" className="w-full h-full object-cover" />
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleProfilePhotoClick}
+                    className="absolute bottom-0 right-0 w-[24px] h-[24px] bg-white rounded-full flex items-center justify-center border-2 border-white cursor-pointer hover:bg-gray-50"
+                    style={{ boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+                  >
+                    <img src={CameraIcon} alt="Choose photo" className="w-[16px] h-[16px] object-contain" />
+                  </button>
                 </div>
               </div>
 
@@ -1626,7 +1766,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                 {/* Success Message */}
                 {saveEmployeeSuccess && (
                   <div className="mb-[16px] p-[12px] rounded-[8px] bg-green-50 border border-green-200">
-                    <p className="text-[14px] text-green-600">Employee created successfully!</p>
+                    <p className="text-[14px] text-green-600">{showEditEmployeePage && editingEmployee ? 'Employee updated successfully!' : 'Employee created successfully!'}</p>
                   </div>
                 )}
 

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getLocationActivities } from "../services/locationActivities";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -29,6 +31,8 @@ import ActivityDetailsModal from "./ActivityDetailsModal";
 
 const ActivitiesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const [activeMenu, setActiveMenu] = useState("4");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -44,6 +48,9 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
   const [activityToDelete, setActivityToDelete] = useState(null);
   const [selectedActivityForDetails, setSelectedActivityForDetails] = useState(null);
   const [isBulkActionsDropdownOpen, setIsBulkActionsDropdownOpen] = useState(false);
+  const [activitiesFromApi, setActivitiesFromApi] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
+  const [activitiesError, setActivitiesError] = useState(null);
   const dateInputRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const approvalStatusDropdownRef = useRef(null);
@@ -54,87 +61,67 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
-    hr: "HR",
+    hr: "HR Admin",
     manager: "Manager",
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
 
-  // Sample activities data
-  const activitiesData = [
-    {
-      id: 1,
-      activity: "Workshop A",
-      type: "Workshop",
-      project: "Project X",
-      responsibleEmployee: "Ameer Jamal",
-      employeePhoto: AmeerJamalPhoto,
-      status: "Implemented",
-      approval: "Approved",
-      location: "Hattin School",
-      coordinates: { lat: "31.50090", lng: "34.46710" },
-      date: new Date(2025, 11, 7),
-      duration: "2 hr",
-      team: "Hasan Jaber, Rania Abed",
-      description: "A planned workshop was implemented at Hattin School, targeting students through interactive and participatory methods. The activity was conducted as scheduled and achieved its intended objectives, with active engagement from participants."
-    },
-    {
-      id: 2,
-      activity: "Group Session A",
-      type: "Group Session",
-      project: "Project Y",
-      responsibleEmployee: "Ameer Jamal",
-      employeePhoto: AmeerJamalPhoto,
-      status: "Planned",
-      approval: "Rejected",
-      location: "Hattin School",
-      coordinates: { lat: "31.50090", lng: "34.46710" },
-      date: new Date(2025, 11, 8),
-      duration: "1.5 hr",
-      team: "Hasan Jaber",
-      description: "A planned group session for students."
-    },
-    {
-      id: 3,
-      activity: "Workshop B",
-      type: "Workshop",
-      project: "Project Z",
-      responsibleEmployee: "Amal Ahmed",
-      employeePhoto: AmalAhmedPhoto,
-      status: "Planned",
-      approval: "Pending",
-      location: "Hattin School",
-      coordinates: { lat: "31.50090", lng: "34.46710" },
-      date: new Date(2025, 11, 10),
-      duration: "2 hr",
-      team: "Rania Abed",
-      description: "A planned workshop for students."
-    },
-    {
-      id: 4,
-      activity: "Group Session B",
-      type: "Group Session",
-      project: "Project E",
-      responsibleEmployee: "Amal Ahmed",
-      employeePhoto: AmalAhmedPhoto,
-      status: "Planned",
-      approval: "Approved",
-      location: "Hattin School",
-      coordinates: { lat: "31.50090", lng: "34.46710" },
-      date: new Date(2025, 11, 11),
-      duration: "1.5 hr",
-      team: "Hasan Jaber, Rania Abed",
-      description: "A planned group session for students."
-    }
-  ];
+  // Fetch activities from API
+  useEffect(() => {
+    let cancelled = false;
+    setActivitiesLoading(true);
+    setActivitiesError(null);
+    getLocationActivities()
+      .then((list) => {
+        if (!cancelled) setActivitiesFromApi(Array.isArray(list) ? list : []);
+      })
+      .catch((err) => {
+        if (!cancelled) setActivitiesError(err?.response?.data?.message || err?.message || "Failed to load activities");
+      })
+      .finally(() => {
+        if (!cancelled) setActivitiesLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
-  // Summary statistics
-  const summaryStats = {
-    planned: 6,
-    implemented: 3,
-    approved: 1,
-    pending: 1
-  };
+  // Normalize API response to UI shape (activity, type, status, approval, location, date, etc.)
+  const activitiesData = React.useMemo(() => {
+    return (activitiesFromApi || []).map((a) => {
+      const approvalRaw = (a.approval_status ?? a.approvalStatus ?? "").toString();
+      const approval = approvalRaw ? approvalRaw.charAt(0).toUpperCase() + approvalRaw.slice(1).toLowerCase() : "";
+      const statusRaw = (a.status ?? "").toString();
+      const status = statusRaw === "Implemented" || statusRaw === "Planned" ? statusRaw : (statusRaw || "Planned");
+      const startDate = a.start_date ?? a.startDate ?? "";
+      return {
+        id: a.id,
+        activity: a.name ?? a.activity_name ?? "",
+        type: a.type ?? a.activity_type ?? "—",
+        project: a.project ?? "—",
+        responsibleEmployee: a.responsible_employee ?? a.responsibleEmployee ?? a.employee_name ?? "—",
+        employeePhoto: a.employee_photo ?? AmeerJamalPhoto,
+        status,
+        approval: approval === "Approved" || approval === "Rejected" || approval === "Pending" ? approval : (approval || "—"),
+        location: a.location_name ?? a.location ?? "—",
+        coordinates: a.coordinates ?? { lat: "", lng: "" },
+        date: startDate ? new Date(startDate) : new Date(),
+        duration: a.duration ?? "—",
+        team: a.team ?? "—",
+        description: a.description ?? "",
+      };
+    });
+  }, [activitiesFromApi]);
+
+  // Summary statistics from API data
+  const summaryStats = React.useMemo(() => {
+    const list = activitiesData;
+    return {
+      planned: list.filter((a) => a.status === "Planned").length,
+      implemented: list.filter((a) => a.status === "Implemented").length,
+      approved: list.filter((a) => a.approval === "Approved").length,
+      pending: list.filter((a) => a.approval === "Pending").length,
+    };
+  }, [activitiesData]);
 
   // Format date
   const formatDate = (date) => {
@@ -169,9 +156,9 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
   const statusOptions = ["All Status", "Planned", "Implemented"];
   const approvalStatusOptions = ["All Approval Status", "Approved", "Rejected", "Pending"];
 
-  // Filter data
-  const filteredData = activitiesData.filter(activity => {
-    const matchesSearch = activity.activity.toLowerCase().includes(searchQuery.toLowerCase());
+  // Filter data (from API)
+  const filteredData = activitiesData.filter((activity) => {
+    const matchesSearch = (activity.activity || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = selectedStatus === "All Status" || activity.status === selectedStatus;
     const matchesApproval = selectedApprovalStatus === "All Approval Status" || activity.approval === selectedApprovalStatus;
     return matchesSearch && matchesStatus && matchesApproval;
@@ -213,7 +200,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
@@ -256,14 +243,14 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                     />
                     <div>
                       <div className="flex items-center gap-[6px]">
-                        <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                         <img
                           src={DropdownArrow}
                           alt=""
                           className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? 'rotate-180' : ''}`}
                         />
                       </div>
-                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[userRole]}</p>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
                   </div>
 
@@ -734,6 +721,11 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
             )}
 
             {/* Table */}
+            {activitiesLoading ? (
+              <div className="bg-white rounded-[10px] p-[40px] text-center" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
+                <p className="text-[14px] text-[#6B7280]">Loading activities...</p>
+              </div>
+            ) : (
             <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -857,6 +849,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                 </table>
               </div>
             </div>
+            )}
 
             {/* Pagination */}
             {filteredData.length > 0 && (
@@ -984,7 +977,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
             }`}
         >
           <Sidebar
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}

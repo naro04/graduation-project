@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { getCurrentUser, getEffectiveRole } from "../services/auth.js";
 
 // Action icons
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
@@ -11,9 +12,13 @@ const ActivityImage1 = new URL("../images/p3.jpg", import.meta.url).href;
 const ActivityImage2 = new URL("../images/p1.jpg", import.meta.url).href;
 const ActivityImage3 = new URL("../images/p2 (2).jpg", import.meta.url).href;
 
+const roleDisplayNames = { superAdmin: "Super Admin", hr: "HR Admin", manager: "Manager", fieldEmployee: "Field Employee", officer: "Officer" };
+
 const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole(userRole);
   const activity = location.state?.activity;
   const [showWarningModal, setShowWarningModal] = useState(false);
 
@@ -89,10 +94,10 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
                   />
                   <div>
                     <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, Firas!</p>
+                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                       <img src={new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href} alt="" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">Super Admin</p>
+                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
                 </div>
               </div>
