@@ -33,21 +33,12 @@ const RegisterPage = () => {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  // Load Google OAuth script
+  // Load Google OAuth script only for the "Sign up with Google" button (no One Tap on this page)
   useEffect(() => {
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
     script.defer = true;
-    script.onload = () => {
-      // Initialize Google OAuth when script loads
-      if (window.google && window.google.accounts) {
-        window.google.accounts.id.initialize({
-          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
-          callback: handleGoogleCallback,
-        });
-      }
-    };
     document.body.appendChild(script);
 
     return () => {
@@ -56,25 +47,9 @@ const RegisterPage = () => {
         document.body.removeChild(existingScript);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleGoogleCallback = async (response) => {
-    try {
-      setIsGoogleLoading(true);
-      setError("");
-
-      // Send the credential token to backend
-      const result = await googleAuth(response.credential);
-      
-      // Success - redirect to dashboard
-      navigate("/dashboard");
-    } catch (err) {
-      setError(err.message || "Google sign-up failed. Please try again.");
-      setIsGoogleLoading(false);
-    }
-  };
-
+  // Only triggered when user explicitly clicks "Sign up with Google" button
   const handleGoogleSignUp = () => {
     try {
       setIsGoogleLoading(true);
@@ -152,13 +127,15 @@ const RegisterPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await register(
-        firstName.trim(),
-        lastName.trim(),
-        email.trim(),
+      const response = await register({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
         password,
-        phone.trim()
-      );
+        confirmPassword,
+        privacyPolicyAgreement: agreeToTerms,
+      });
       
       // Success - redirect to dashboard
       navigate("/dashboard");

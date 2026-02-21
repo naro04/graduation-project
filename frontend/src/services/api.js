@@ -1,10 +1,11 @@
 // API Service Layer
 // Base configuration for all API requests
 
-// Use environment variable if available, otherwise fallback to localhost
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+const RAILWAY_API = "https://graduation-project-production-0a21.up.railway.app/api/v1";
+// افتراضياً Railway. للباك محلي: VITE_API_BASE_URL=http://localhost:5000/api/v1 في .env
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || RAILWAY_API;
 
-// Log the API base URL on initialization
+// Log the API base URL on initialization (so production shows Railway URL in console)
 console.log('🌐 API Base URL:', BASE_URL);
 
 /**

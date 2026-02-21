@@ -87,7 +87,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
         const end = item.end_date ?? item.endDate;
         const dateRangeStr =
           start && end ? `${formatDateShort(start)} - ${formatDateShort(end)}` : (item.date_range || "—");
-        const submitted = item.submitted_date ?? item.submittedDate;
+        const submitted = item.submitted_date ?? item.created_at ?? item.submittedDate;
         return {
           id: item.id,
           employeeName: item.employee_name ?? item.employeeName ?? "-",
@@ -102,7 +102,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
           reason: item.reason ?? "—",
           adminNotes: item.admin_notes ?? item.adminNotes ?? "",
           submittedDate: formatDateShort(submitted) || "—",
-          status: item.status ?? "Pending",
+          status: (item.status && typeof item.status === "string") ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : "Pending",
         };
       });
       setLeaveRequests(formatted);
@@ -144,8 +144,9 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
     "Rania Abed"
   ];
 
-  // Leave types
+  // Leave types (first item is filter-only; rest are valid for requests)
   const leaveTypes = ["All Leave Type", "Annual Leave", "Sick Leave", "Emergency Leave", "Unpaid Leave", "Compensatory Time Off", "Maternity Leave", "Paternity Leave"];
+  const leaveTypesForRequest = leaveTypes.filter((t) => t !== "All Leave Type");
 
   // Status options
   const statusOptions = ["All Status", "Pending", "Rejected", "Approved"];
@@ -205,12 +206,16 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
     return () => { cancelled = true; };
   }, []);
 
-  // Calculate total days when start and end dates change
+  // Calculate total days when start and end dates change (end must be >= start)
   useEffect(() => {
     if (requestLeaveFormData.startDate && requestLeaveFormData.endDate) {
       const start = new Date(requestLeaveFormData.startDate);
       const end = new Date(requestLeaveFormData.endDate);
-      const diffTime = Math.abs(end - start);
+      if (end < start) {
+        setRequestLeaveFormData(prev => ({ ...prev, totalDays: "" }));
+        return;
+      }
+      const diffTime = end - start;
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
       setRequestLeaveFormData(prev => ({ ...prev, totalDays: diffDays.toString() }));
     } else {
@@ -225,8 +230,14 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
     e.preventDefault();
     setRequestLeaveError(null);
     const { employeeId, leaveType, startDate, endDate, totalDays, reason, supportingDocument } = requestLeaveFormData;
-    if (!leaveType || leaveType === "All Leave Type" || !startDate || !endDate) {
+    if (!leaveType || !startDate || !endDate) {
       setRequestLeaveError("Please select leave type and date range.");
+      return;
+    }
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (end < start) {
+      setRequestLeaveError("End date must be on or after start date.");
       return;
     }
     if (!reason?.trim()) {
@@ -937,8 +948,8 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                                 whiteSpace: 'nowrap',
                                 color: request.status === "Pending" ? '#4A4A4A' :
                                   request.status === "Approved" ? '#00564F' : '#830000',
-                                backgroundColor: request.status === "Pending" ? '#D2D2D2' :
-                                  request.status === "Approved" ? '#68BFCCB2' : '#FFBDB6B2',
+                                backgroundColor: request.status === "Pending" ? '#D2D2D2B2' :
+                                  request.status === "Approved" ? '#68BFCC' : '#FFBDB6B2',
                                 textAlign: 'center'
                               }}
                             >
@@ -1333,7 +1344,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                         className="inline-block px-[14px] py-[6px] rounded-[8px] text-[13px] font-bold shadow-sm"
                         style={{
                           color: request.status === 'Pending' ? '#4A4A4A' : request.status === 'Approved' ? '#00564F' : '#830000',
-                          backgroundColor: request.status === 'Pending' ? '#D2D2D2' : request.status === 'Approved' ? '#68BFCCB2' : '#FFBDB6B2'
+                          backgroundColor: request.status === 'Pending' ? '#D2D2D2B2' : request.status === 'Approved' ? '#68BFCC' : '#FFBDB6B2'
                         }}
                       >
                         {request.status}
@@ -1663,8 +1674,8 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                           whiteSpace: 'nowrap',
                           color: selectedRequest.status === "Pending" ? '#4A4A4A' :
                             selectedRequest.status === "Approved" ? '#00564F' : '#830000',
-                          backgroundColor: selectedRequest.status === "Pending" ? '#D2D2D2' :
-                            selectedRequest.status === "Approved" ? '#68BFCCB2' : '#FFBDB6B2',
+                          backgroundColor: selectedRequest.status === "Pending" ? '#D2D2D2B2' :
+                            selectedRequest.status === "Approved" ? '#68BFCC' : '#FFBDB6B2',
                           textAlign: 'center',
                           height: '40px',
                           display: 'flex',
@@ -1854,7 +1865,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                       color: '#333333'
                     }}
                   >
-                    {selectedRequest.submittedDate}
+                    {formatDateShort(selectedRequest.submittedDate) || selectedRequest.submittedDate || "—"}
                   </p>
                 </div>
               </div>
@@ -2270,60 +2281,66 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 />
               </div>
 
-              {/* Warning Message */}
-              <div
-                className="mb-[32px] p-[12px] rounded-[5px] flex items-start gap-[12px]"
-                style={{
-                  backgroundColor: '#FFDEDE',
-                  border: '0.8px solid #EAE784'
-                }}
-              >
-                <img
-                  src={WarningIcon}
-                  alt="Warning"
-                  className="w-[20px] h-[20px] flex-shrink-0 mt-[2px]"
-                />
-                <div>
-                  <p
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      color: '#803A04',
-                      marginBottom: '4px'
-                    }}
-                  >
-                    Important
-                  </p>
-                  <p
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: '12px',
-                      fontWeight: 400,
-                      color: '#803A04',
-                      marginBottom: '4px'
-                    }}
-                  >
-                    Please provide a clear reason for rejecting this leave request.
-                  </p>
-                  <p
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: '12px',
-                      fontWeight: 400,
-                      color: '#803A04'
-                    }}
-                  >
-                    The employee will be notified with your comments.
-                  </p>
+              {/* Warning Message - يظهر فقط عندما حقل Admin Notes فاضي ليكون السلوك واضحاً */}
+              {!rejectAdminNotes.trim() && (
+                <div
+                  className="mb-[32px] p-[12px] rounded-[5px] flex items-start gap-[12px]"
+                  style={{
+                    backgroundColor: '#FFDEDE',
+                    border: '0.8px solid #EAE784'
+                  }}
+                >
+                  <img
+                    src={WarningIcon}
+                    alt="Warning"
+                    className="w-[20px] h-[20px] flex-shrink-0 mt-[2px]"
+                  />
+                  <div>
+                    <p
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: '#803A04',
+                        marginBottom: '4px'
+                      }}
+                    >
+                      Important
+                    </p>
+                    <p
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontSize: '12px',
+                        fontWeight: 400,
+                        color: '#803A04',
+                        marginBottom: '4px'
+                      }}
+                    >
+                      Please provide a clear reason for rejecting this leave request.
+                    </p>
+                    <p
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontSize: '12px',
+                        fontWeight: 400,
+                        color: '#803A04'
+                      }}
+                    >
+                      The employee will be notified with your comments.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex items-center justify-center gap-[12px]">
                 <button
                   type="button"
                   onClick={async () => {
+                    if (!rejectAdminNotes.trim()) {
+                      alert("Please provide a reason for rejection in Admin Notes.");
+                      return;
+                    }
                     try {
                       await updateLeaveStatus(selectedRequest.id, "Rejected", rejectAdminNotes);
                       await fetchLeaveRequests();
@@ -2373,14 +2390,14 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
         </div>
       )}
 
-      {/* Request Leave Modal */}
+      {/* Request Leave Modal - z-[200] so it appears above page dropdowns (z-[100]) */}
       {showRequestLeaveModal && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto py-10"
-          onClick={() => setShowRequestLeaveModal(false)}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] overflow-y-auto py-10"
+          onClick={() => { setShowRequestLeaveModal(false); setRequestLeaveError(null); }}
         >
           <div
-            className="bg-white rounded-[10px] relative w-[600px] my-auto"
+            className="bg-white rounded-[10px] relative w-[600px] my-auto z-[201]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -2396,7 +2413,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 Request Leave
               </h2>
               <button
-                onClick={() => setShowRequestLeaveModal(false)}
+                onClick={() => { setShowRequestLeaveModal(false); setRequestLeaveError(null); }}
                 className="w-[32px] h-[32px] rounded-full bg-transparent hover:bg-[#F3F4F6] flex items-center justify-center transition-colors"
               >
                 <svg className="w-[16px] h-[16px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2489,7 +2506,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       {isRequestLeaveTypeDropdownOpen && (
                         <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 max-h-[200px] overflow-y-auto">
-                          {leaveTypes.map((type) => (
+                          {leaveTypesForRequest.map((type) => (
                             <button
                               key={type}
                               type="button"
@@ -2637,14 +2654,19 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                     <input
                       type="text"
                       value={requestLeaveFormData.totalDays || ""}
-                      placeholder="Select dates to calculate"
+                      placeholder={(() => {
+                        const s = requestLeaveFormData.startDate && new Date(requestLeaveFormData.startDate);
+                        const e = requestLeaveFormData.endDate && new Date(requestLeaveFormData.endDate);
+                        if (s && e && e < s) return "End date must be on or after start date";
+                        return "Select dates to calculate";
+                      })()}
                       disabled
                       className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-[#F3F4F6] cursor-not-allowed"
                       style={{
                         fontFamily: 'Inter, sans-serif',
                         fontSize: '14px',
                         fontWeight: 400,
-                        color: '#6B7280'
+                        color: requestLeaveFormData.startDate && requestLeaveFormData.endDate && new Date(requestLeaveFormData.endDate) < new Date(requestLeaveFormData.startDate) ? '#DC2626' : '#6B7280'
                       }}
                     />
                   </div>
@@ -2764,7 +2786,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 <div className="flex items-center justify-between gap-[16px] mt-[32px]">
                   <button
                     type="button"
-                    onClick={() => setShowRequestLeaveModal(false)}
+                    onClick={() => { setShowRequestLeaveModal(false); setRequestLeaveError(null); }}
                     disabled={requestLeaveSubmitting}
                     className="flex-1 py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white text-[#333333] hover:bg-[#F5F7FA] transition-colors disabled:opacity-50"
                     style={{
