@@ -20,8 +20,9 @@ const corsOptions = {
     // In production, check against allowed origins
     const allowedOrigins = [
       process.env.CLIENT_URL,
+      'https://lightgrey-spider-272497.hostingersite.com',
       'http://localhost:5173',
-      'http://localhost:3000'
+      'http://localhost:4000'
     ].filter(Boolean);
 
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {

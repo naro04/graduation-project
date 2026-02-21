@@ -623,6 +623,13 @@ const paths = {
       summary: 'Delete activity',
       parameters: [{ name: 'activity_id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { 200: { description: 'Success' } }
+    },
+    patch: {
+      tags: ['Activities'],
+      summary: 'Partial update activity',
+      description: 'Update activity details like status, implementation progress, etc.',
+      parameters: [{ name: 'activity_id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { 200: { description: 'Success' } }
     }
   },
   '/location-activities/{activity_id}/employees': {
@@ -865,7 +872,7 @@ const paths = {
   },
 
   // --- Help ---
-  '/help/content': {
+  '/more/help/content': {
     get: {
       tags: ['Help'],
       summary: 'Get help content',
@@ -895,7 +902,7 @@ const paths = {
   },
 
   // --- Support ---
-  '/support/tickets': {
+  '/more/support/tickets': {
     get: {
       tags: ['Support'],
       summary: 'Get support tickets',
