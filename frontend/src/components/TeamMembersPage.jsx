@@ -4,8 +4,9 @@ import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
 import { getTeamMembers } from "../services/employees.js";
 import { getCurrentUser, logout } from "../services/auth.js";
+import { BASE_URL } from "../services/api.js";
 
-const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
+const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
 
 function toAbsoluteAvatarUrl(avatarUrl) {
   if (!avatarUrl || typeof avatarUrl !== "string") return null;
