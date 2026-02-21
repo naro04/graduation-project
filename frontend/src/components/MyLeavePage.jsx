@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
-import { getMyLeaves, getMyLeaveStats } from "../services/leaves";
+import { getMyLeaves, getMyLeaveStats, createLeave } from "../services/leaves";
+import { getProfileMe } from "../services/profile";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -40,6 +41,18 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [leaveBalance, setLeaveBalance] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserEmployeeId, setCurrentUserEmployeeId] = useState(null);
+
+  const formatDateShort = (val) => {
+    if (val == null || val === "") return "—";
+    try {
+      const d = new Date(val);
+      if (Number.isNaN(d.getTime())) return "—";
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    } catch {
+      return "—";
+    }
+  };
 
   const fetchMyLeaves = async () => {
     try {
@@ -55,8 +68,8 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
           endDate: item.end_date ?? item.endDate ?? "—",
           days: item.total_days ?? item.totalDays ?? item.days ?? 0,
           totalDays: item.total_days ?? item.totalDays ?? 0,
-          submittedDate: item.submitted_date ?? item.submittedDate ?? "—",
-          status: item.status ?? "Pending",
+          submittedDate: formatDateShort(item.submitted_date ?? item.created_at ?? item.submittedDate) || "—",
+          status: (item.status && typeof item.status === "string") ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : "Pending",
           reason: item.reason ?? "—",
           adminNotes: item.admin_notes ?? item.adminNotes ?? "",
         }))
@@ -74,6 +87,20 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
 
   useEffect(() => {
     fetchMyLeaves();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await getProfileMe();
+        if (cancelled) return;
+        setCurrentUserEmployeeId(profile?.employee?.id ?? profile?.employee_id ?? null);
+      } catch (_) {
+        if (!cancelled) setCurrentUserEmployeeId(null);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Form State for Request Leave Modal
@@ -106,18 +133,26 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
   // Status options
   const statusOptions = ["All Status", "Pending", "Rejected", "Approved"];
 
-  // Calculate total days when start and end dates change
+  // Calculate total days when start and end dates change (end must be >= start)
   useEffect(() => {
     if (requestFormData.startDate && requestFormData.endDate) {
       const start = new Date(requestFormData.startDate);
       const end = new Date(requestFormData.endDate);
-      const diffTime = Math.abs(end - start);
+      if (end < start) {
+        setRequestFormData(prev => ({ ...prev, totalDays: "" }));
+        return;
+      }
+      const diffTime = end - start;
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
       setRequestFormData(prev => ({ ...prev, totalDays: diffDays.toString() }));
     } else {
       setRequestFormData(prev => ({ ...prev, totalDays: "" }));
     }
   }, [requestFormData.startDate, requestFormData.endDate]);
+
+  const [requestLeaveSubmitting, setRequestLeaveSubmitting] = useState(false);
+  const [requestLeaveError, setRequestLeaveError] = useState(null);
+  const [requestLeaveDocumentSkipped, setRequestLeaveDocumentSkipped] = useState(false);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -147,22 +182,73 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
     };
   }, []);
 
-  // Handle request leave form submission
-  const handleRequestLeaveSubmit = (e) => {
+  // Handle request leave form submission (calls backend)
+  const handleRequestLeaveSubmit = async (e) => {
     e.preventDefault();
-    // Handle form submission
-    console.log("Submit leave request:", requestFormData);
-    // Here you would typically send the data to your backend
-    // Reset form and close modal
-    setRequestFormData({
-      leaveType: "",
-      startDate: "",
-      endDate: "",
-      totalDays: "",
-      reason: "",
-      supportingDocument: null
-    });
-    setShowRequestLeaveModal(false);
+    setRequestLeaveError(null);
+    const { leaveType, startDate, endDate, totalDays, reason, supportingDocument } = requestFormData;
+    if (!leaveType || !startDate || !endDate) {
+      setRequestLeaveError("Please select leave type and date range.");
+      return;
+    }
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (end < start) {
+      setRequestLeaveError("End date must be on or after start date.");
+      return;
+    }
+    if (!reason?.trim()) {
+      setRequestLeaveError("Please provide a reason for the leave request.");
+      return;
+    }
+    if (!currentUserEmployeeId) {
+      setRequestLeaveError("Unable to identify your profile. Please try again or contact support.");
+      return;
+    }
+    try {
+      setRequestLeaveSubmitting(true);
+      const hasFile = supportingDocument && supportingDocument instanceof File;
+      if (hasFile) {
+        const fd = new FormData();
+        fd.append("employee_id", currentUserEmployeeId);
+        fd.append("leave_type", leaveType);
+        fd.append("start_date", startDate);
+        fd.append("end_date", endDate);
+        fd.append("total_days", String(totalDays || ""));
+        fd.append("reason", reason);
+        fd.append("supporting_document", supportingDocument);
+        await createLeave(fd);
+      } else {
+        await createLeave({
+          employee_id: currentUserEmployeeId,
+          leave_type: leaveType,
+          start_date: startDate,
+          end_date: endDate,
+          total_days: Number(totalDays) || undefined,
+          reason: reason || undefined,
+        });
+      }
+      setRequestFormData({
+        leaveType: "",
+        startDate: "",
+        endDate: "",
+        totalDays: "",
+        reason: "",
+        supportingDocument: null
+      });
+      setShowRequestLeaveModal(false);
+      await fetchMyLeaves();
+    } catch (err) {
+      const data = err.response?.data;
+      const status = err.response?.status;
+      // Log full response to find root cause (status, validation errors, etc.)
+      console.error("Submit leave request failed:", { status, data, err });
+      const message = data?.message ?? data?.error ?? err.message ?? "Failed to submit request.";
+      const detail = data?.details || data?.errors;
+      setRequestLeaveError(detail ? `${message} ${typeof detail === "string" ? detail : JSON.stringify(detail)}` : message);
+    } finally {
+      setRequestLeaveSubmitting(false);
+    }
   };
 
   // Filter data (case-insensitive so API "pending" matches dropdown "Pending")
@@ -565,8 +651,8 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                                 whiteSpace: 'nowrap',
                                 color: request.status === "Pending" ? '#4A4A4A' : 
                                        request.status === "Approved" ? '#00564F' : '#830000',
-                                backgroundColor: request.status === "Pending" ? '#D2D2D2' : 
-                                               request.status === "Approved" ? '#68BFCCB2' : '#FFBDB6B2',
+                                backgroundColor: request.status === "Pending" ? '#D2D2D2B2' : 
+                                               request.status === "Approved" ? '#68BFCC' : '#FFBDB6B2',
                                 textAlign: 'center'
                               }}
                             >
@@ -950,7 +1036,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                         className="inline-block px-[14px] py-[6px] rounded-[8px] text-[13px] font-bold shadow-sm"
                         style={{
                           color: request.status === 'Pending' ? '#4A4A4A' : request.status === 'Approved' ? '#00564F' : '#830000',
-                          backgroundColor: request.status === 'Pending' ? '#D2D2D2' : request.status === 'Approved' ? '#68BFCCB2' : '#FFBDB6B2'
+                          backgroundColor: request.status === 'Pending' ? '#D2D2D2B2' : request.status === 'Approved' ? '#68BFCC' : '#FFBDB6B2'
                         }}
                       >
                         {request.status}
@@ -1131,8 +1217,8 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                             whiteSpace: 'nowrap',
                             color: selectedRequest.status === "Pending" ? '#4A4A4A' : 
                                    selectedRequest.status === "Approved" ? '#00564F' : '#830000',
-                            backgroundColor: selectedRequest.status === "Pending" ? '#D2D2D2' : 
-                                            selectedRequest.status === "Approved" ? '#68BFCCB2' : '#FFBDB6B2',
+                            backgroundColor: selectedRequest.status === "Pending" ? '#D2D2D2B2' : 
+                                            selectedRequest.status === "Approved" ? '#68BFCC' : '#FFBDB6B2',
                             textAlign: 'center'
                           }}
                         >
@@ -1320,7 +1406,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                         color: '#333333'
                       }}
                     >
-                      {selectedRequest.submittedDate}
+                      {formatDateShort(selectedRequest.submittedDate) || selectedRequest.submittedDate || "—"}
                     </p>
                   </div>
                 </div>
@@ -1331,13 +1417,14 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
         )
       }
 
-      {/* Request Leave Modal */}
+      {/* Request Leave Modal - z-[200] so it appears above page dropdowns (z-[100]) */}
       {
         showRequestLeaveModal && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]"
           onClick={() => {
             setShowRequestLeaveModal(false);
+            setRequestLeaveError(null);
             setRequestFormData({
               leaveType: "",
               startDate: "",
@@ -1349,7 +1436,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
           }}
         >
           <div 
-            className="bg-white rounded-[10px] relative"
+            className="bg-white rounded-[10px] relative z-[201]"
             style={{
               width: '700px',
               maxHeight: '90vh',
@@ -1372,6 +1459,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
               <button
                 onClick={() => {
                   setShowRequestLeaveModal(false);
+                  setRequestLeaveError(null);
                   setRequestFormData({
                     leaveType: "",
                     startDate: "",
@@ -1711,11 +1799,18 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                   </div>
                 </div>
 
+                {requestLeaveError && (
+                  <p className="mt-4 text-red-600 text-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
+                    {requestLeaveError}
+                  </p>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex items-center justify-center gap-[12px] mt-[32px]">
                   <button
                     type="submit"
-                    className="px-[24px] py-[10px] rounded-[5px] hover:opacity-90 transition-opacity"
+                    disabled={requestLeaveSubmitting}
+                    className="px-[24px] py-[10px] rounded-[5px] hover:opacity-90 transition-opacity disabled:opacity-50"
                     style={{
                       backgroundColor: '#009084',
                       color: '#FFFFFF',
@@ -1725,12 +1820,14 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                       minWidth: '150px'
                     }}
                   >
-                    Submit Request
+                    {requestLeaveSubmitting ? "Submitting…" : "Submit Request"}
                   </button>
                   <button
                     type="button"
+                    disabled={requestLeaveSubmitting}
                     onClick={() => {
                       setShowRequestLeaveModal(false);
+                      setRequestLeaveError(null);
                       setRequestFormData({
                         leaveType: "",
                         startDate: "",
@@ -1740,7 +1837,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                         supportingDocument: null
                       });
                     }}
-                      className="px-[24px] py-[10px] rounded-[5px] hover:bg-[#F5F7FA] transition-colors"
+                    className="px-[24px] py-[10px] rounded-[5px] hover:bg-[#F5F7FA] transition-colors disabled:opacity-50"
                     style={{
                         backgroundColor: '#FFFFFF',
                         border: '1px solid #E0E0E0',

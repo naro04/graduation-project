@@ -60,7 +60,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
           leaveType: item.leave_type ?? item.leaveType ?? "—",
           dateRange: item.date_range ?? (item.start_date && item.end_date ? `${item.start_date} - ${item.end_date}` : "—"),
           totalDays: item.total_days ?? item.totalDays ?? 0,
-          submittedDate: item.submitted_date ?? item.submittedDate ?? "—",
+          submittedDate: item.submitted_date ?? item.created_at ?? item.submittedDate ?? "—",
           status: item.status ?? "Pending",
           startDate: item.start_date ?? item.startDate ?? null,
         }))

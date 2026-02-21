@@ -106,24 +106,22 @@ const login = async (email, password, rememberMe = false) => {
 };
 
 /**
- * Register new user
- * @param {string} firstName - User first name
- * @param {string} lastName - User last name
- * @param {string} email - User email
- * @param {string} password - User password
- * @param {string} phone - User phone number
- * @returns {Promise<object>} - User data
+ * Register new user (normal signup only; do not use for Google signup).
+ * POST /api/v1/auth/register
+ * Backend requires: privacyPolicyAgreement (boolean), name OR (firstName+lastName), email, password, confirmPassword (optional).
+ * We send name from firstName + lastName. No agreeToPrivacyPolicy / agreeToTermsPolicy.
  */
-const register = async (firstName, lastName, email, password, phone) => {
+const register = async (data) => {
   try {
     const requestData = {
-      firstName,
-      lastName,
-      email,
-      password,
-      phone,
+      name: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
+      email: data.email,
+      phone: data.phone,
+      password: data.password,
+      confirmPassword: data.confirmPassword,
+      privacyPolicyAgreement: data.privacyPolicyAgreement === true,
     };
-    console.log('📤 Sending register request with data:', { ...requestData, password: '***' });
+    console.log('📤 Sending register request with data:', { ...requestData, password: '***', confirmPassword: '***' });
     
     const response = await apiRequest('/auth/register', {
       method: 'POST',
@@ -162,20 +160,19 @@ const register = async (firstName, lastName, email, password, phone) => {
 };
 
 /**
- * Google OAuth login/signup
- * @param {string} token - Google OAuth token
- * @returns {Promise<object>} - User data
+ * Google OAuth login/signup. POST /api/v1/auth/google
+ * Backend requires: { googleToken: ACCESS_TOKEN } — must be Google access_token (not ID token/credential).
+ * Call with token from initTokenClient callback: tokenResponse.access_token.
  */
-const googleAuth = async (token) => {
+const googleAuth = async (accessToken) => {
   try {
-    const requestData = {
-      token,
-    };
-    console.log('📤 Sending Google OAuth request');
+    const requestData = { googleToken: accessToken };
+    console.log('📤 Sending Google OAuth request (googleToken)');
     
     const response = await apiRequest('/auth/google', {
       method: 'POST',
       body: JSON.stringify(requestData),
+      credentials: 'include',
     });
 
     // Store token if provided in response

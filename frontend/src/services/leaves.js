@@ -1,9 +1,11 @@
 import { apiClient } from "./apiClient";
 
+// BASE is relative to apiClient.baseURL (e.g. http://localhost:5000/api/v1 when VITE_API_BASE_URL is set)
+// Full URLs: GET/POST /leaves, GET /leaves/my, GET /leaves/my-stats, etc.
 const BASE = "/leaves";
 
 /**
- * GET http://localhost:5000/api/v1/leaves
+ * GET /leaves  →  e.g. http://localhost:5000/api/v1/leaves
  * قائمة طلبات الإجازات (للإدارة/HR)
  */
 export async function getLeaves(params = {}) {
@@ -13,8 +15,8 @@ export async function getLeaves(params = {}) {
 }
 
 /**
- * POST http://localhost:5000/api/v1/leaves
- * إنشاء طلب إجازة جديد
+ * POST /leaves  →  e.g. http://localhost:5000/api/v1/leaves
+ * إنشاء طلب إجازة جديد (Request Leave في My Leave و Leave Requests)
  * @param {Object|FormData} payload - leave_type, start_date, end_date, total_days?, reason, supporting_document? (File in FormData)
  */
 export async function createLeave(payload) {
@@ -32,8 +34,8 @@ export async function deleteLeave(id) {
 }
 
 /**
- * GET http://localhost:5000/api/v1/leaves/my
- * طلبات الإجازات الخاصة بالمستخدم الحالي
+ * GET /leaves/my  →  e.g. http://localhost:5000/api/v1/leaves/my
+ * طلبات الإجازات الخاصة بالمستخدم الحالي (صفحة My Leave)
  */
 export async function getMyLeaves(params = {}) {
   const res = await apiClient.get(`${BASE}/my`, { params });
@@ -42,8 +44,8 @@ export async function getMyLeaves(params = {}) {
 }
 
 /**
- * GET http://localhost:5000/api/v1/leaves/my-stats
- * إحصائيات رصيد الإجازات للمستخدم الحالي
+ * GET /leaves/my-stats  →  e.g. http://localhost:5000/api/v1/leaves/my-stats
+ * إحصائيات رصيد الإجازات للمستخدم الحالي (صفحة My Leave)
  */
 export async function getMyLeaveStats() {
   const res = await apiClient.get(`${BASE}/my-stats`);
