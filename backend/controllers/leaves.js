@@ -29,7 +29,12 @@ exports.getLeaves = async (req, res) => {
  */
 exports.createLeave = async (req, res) => {
     try {
-        const { employee_id, leave_type, start_date, end_date, reason, document_url } = req.body;
+        let { employee_id, leave_type, start_date, end_date, reason, document_url } = req.body;
+
+        // If a file was uploaded, override document_url
+        if (req.file) {
+            document_url = `/uploads/${req.file.filename}`;
+        }
 
         if (!employee_id || !leave_type || !start_date || !end_date) {
             return res.status(400).json({ success: false, message: 'Missing required fields' });
