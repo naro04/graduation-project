@@ -53,8 +53,10 @@ exports.createEmployee = async (req, res) => {
     try {
         let {
             user_id, employee_code, first_name, last_name, full_name,
-            department_id, position_id, status, role_id, avatar_url
+            department_id, position_id, status, role_id, avatar_url, avatarUrl
         } = req.body;
+
+        const finalAvatarUrl = req.file ? `/uploads/${req.file.filename}` : (avatar_url || avatarUrl || null);
 
 
         // 1. Validation
@@ -81,7 +83,7 @@ exports.createEmployee = async (req, res) => {
             department_id || null,
             position_id || null,
             status || 'active',
-            req.file ? `/uploads/${req.file.filename}` : (avatar_url || null),
+            finalAvatarUrl,
             role_id || null
         ]);
 
@@ -103,7 +105,7 @@ exports.createEmployee = async (req, res) => {
         if (err.code === '23505') {
             message = 'Employee code already exists.';
         }
-        res.status(500).json({ message });
+        res.status(500).json({ message, error: err.message, stack: process.env.NODE_ENV === 'development' ? err.stack : undefined });
     }
 };
 
@@ -112,8 +114,10 @@ exports.updateEmployee = async (req, res) => {
         const { id } = req.params;
         let {
             first_name, last_name, full_name,
-            department_id, position_id, status, avatar_url, role_id
+            department_id, position_id, status, avatar_url, avatarUrl, role_id
         } = req.body;
+
+        const finalAvatarUrl = req.file ? `/uploads/${req.file.filename}` : (avatar_url || avatarUrl || null);
 
         if (!full_name && first_name && last_name) {
             full_name = `${first_name} ${last_name}`;
@@ -130,7 +134,7 @@ exports.updateEmployee = async (req, res) => {
                 department_id || null,
                 position_id || null,
                 status,
-                req.file ? `/uploads/${req.file.filename}` : (avatar_url || null),
+                finalAvatarUrl,
                 role_id || null,
                 id
             ]);
@@ -159,7 +163,10 @@ exports.updateEmployee = async (req, res) => {
         }
     } catch (err) {
         console.error('Error updating employee:', err);
-        res.status(500).json({ message: 'An error occurred while updating the employee. Please try again.' });
+        res.status(500).json({
+            message: 'An error occurred while updating the employee. Please try again.',
+            error: err.message
+        });
     }
 };
 
