@@ -143,8 +143,8 @@ CREATE TABLE IF NOT EXISTS employees (
 CREATE TABLE IF NOT EXISTS attendance (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  check_in_time TIMESTAMP NOT NULL,
-  check_out_time TIMESTAMP,
+  check_in_time TIMESTAMPTZ NOT NULL,
+  check_out_time TIMESTAMPTZ,
   
   -- Location & GPS Verification
   location_latitude DECIMAL(10, 8),
@@ -163,8 +163,8 @@ CREATE TABLE IF NOT EXISTS attendance (
   
   notes TEXT,
   approval_status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ============================================

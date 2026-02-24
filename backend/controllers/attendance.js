@@ -162,9 +162,9 @@ exports.getMyAttendance = async (req, res) => {
         // Format records for frontend
         const records = result.rows.map(row => ({
             id: row.id,
-            date: formatDate(row.date || row.check_in_time),
-            checkInAt: formatTime(row.check_in_time),
-            checkOutAt: row.check_out_time ? formatTime(row.check_out_time) : null,
+            date: row.date || row.check_in_time, // Keep raw date/time for frontend to format
+            checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
+            checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
             workHours: calculateWorkHours(row.check_in_time, row.check_out_time),
             location: row.location || row.location_address || '-',
             type: row.type || row.work_type || 'Office',
@@ -177,10 +177,10 @@ exports.getMyAttendance = async (req, res) => {
         if (todayAttendance) {
             todayStatus = {
                 checkedIn: true,
-                checkInTime: formatTime(todayAttendance.check_in_time),
+                checkInTime: todayAttendance.check_in_time ? new Date(todayAttendance.check_in_time).toISOString() : null,
                 checkInLocation: todayAttendance.location_address || 'Unknown Location',
                 checkInMethod: todayAttendance.check_in_method || 'GPS',
-                checkOutTime: todayAttendance.check_out_time ? formatTime(todayAttendance.check_out_time) : null,
+                checkOutTime: todayAttendance.check_out_time ? new Date(todayAttendance.check_out_time).toISOString() : null,
                 checkOutLocation: todayAttendance.check_out_time ? (todayAttendance.location_address || 'Unknown Location') : null,
                 checkOutMethod: todayAttendance.check_out_method || null,
                 totalHours: calculateWorkHours(todayAttendance.check_in_time, todayAttendance.check_out_time),
@@ -281,7 +281,7 @@ exports.checkIn = async (req, res) => {
             message: 'Checked in successfully',
             data: {
                 id: attendance.id,
-                checkInTime: formatTime(attendance.check_in_time),
+                checkInTime: new Date(attendance.check_in_time).toISOString(),
                 location: finalLocationAddress || 'Unknown Location',
                 gpsStatus: attendance.gps_status,
                 dailyStatus: dailyStatus
@@ -339,8 +339,8 @@ exports.checkOut = async (req, res) => {
             message: 'Checked out successfully',
             data: {
                 id: updatedAttendance.id,
-                checkInTime: formatTime(updatedAttendance.check_in_time),
-                checkOutTime: formatTime(updatedAttendance.check_out_time),
+                checkInTime: new Date(updatedAttendance.check_in_time).toISOString(),
+                checkOutTime: new Date(updatedAttendance.check_out_time).toISOString(),
                 checkInLocation: updatedAttendance.location_address || 'Unknown Location',
                 checkOutLocation: checkoutLocationAddress || updatedAttendance.location_address || 'Unknown Location',
                 totalHours: totalHours,
@@ -420,8 +420,8 @@ exports.getDailyAttendance = async (req, res) => {
             employeeName: row.employee_name,
             employeeCode: row.employee_code,
             avatarUrl: row.avatar_url,
-            checkInAt: row.check_in_time,
-            checkOutAt: row.check_out_time,
+            checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
+            checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
             attendanceType: row.attendance_type || 'Office',
             location: row.location || '-',
             status: row.check_out_time ? row.status : (row.status === 'Present' || row.status === 'Late' ? 'In progress' : row.status),
@@ -529,8 +529,8 @@ exports.getAttendanceReports = async (req, res) => {
                 employeeName: row.employee_name,
                 employeeCode: row.employee_code,
                 avatarUrl: row.avatar_url,
-                checkInAt: row.check_in_time,
-                checkOutAt: row.check_out_time,
+                checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
+                checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
                 attendanceType: row.attendance_type || 'Office',
                 location: row.location || '-',
                 status: finalStatus,
@@ -695,8 +695,8 @@ exports.getTeamAttendance = async (req, res) => {
             employeeName: row.employee_name,
             employeeCode: row.employee_code,
             avatarUrl: row.avatar_url,
-            checkInAt: row.check_in_time,
-            checkOutAt: row.check_out_time,
+            checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
+            checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
             attendanceType: row.attendance_type || 'Office',
             location: row.location || '-',
             status: row.check_out_time ? row.status : (row.status === 'Present' || row.status === 'Late' ? 'In progress' : row.status),
