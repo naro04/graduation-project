@@ -63,5 +63,24 @@ setupSwagger(app);
 
 app.use('/api/v1/', routes);
 
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled Error:', err);
+
+  // Handle Multer errors specifically
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ status: 'fail', message: 'File too large. Max 5MB allowed.' });
+  }
+
+  if (err.message && err.message.includes('Unexpected field')) {
+    return res.status(400).json({ status: 'fail', message: 'Invalid field name in upload. Use "avatar" or "images" as appropriate.', error: err.message });
+  }
+
+  res.status(err.status || 500).json({
+    status: 'error',
+    message: err.message || 'Internal Server Error',
+    error: process.env.NODE_ENV === 'development' ? err : undefined
+  });
+});
 
 module.exports = app;
