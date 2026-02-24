@@ -14,14 +14,16 @@ const {
 } = require('../controllers/profile');
 const positionsController = require('../controllers/positions');
 
+const upload = require('../middleware/upload');
+
 // All profile routes require authentication
 router.use(protect);
 
 router.get('/me', getMe);
-router.patch('/me', updateProfile);
+router.patch('/me', upload.single('avatar'), updateProfile);
 
 router.get('/personal-info', getPersonalInfo);
-router.put('/personal-info', updateProfile);
+router.put('/personal-info', upload.single('avatar'), updateProfile);
 
 router.get('/account-security', getAccountSecurity);
 router.put('/account-security', updateAccountSecurity);
