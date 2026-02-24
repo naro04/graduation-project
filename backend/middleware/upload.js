@@ -20,16 +20,16 @@ const storage = multer.diskStorage({
     }
 });
 
-// File filter - only allow images
+// File filter - allow images and documents (PDF, DOC/DOCX)
 const fileFilter = (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
 
     if (mimetype && extname) {
         return cb(null, true);
     } else {
-        cb(new Error('Only image files are allowed!'));
+        cb(new Error('File type not allowed! Supported: images, PDF, DOC, DOCX.'));
     }
 };
 
