@@ -81,7 +81,7 @@ exports.createEmployee = async (req, res) => {
             department_id || null,
             position_id || null,
             status || 'active',
-            avatar_url || null,
+            req.file ? `/uploads/${req.file.filename}` : (avatar_url || null),
             role_id || null
         ]);
 
@@ -130,7 +130,7 @@ exports.updateEmployee = async (req, res) => {
                 department_id || null,
                 position_id || null,
                 status,
-                avatar_url || null,
+                req.file ? `/uploads/${req.file.filename}` : (avatar_url || null),
                 role_id || null,
                 id
             ]);
