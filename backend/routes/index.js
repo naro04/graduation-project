@@ -33,8 +33,8 @@ router.use('/', dashboard); // Dashboard is accessible to inactive users
 router.use(protect);
 
 // Then allow these routes even for inactive employees
-router.use('/more/help', helpRouter); // Assuming help is accessible anyway
-router.use('/more/support', supportRouter);
+router.use('/help', helpRouter); // Assuming help is accessible anyway
+router.use('/support', supportRouter);
 
 // Then require active status for everything else
 router.use(requireActiveStatus);
