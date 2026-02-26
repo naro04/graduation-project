@@ -127,6 +127,35 @@ exports.updateEmployee = async (req, res) => {
         try {
             await client.query('BEGIN');
 
+            // 1. Authorization Check
+            const currentEmployeeResult = await client.query('SELECT supervisor_id FROM employees WHERE id = $1', [id]);
+            if (currentEmployeeResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ status: 'fail', message: 'Employee not found' });
+            }
+
+            const employee = currentEmployeeResult.rows[0];
+            const userRole = req.user.role_name;
+            const isManager = userRole === 'Manager';
+            const isAdmin = userRole === 'Super Admin' || userRole === 'HR Admin';
+
+            if (isManager && employee.supervisor_id !== req.user.employee_id) {
+                await client.query('ROLLBACK');
+                return res.status(403).json({
+                    status: 'fail',
+                    message: 'Access Denied: You can only edit employees assigned to you.'
+                });
+            }
+
+            if (!isAdmin && !isManager) {
+                await client.query('ROLLBACK');
+                return res.status(403).json({
+                    status: 'fail',
+                    message: 'Access Denied: You do not have permission to perform this action.'
+                });
+            }
+
+            // 2. Database operation
             const result = await client.query(employeeQueries.updateEmployeeQuery, [
                 first_name,
                 last_name,
@@ -139,17 +168,12 @@ exports.updateEmployee = async (req, res) => {
                 id
             ]);
 
-            if (result.rows.length === 0) {
-                await client.query('ROLLBACK');
-                return res.status(404).json({ status: 'fail', message: 'Employee not found' });
-            }
-
             // Update Role if provided
             if (role_id) {
-                const employee = result.rows[0];
-                if (employee.user_id) {
-                    await client.query('DELETE FROM user_roles WHERE user_id = $1', [employee.user_id]);
-                    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [employee.user_id, role_id]);
+                const updatedEmployee = result.rows[0];
+                if (updatedEmployee.user_id) {
+                    await client.query('DELETE FROM user_roles WHERE user_id = $1', [updatedEmployee.user_id]);
+                    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [updatedEmployee.user_id, role_id]);
                 }
             }
 
@@ -173,11 +197,34 @@ exports.updateEmployee = async (req, res) => {
 exports.deleteEmployee = async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query(employeeQueries.deleteEmployeeQuery, [id]);
 
-        if (result.rows.length === 0) {
+        // 1. Authorization Check
+        const currentEmployeeResult = await pool.query('SELECT supervisor_id FROM employees WHERE id = $1', [id]);
+        if (currentEmployeeResult.rows.length === 0) {
             return res.status(404).json({ message: 'Employee not found' });
         }
+
+        const employee = currentEmployeeResult.rows[0];
+        const userRole = req.user.role_name;
+        const isManager = userRole === 'Manager';
+        const isAdmin = userRole === 'Super Admin' || userRole === 'HR Admin';
+
+        if (isManager && employee.supervisor_id !== req.user.employee_id) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Access Denied: You can only delete employees assigned to you.'
+            });
+        }
+
+        if (!isAdmin && !isManager) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Access Denied: You do not have permission to perform this action.'
+            });
+        }
+
+        // 2. Database operation
+        const result = await pool.query(employeeQueries.deleteEmployeeQuery, [id]);
 
         res.status(200).json({
             status: 'success',
