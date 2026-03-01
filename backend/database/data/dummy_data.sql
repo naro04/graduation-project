@@ -179,7 +179,8 @@ WHERE slug IN (
     'attendance_actions:view_team_attendance', 'attendance_actions:view_my_attendance', 'attendance_actions:check-in/check-out',
     'activity_actions:approve/reject_activities', 'activity_actions:approve/reject_team_activities', 'activity_actions:log_my_activity', 'activity_actions:view_my_activities',
     'leave_actions:check_leave_balance', 'leave_actions:approve/reject_team_leave_requests', 'leave_actions:request_leave_for_self', 'leave_actions:view_my_leave_status',
-    'reports_actions:view/export_attendance,_leave_reports', 'reports_actions:view/export_team_reports'
+    'reports_actions:view/export_attendance,_leave_reports', 'reports_actions:view/export_team_reports',
+    'manage_employees', 'user_actions:create_employee', 'user_actions:edit_employee', 'user_actions:disable/delete_employee'
 ) ON CONFLICT DO NOTHING;
 
 -- 8. EMPLOYEES (Cleanup linked users first to ensure fresh assignment)
