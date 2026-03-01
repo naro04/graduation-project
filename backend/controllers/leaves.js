@@ -8,9 +8,48 @@ exports.getLeaves = async (req, res) => {
     try {
         const { search, type, status } = req.query;
 
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = req.user.employee_id;
+
+        // Scoping query for leaves with descriptive fields
+        const leavesQuery = `
+            SELECT 
+                lr.*, 
+                e.full_name as employee_name, 
+                e.avatar_url as employee_avatar,
+                p.name as position,
+                d.name as department,
+                (lr.end_date - lr.start_date + 1) as total_days
+            FROM leave_requests lr
+            JOIN employees e ON lr.employee_id = e.id
+            LEFT JOIN positions p ON e.position_id = p.id
+            LEFT JOIN departments d ON e.department_id = d.id
+            WHERE ($1::text IS NULL OR e.full_name ILIKE '%' || $1 || '%')
+              AND ($2::text IS NULL OR lr.leave_type = $2)
+              AND ($3::text IS NULL OR lr.status = $3)
+              AND ($4::UUID IS NULL OR e.supervisor_id = $4)
+            ORDER BY lr.created_at DESC;
+        `;
+
+        // Scoping query for stats
+        const statsQuery = `
+            SELECT 
+                COUNT(*) FILTER (WHERE lr.status = 'pending') as pending_count,
+                COUNT(*) FILTER (WHERE lr.status = 'approved') as approved_count,
+                COUNT(*) FILTER (WHERE lr.status = 'rejected') as rejected_count
+            FROM leave_requests lr
+            JOIN employees e ON lr.employee_id = e.id
+            WHERE ($1::UUID IS NULL OR e.supervisor_id = $1);
+        `;
+
         const [leavesRes, statsRes] = await Promise.all([
-            pool.query(leaveQueries.getLeaves, [search || null, type || null, status || null]),
-            pool.query(leaveQueries.getLeaveStats)
+            pool.query(leavesQuery, [
+                search || null,
+                type || null,
+                status || null,
+                isManager ? managerEmployeeId : null
+            ]),
+            pool.query(statsQuery, [isManager ? managerEmployeeId : null])
         ]);
 
         res.status(200).json({
@@ -71,6 +110,37 @@ exports.updateLeaveStatus = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Admin notes are required for rejection' });
         }
 
+        const isManager = req.user.role_name === 'Manager';
+        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
+
+        // Authorization check
+        const leaveCheckResult = await pool.query(`
+            SELECT lr.*, e.supervisor_id 
+            FROM leave_requests lr 
+            JOIN employees e ON lr.employee_id = e.id 
+            WHERE lr.id = $1
+        `, [id]);
+
+        if (leaveCheckResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Leave request not found' });
+        }
+
+        const leaveRequest = leaveCheckResult.rows[0];
+
+        if (isManager && leaveRequest.supervisor_id !== req.user.employee_id) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access Denied: You can only act on leave requests from your team.'
+            });
+        }
+
+        if (!isAdmin && !isManager) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access Denied: You do not have permission to perform this action.'
+            });
+        }
+
         const result = await pool.query(leaveQueries.updateLeaveStatus, [
             status, admin_notes, approved_by, id
         ]);
@@ -100,7 +170,20 @@ exports.bulkDeleteLeaves = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid or empty IDs array' });
         }
 
-        const result = await pool.query(leaveQueries.bulkDeleteLeaves, [ids]);
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = req.user.employee_id;
+
+        let result;
+        if (isManager) {
+            // Only delete if all IDs belong to team members
+            result = await pool.query(`
+                DELETE FROM leave_requests 
+                WHERE id = ANY($1::UUID[]) 
+                AND employee_id IN (SELECT id FROM employees WHERE supervisor_id = $2)
+            `, [ids, managerEmployeeId]);
+        } else {
+            result = await pool.query(leaveQueries.bulkDeleteLeaves, [ids]);
+        }
 
         res.status(200).json({
             success: true,

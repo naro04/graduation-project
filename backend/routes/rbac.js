@@ -5,7 +5,7 @@ const { protect, restrictTo } = require('../middleware/auth');
 
 // Roles
 router.route('/roles')
-    .get(restrictTo('user_management:roles_&_permissions', 'manage_roles'), rbacController.getAllRoles)
+    .get(restrictTo('user_management:roles_&_permissions', 'manage_roles', 'manage_employees'), rbacController.getAllRoles)
     .post(restrictTo('manage_roles'), rbacController.createRole); // 'manage_roles' is an example permission slug
 
 router.route('/roles/:id')
