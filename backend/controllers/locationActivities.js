@@ -4,17 +4,75 @@ const locationQueries = require('../database/data/queries/locations');
 
 exports.getAllActivities = async (req, res) => {
     try {
-        const { date } = req.query;
+        const { search, status, approval_status, date } = req.query;
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = req.user.employee_id;
 
-        const result = await pool.query(activityQueries.getAllActivitiesQuery, [date || null]);
+        let queryParams = [];
+        let whereClause = "WHERE a.location_id IS NOT NULL";
 
-        // Calculate stats
+        if (date) {
+            queryParams.push(date);
+            whereClause += ` AND (a.start_date <= $${queryParams.length}::DATE AND a.end_date >= $${queryParams.length}::DATE)`;
+        }
+
+        if (status && status !== 'All Status') {
+            queryParams.push(status);
+            whereClause += ` AND a.implementation_status = $${queryParams.length}`;
+        }
+
+        if (approval_status && approval_status !== 'All Approval Status') {
+            queryParams.push(approval_status.toLowerCase());
+            whereClause += ` AND a.approval_status = $${queryParams.length}`;
+        }
+
+        if (search) {
+            queryParams.push(`%${search}%`);
+            whereClause += ` AND a.name ILIKE $${queryParams.length}`;
+        }
+
+        if (isManager) {
+            queryParams.push(managerEmployeeId);
+            whereClause += ` AND (a.employee_id = $${queryParams.length} OR EXISTS (
+                SELECT 1 FROM activity_employees ae2 
+                JOIN employees e2 ON ae2.employee_id = e2.id 
+                WHERE ae2.activity_id = a.id AND e2.supervisor_id = $${queryParams.length}
+            ))`;
+        }
+
+        const query = `
+            SELECT 
+                a.*,
+                a.name as activity_name,
+                a.activity_type as type,
+                p.name as project,
+                e.first_name || ' ' || e.last_name as responsible_employee,
+                e.avatar_url as employee_photo,
+                l.name as location,
+                COALESCE(a.location_latitude, l.latitude) as latitude,
+                COALESCE(a.location_longitude, l.longitude) as longitude,
+                a.activity_days as duration,
+                ARRAY_AGG(DISTINCT emp.first_name || ' ' || emp.last_name) FILTER (WHERE emp.id IS NOT NULL) as team
+            FROM activities a
+            LEFT JOIN locations l ON a.location_id = l.id
+            LEFT JOIN projects p ON a.project_id = p.id
+            LEFT JOIN employees e ON a.employee_id = e.id
+            LEFT JOIN activity_employees ae ON a.id = ae.activity_id
+            LEFT JOIN employees emp ON ae.employee_id = emp.id
+            ${whereClause}
+            GROUP BY a.id, p.name, e.first_name, e.last_name, e.avatar_url, l.name, l.latitude, l.longitude
+            ORDER BY a.start_date DESC, a.created_at DESC
+        `;
+
+        const result = await pool.query(query, queryParams);
+
+        // Calculate stats from the scoped/filtered results
         const activities = result.rows;
         const stats = {
             planned: activities.filter(a => a.implementation_status === 'Planned').length,
             implemented: activities.filter(a => a.implementation_status === 'Implemented').length,
-            approved: activities.filter(a => a.approval_status === 'Approved').length,
-            pending: activities.filter(a => a.approval_status === 'Pending').length
+            approved: activities.filter(a => a.approval_status === 'approved').length,
+            pending: activities.filter(a => a.approval_status === 'pending').length
         };
 
         res.status(200).json({
@@ -23,6 +81,7 @@ exports.getAllActivities = async (req, res) => {
             stats: stats
         });
     } catch (err) {
+        console.error('Error in getAllActivities:', err);
         res.status(500).json({ message: 'Error fetching activities', error: err.message });
     }
 };
@@ -75,7 +134,7 @@ exports.createLocationActivity = async (req, res) => {
 
         // Create activity
         let final_project_id = project_id;
-        
+
         // If project_id is provided as a string (name), try to find or create the project
         if (project_id && typeof project_id === 'string' && project_id.length > 0) {
             // Check if it's a valid UUID. If not, it's a name.
@@ -86,6 +145,34 @@ exports.createLocationActivity = async (req, res) => {
                     [project_id]
                 );
                 final_project_id = projectResult.rows[0].id;
+            }
+        }
+
+        // 1. Validate responsible employee is a Manager
+        if (responsible_employee_id) {
+            const respEmpResult = await pool.query(`
+                SELECT r.name as role_name 
+                FROM employees e 
+                JOIN roles r ON e.role_id = r.id 
+                WHERE e.id = $1
+            `, [responsible_employee_id]);
+
+            if (respEmpResult.rows.length === 0 || respEmpResult.rows[0].role_name !== 'Manager') {
+                return res.status(400).json({ status: 'fail', message: 'Responsible employee must have the Manager role' });
+            }
+
+            // 2. Validate all assigned employees are supervised by this Manager
+            const supervisorCheckResult = await pool.query(`
+                SELECT id 
+                FROM employees 
+                WHERE id = ANY($1::UUID[]) AND (supervisor_id != $2 OR supervisor_id IS NULL)
+            `, [employee_ids, responsible_employee_id]);
+
+            if (supervisorCheckResult.rows.length > 0) {
+                return res.status(400).json({
+                    status: 'fail',
+                    message: 'All assigned employees must be supervised by the responsible manager'
+                });
             }
         }
 
@@ -172,7 +259,7 @@ exports.updateLocationActivity = async (req, res) => {
 
         // Update activity
         let final_project_id = project_id;
-        
+
         // If project_id is provided as a string (name), try to find or create the project
         if (project_id && typeof project_id === 'string' && project_id.length > 0) {
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -182,6 +269,39 @@ exports.updateLocationActivity = async (req, res) => {
                     [project_id]
                 );
                 final_project_id = projectResult.rows[0].id;
+            }
+        }
+
+        // Validate responsible employee if changed
+        if (responsible_employee_id) {
+            const respEmpResult = await pool.query(`
+                SELECT r.name as role_name 
+                FROM employees e 
+                JOIN roles r ON e.role_id = r.id 
+                WHERE e.id = $1
+            `, [responsible_employee_id]);
+
+            if (respEmpResult.rows.length === 0 || respEmpResult.rows[0].role_name !== 'Manager') {
+                return res.status(400).json({ status: 'fail', message: 'Responsible employee must have the Manager role' });
+            }
+        }
+
+        // Validate assigned employees if changed
+        if (employee_ids && Array.isArray(employee_ids)) {
+            const managerToValidate = responsible_employee_id || existingActivity.employee_id;
+            if (managerToValidate) {
+                const supervisorCheckResult = await pool.query(`
+                    SELECT id 
+                    FROM employees 
+                    WHERE id = ANY($1::UUID[]) AND (supervisor_id != $2 OR supervisor_id IS NULL)
+                `, [employee_ids, managerToValidate]);
+
+                if (supervisorCheckResult.rows.length > 0) {
+                    return res.status(400).json({
+                        status: 'fail',
+                        message: 'All assigned employees must be supervised by the responsible manager'
+                    });
+                }
             }
         }
 
@@ -362,6 +482,8 @@ exports.getTeamActivities = async (req, res) => {
         // Get activities where:
         // 1. The responsible employee is in the team, OR
         // 2. Any team member is in the activity_employees table
+        const { status, approval_status, search } = req.query;
+
         const activitiesQuery = `
             SELECT DISTINCT
                 a.id,
@@ -396,12 +518,20 @@ exports.getTeamActivities = async (req, res) => {
                 a.employee_id = ANY($1::uuid[])
                 OR ae.employee_id = ANY($1::uuid[])
             )
-            ${date ? "AND DATE(a.start_date) = $2" : ""}
+            AND ($2::DATE IS NULL OR DATE(a.start_date) = $2)
+            AND ($3::TEXT IS NULL OR a.implementation_status = $3)
+            AND ($4::TEXT IS NULL OR a.approval_status = $4)
+            AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
             ORDER BY a.start_date DESC, a.created_at DESC
         `;
 
-        const queryParams = date ? [teamMemberIds, date] : [teamMemberIds];
-        const result = await pool.query(activitiesQuery, queryParams);
+        const result = await pool.query(activitiesQuery, [
+            teamMemberIds,
+            date || null,
+            status && status !== 'All Status' ? status : null,
+            approval_status && approval_status !== 'All Approval Status' ? approval_status : null,
+            search || null
+        ]);
 
         // Calculate stats
         const activities = result.rows;
@@ -427,12 +557,34 @@ exports.getActivityReports = async (req, res) => {
     try {
         const { from, to, type, status, search } = req.query;
 
-        const recordsResult = await pool.query(activityQueries.getActivityReportsQuery, [
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = req.user.employee_id;
+
+        const recordsResult = await pool.query(`
+            SELECT DISTINCT
+                a.*,
+                p.name as project_name,
+                e.first_name || ' ' || e.last_name as responsible_employee,
+                l.name as location_name
+            FROM activities a
+            LEFT JOIN projects p ON a.project_id = p.id
+            LEFT JOIN employees e ON a.employee_id = e.id
+            LEFT JOIN locations l ON a.location_id = l.id
+            LEFT JOIN activity_employees ae ON a.id = ae.activity_id
+            WHERE ($1::DATE IS NULL OR a.start_date >= $1)
+              AND ($2::DATE IS NULL OR a.end_date <= $2)
+              AND ($3::TEXT IS NULL OR a.activity_type = $3)
+              AND ($4::TEXT IS NULL OR a.approval_status = $4)
+              AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
+              AND ($6::UUID IS NULL OR a.employee_id = $6 OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
+            ORDER BY a.created_at DESC;
+        `, [
             from || null,
             to || null,
             type && type !== 'All Type' ? type : null,
             status && status !== 'All Status' ? status : null,
-            search || null
+            search || null,
+            isManager ? managerEmployeeId : null
         ]);
 
         const trendResult = await pool.query(activityQueries.getCompletionTrendQuery);

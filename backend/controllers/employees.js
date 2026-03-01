@@ -8,13 +8,17 @@ exports.getAllEmployees = async (req, res) => {
 
         console.log('📋 Fetching employees with filters:', { departmentId, roleId, status, search });
 
+        const isManager = req.user.role_name === 'Manager';
+        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
+
         // departmentId and roleId should be mapped to the query parameters
-        // We pass them to the query in order: [departmentId, roleId, status, search]
+        // We pass them to the query in order: [departmentId, roleId, status, search, supervisorId]
         const result = await pool.query(employeeQueries.getEmployeesQuery, [
             departmentId || null,
             roleId || null,
             status || null,
-            search || null
+            search || null,
+            isManager ? req.user.employee_id : null
         ]);
 
         console.log(`✅ Found ${result.rows.length} employees`);
@@ -39,9 +43,21 @@ exports.getEmployeeById = async (req, res) => {
             return res.status(404).json({ status: 'fail', message: 'Employee not found' });
         }
 
+        const employee = result.rows[0];
+        const isManager = req.user.role_name === 'Manager';
+        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
+
+        // Scoping check for Managers
+        if (isManager && employee.supervisor_id !== req.user.employee_id) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Access Denied: You can only view employees assigned to you.'
+            });
+        }
+
         res.status(200).json({
             status: 'success',
-            data: result.rows[0]
+            data: employee
         });
     } catch (err) {
         console.error('Error fetching employee:', err);
@@ -64,7 +80,7 @@ exports.createEmployee = async (req, res) => {
             return res.status(400).json({ status: 'fail', message: 'First name and last name are required' });
         }
 
-        // 2. Auto-generate fields
+        // 2. Auto-generate & Force Scoping
         if (!full_name) {
             full_name = `${first_name} ${last_name}`;
         }
@@ -73,8 +89,22 @@ exports.createEmployee = async (req, res) => {
             employee_code = `EMP-${Date.now()}`;
         }
 
+        const isManager = req.user.role_name === 'Manager';
+        let finalSupervisorId = req.body.supervisor_id || null;
+
+        // Force supervisor_id for Managers
+        if (isManager) {
+            finalSupervisorId = req.user.employee_id;
+        }
+
         // 3. Database operation
-        const result = await pool.query(employeeQueries.createEmployeeQuery, [
+        const result = await pool.query(`
+            INSERT INTO employees (
+                user_id, employee_code, first_name, last_name, full_name, 
+                department_id, position_id, status, avatar_url, role_id, supervisor_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING *
+        `, [
             user_id || null,
             employee_code,
             first_name,
@@ -84,7 +114,8 @@ exports.createEmployee = async (req, res) => {
             position_id || null,
             status || 'active',
             finalAvatarUrl,
-            role_id || null
+            role_id || null,
+            finalSupervisorId
         ]);
 
         const newEmployee = result.rows[0];
@@ -136,8 +167,8 @@ exports.updateEmployee = async (req, res) => {
 
             const employee = currentEmployeeResult.rows[0];
             const userRole = req.user.role_name;
-            const isManager = userRole === 'Manager';
-            const isAdmin = userRole === 'Super Admin' || userRole === 'HR Admin';
+            const isManager = req.user.role_name === 'Manager';
+            const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
 
             if (isManager && employee.supervisor_id !== req.user.employee_id) {
                 await client.query('ROLLBACK');
@@ -205,9 +236,8 @@ exports.deleteEmployee = async (req, res) => {
         }
 
         const employee = currentEmployeeResult.rows[0];
-        const userRole = req.user.role_name;
-        const isManager = userRole === 'Manager';
-        const isAdmin = userRole === 'Super Admin' || userRole === 'HR Admin';
+        const isManager = req.user.role_name === 'Manager';
+        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
 
         if (isManager && employee.supervisor_id !== req.user.employee_id) {
             return res.status(403).json({
@@ -277,36 +307,7 @@ exports.getTeamMembers = async (req, res) => {
             return res.status(404).json({ message: 'Manager employee record not found' });
         }
 
-        const query = `
-            SELECT 
-                e.id,
-                e.employee_code,
-                e.first_name,
-                e.last_name,
-                e.full_name,
-                e.status,
-                e.avatar_url,
-                e.department_id,
-                e.position_id,
-                d.name as department_name,
-                p.title as position_title,
-                r.name as role_name
-            FROM employees e
-            LEFT JOIN departments d ON e.department_id = d.id
-            LEFT JOIN positions p ON e.position_id = p.id
-            LEFT JOIN roles r ON e.role_id = r.id
-            WHERE e.supervisor_id = $1
-            AND ($2::UUID IS NULL OR e.department_id = $2)
-            AND ($3::UUID IS NULL OR e.role_id = $3)
-            AND ($4::TEXT IS NULL OR e.status = $4)
-            AND ($5::TEXT IS NULL OR (
-                e.full_name ILIKE '%' || $5 || '%' OR 
-                e.employee_code ILIKE '%' || $5 || '%'
-            ))
-            ORDER BY e.created_at DESC;
-        `;
-
-        const result = await pool.query(query, [
+        const result = await pool.query(employeeQueries.getTeamMembersQuery, [
             managerEmployeeId,
             departmentId && departmentId !== 'All Departments' ? departmentId : null,
             roleId && roleId !== 'All Roles' ? roleId : null,
