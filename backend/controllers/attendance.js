@@ -383,7 +383,10 @@ exports.getDailyAttendance = async (req, res) => {
         const { date, location, status, search } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
 
-        // Get attendance records for the specified date
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = req.user.employee_id;
+
+        // Get attendance records with filters in SQL
         const attendanceQuery = `
             SELECT 
                 a.id,
@@ -400,13 +403,28 @@ exports.getDailyAttendance = async (req, res) => {
             FROM attendance a
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) = $1
+              AND ($2::UUID IS NULL OR e.supervisor_id = $2)
+              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address = $3)
+              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
+              AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
             ORDER BY a.check_in_time DESC
         `;
 
-        const result = await pool.query(attendanceQuery, [targetDate]);
+        const result = await pool.query(attendanceQuery, [
+            targetDate,
+            isManager ? managerEmployeeId : null,
+            location || null,
+            status || null,
+            search || null
+        ]);
 
         // Calculate stats
-        const totalEmployeesResult = await pool.query('SELECT COUNT(*) as total FROM employees WHERE status = $1', ['active']);
+        const totalEmployeesQuery = isManager
+            ? 'SELECT COUNT(*) as total FROM employees WHERE status = $1 AND supervisor_id = $2'
+            : 'SELECT COUNT(*) as total FROM employees WHERE status = $1';
+
+        const totalEmployeesParams = isManager ? ['active', managerEmployeeId] : ['active'];
+        const totalEmployeesResult = await pool.query(totalEmployeesQuery, totalEmployeesParams);
         const totalEmployees = parseInt(totalEmployeesResult.rows[0]?.total || 0);
 
         const presentCount = result.rows.filter(r => r.status === 'Present' || r.status === 'Late').length;
@@ -429,25 +447,9 @@ exports.getDailyAttendance = async (req, res) => {
             gpsVerified: row.gps_status === 'Verified' || row.gps_status === 'Suspicious'
         }));
 
-        // Apply filters
-        let filteredRecords = records;
-        if (location && location !== 'All Locations') {
-            filteredRecords = filteredRecords.filter(r => r.location === location);
-        }
-        if (status && status !== 'All Status') {
-            filteredRecords = filteredRecords.filter(r => r.status === status);
-        }
-        if (search) {
-            const searchLower = search.toLowerCase();
-            filteredRecords = filteredRecords.filter(r =>
-                r.employeeName.toLowerCase().includes(searchLower) ||
-                r.employeeCode.toLowerCase().includes(searchLower)
-            );
-        }
-
         res.status(200).json({
             status: 'success',
-            records: filteredRecords,
+            records: records,
             stats: {
                 presentToday: presentCount,
                 absentToday: absentCount,
@@ -471,6 +473,9 @@ exports.getAttendanceReports = async (req, res) => {
         const endDate = to || new Date().toISOString().split('T')[0];
         const startDate = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = req.user.employee_id;
+
         // Get all attendance records in the date range
         const attendanceQuery = `
             SELECT 
@@ -491,13 +496,23 @@ exports.getAttendanceReports = async (req, res) => {
             FROM attendance a
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) BETWEEN $1 AND $2
+              AND ($3::UUID IS NULL OR e.supervisor_id = $3)
             ORDER BY a.check_in_time DESC
         `;
 
-        const result = await pool.query(attendanceQuery, [startDate, endDate]);
+        const result = await pool.query(attendanceQuery, [
+            startDate,
+            endDate,
+            isManager ? managerEmployeeId : null
+        ]);
 
         // Get total active employees
-        const totalEmployeesResult = await pool.query('SELECT COUNT(*) as total FROM employees WHERE status = $1', ['active']);
+        const totalEmployeesQuery = isManager
+            ? 'SELECT COUNT(*) as total FROM employees WHERE status = $1 AND supervisor_id = $2'
+            : 'SELECT COUNT(*) as total FROM employees WHERE status = $1';
+
+        const totalEmployeesParams = isManager ? ['active', managerEmployeeId] : ['active'];
+        const totalEmployeesResult = await pool.query(totalEmployeesQuery, totalEmployeesParams);
         const totalEmployees = parseInt(totalEmployeesResult.rows[0]?.total || 0);
 
         // Calculate final status for each record
@@ -678,12 +693,21 @@ exports.getTeamAttendance = async (req, res) => {
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) = $1
               AND e.supervisor_id = $2
+              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address = $3)
+              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
+              AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
             ORDER BY a.check_in_time DESC
         `;
 
-        const result = await pool.query(attendanceQuery, [targetDate, managerEmployeeId]);
+        const result = await pool.query(attendanceQuery, [
+            targetDate,
+            managerEmployeeId,
+            location || null,
+            status || null,
+            search || null
+        ]);
 
-        // Calculate stats
+        // Calculate stats (based on filtered results for the specific table view)
         const presentCount = result.rows.filter(r => r.status === 'Present' || r.status === 'Late').length;
         const lateCount = result.rows.filter(r => r.status === 'Late').length;
         const absentCount = Math.max(0, totalTeamMembers - presentCount);
@@ -704,25 +728,9 @@ exports.getTeamAttendance = async (req, res) => {
             gpsVerified: row.gps_status === 'Verified' || row.gps_status === 'Suspicious'
         }));
 
-        // Apply filters
-        let filteredRecords = records;
-        if (location && location !== 'All Locations') {
-            filteredRecords = filteredRecords.filter(r => r.location === location);
-        }
-        if (status && status !== 'All Status') {
-            filteredRecords = filteredRecords.filter(r => r.status === status);
-        }
-        if (search) {
-            const searchLower = search.toLowerCase();
-            filteredRecords = filteredRecords.filter(r =>
-                r.employeeName.toLowerCase().includes(searchLower) ||
-                r.employeeCode.toLowerCase().includes(searchLower)
-            );
-        }
-
         res.status(200).json({
             status: 'success',
-            records: filteredRecords,
+            records: records,
             stats: {
                 presentToday: presentCount,
                 absentToday: absentCount,
@@ -741,6 +749,36 @@ exports.getTeamAttendance = async (req, res) => {
 exports.deleteAttendance = async (req, res) => {
     try {
         const { id } = req.params;
+        const isManager = req.user.role_name === 'Manager';
+        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
+
+        // Authorization check
+        const recordResult = await pool.query(`
+            SELECT a.*, e.supervisor_id 
+            FROM attendance a 
+            JOIN employees e ON a.employee_id = e.id 
+            WHERE a.id = $1
+        `, [id]);
+
+        if (recordResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Attendance record not found' });
+        }
+
+        const record = recordResult.rows[0];
+
+        if (isManager && record.supervisor_id !== req.user.employee_id) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Access Denied: You can only delete attendance records for your team.'
+            });
+        }
+
+        if (!isAdmin && !isManager) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Access Denied: You do not have permission to perform this action.'
+            });
+        }
 
         const result = await pool.query('DELETE FROM attendance WHERE id = $1 RETURNING *', [id]);
 
