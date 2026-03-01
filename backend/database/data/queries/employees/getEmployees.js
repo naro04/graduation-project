@@ -24,6 +24,7 @@ const getEmployeesQuery = `
     AND ($2::UUID IS NULL OR COALESCE(e.role_id, ur.role_id) = $2::UUID)
     AND ($3::TEXT IS NULL OR e.status = $3)
     AND ($4::TEXT IS NULL OR (e.full_name ILIKE '%' || $4 || '%' OR e.employee_code ILIKE '%' || $4 || '%'))
+    AND ($5::UUID IS NULL OR e.supervisor_id = $5::UUID)
   ORDER BY e.id, e.created_at DESC;
 `;
 
