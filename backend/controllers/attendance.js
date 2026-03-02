@@ -2,6 +2,7 @@ const pool = require('../database/connection');
 const attendanceQueries = require('../database/data/queries/attendance');
 const gpsQueries = require('../database/data/queries/gpsVerification');
 const { calculateDistance, getGPSStatus } = require('../utils/calculateDistance');
+const notificationController = require('./notifications');
 
 /**
  * Get employee record by user_id
@@ -269,6 +270,21 @@ exports.checkIn = async (req, res) => {
             );
             attendance.distance_from_base = gpsVerification.distance;
             attendance.gps_status = gpsVerification.status;
+
+            // NOTIFICATION: Notify Employee/Manager on GPS failure
+            if (gpsVerification.status === 'Suspicious' || gpsVerification.status === 'Rejected') {
+                try {
+                    await notificationController.createNotification(
+                        userId,
+                        'attendance',
+                        'Location Verification Issue',
+                        `Your check-in was marked as ${gpsVerification.status} due to distance from base (${Math.round(gpsVerification.distance)}m).`,
+                        '/attendance/my-attendance'
+                    );
+                } catch (notifyErr) {
+                    console.error('Failed to send attendance notification:', notifyErr);
+                }
+            }
         } else {
             // No GPS coordinates provided - mark as Not Verified
             await pool.query(gpsQueries.updateGPSStatusQuery, [null, 'Not Verified', attendance.id]);
