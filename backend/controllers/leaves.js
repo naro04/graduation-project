@@ -1,5 +1,6 @@
 const pool = require('../database/connection');
 const leaveQueries = require('../database/data/queries/leaves');
+const notificationController = require('./notifications');
 
 /**
  * Get all leave requests with stats
@@ -83,6 +84,28 @@ exports.createLeave = async (req, res) => {
             employee_id, leave_type, start_date, end_date, reason, document_url
         ]);
 
+        const newLeave = result.rows[0];
+
+        // NOTIFICATION: Notify Manager
+        try {
+            const employeeResult = await pool.query('SELECT full_name, supervisor_id FROM employees WHERE id = $1', [employee_id]);
+            if (employeeResult.rows.length > 0 && employeeResult.rows[0].supervisor_id) {
+                const emp = employeeResult.rows[0];
+                const managerResult = await pool.query('SELECT user_id FROM employees WHERE id = $1', [emp.supervisor_id]);
+                if (managerResult.rows.length > 0) {
+                    await notificationController.createNotification(
+                        managerResult.rows[0].user_id,
+                        'leave',
+                        'New Leave Request',
+                        `${emp.full_name} has submitted a new ${leave_type} request for the period ${start_date} to ${end_date}.`,
+                        `/leaves/${newLeave.id}`
+                    );
+                }
+            }
+        } catch (notifyErr) {
+            console.error('Failed to send leave creation notification:', notifyErr);
+        }
+
         res.status(201).json({
             success: true,
             data: result.rows[0]
@@ -147,6 +170,29 @@ exports.updateLeaveStatus = async (req, res) => {
 
         if (result.rowCount === 0) {
             return res.status(404).json({ success: false, message: 'Leave request not found' });
+        }
+
+        const updatedLeave = result.rows[0];
+
+        // NOTIFICATION: Notify Employee
+        try {
+            const employeeResult = await pool.query(
+                'SELECT e.user_id, e.full_name FROM employees e WHERE e.id = $1',
+                [updatedLeave.employee_id]
+            );
+            if (employeeResult.rows.length > 0) {
+                const emp = employeeResult.rows[0];
+                const statusText = status === 'approved' ? 'Approved' : 'Rejected';
+                await notificationController.createNotification(
+                    emp.user_id,
+                    'leave',
+                    `Leave Request ${statusText}`,
+                    `Your ${updatedLeave.leave_type} request has been ${status}.`,
+                    `/leaves/my-leaves`
+                );
+            }
+        } catch (notifyErr) {
+            console.error('Failed to send leave status notification:', notifyErr);
         }
 
         res.status(200).json({
