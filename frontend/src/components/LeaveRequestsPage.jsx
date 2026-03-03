@@ -36,7 +36,7 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("6-1");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLeaveType, setSelectedLeaveType] = useState("All Leave Type");
@@ -465,7 +465,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                         }}
                       >
                         <div className="px-[16px] py-[8px]">
-                          <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                          <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                         </div>
                         <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                           Edit Profile
@@ -699,10 +699,11 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
             {/* Filters and Search */}
             <div className="flex items-center gap-[16px] mb-[24px] flex-wrap">
               {/* Leave Type Dropdown */}
-              <div className="relative z-[100]" ref={leaveTypeDropdownRef}>
+              <div className="relative z-[50]" ref={leaveTypeDropdownRef}>
                 <button
                   type="button"
-                  onClick={() => setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen)}
+                  onClick={(e) => { e.stopPropagation(); setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen); }}
+                  onMouseDown={(e) => e.stopPropagation()}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[180px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
                 >
@@ -712,7 +713,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isLeaveTypeDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] min-w-[180px] max-h-[200px] overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[50] min-w-[180px] max-h-[200px] overflow-y-auto">
                     {leaveTypes.map((type) => (
                       <button
                         key={type}
@@ -742,10 +743,11 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Status Dropdown */}
-              <div className="relative z-[100]" ref={statusDropdownRef}>
+              <div className="relative z-[50]" ref={statusDropdownRef}>
                 <button
                   type="button"
-                  onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                  onClick={(e) => { e.stopPropagation(); setIsStatusDropdownOpen(!isStatusDropdownOpen); }}
+                  onMouseDown={(e) => e.stopPropagation()}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
                 >
@@ -755,7 +757,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[100] min-w-[140px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[50] min-w-[140px]">
                     {statusOptions.map((status) => (
                       <button
                         key={status}
@@ -861,17 +863,17 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
               <div className="w-full max-w-full overflow-x-hidden" style={{ overflowX: 'hidden' }}>
                 <table className="w-full table-fixed" style={{ tableLayout: 'fixed', width: '100%', maxWidth: '100%' }}>
                   <colgroup>
-                    <col style={{ width: '4%' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '3%' }} />
+                    <col style={{ width: '16%' }} />
                     <col style={{ width: '18%' }} />
+                    <col style={{ width: '24%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '16%' }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[8px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         <input
                           type="checkbox"
                           checked={selectedRequests.length === paginatedData.length && paginatedData.length > 0}
@@ -879,13 +881,13 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                           className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                         />
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[12px] py-[12px] text-left text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         Employee name
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, fontSize: '14px', minWidth: 0 }}>
                         Leave Type
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, fontSize: '14px' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, fontSize: '14px', minWidth: 0 }}>
                         Date Range
                       </th>
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
@@ -894,7 +896,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         Status
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[8px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         Action
                       </th>
                     </tr>
@@ -903,7 +905,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                     {paginatedData.length > 0 ? (
                       paginatedData.map((request) => (
                         <tr key={request.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                          <td className="px-[8px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <input
                               type="checkbox"
                               checked={selectedRequests.includes(request.id)}
@@ -911,25 +913,25 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                               className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                             />
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <div className="flex items-center justify-center gap-[12px]">
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <div className="flex items-center gap-[12px] min-w-0">
                               <img
                                 src={request.employeePhoto}
                                 alt={request.employeeName}
-                                className="w-[32px] h-[32px] rounded-full object-cover"
+                                className="w-[32px] h-[32px] rounded-full object-cover flex-shrink-0"
                               />
-                              <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              <span className="text-[13px] text-[#333333] truncate" style={{ fontWeight: 600 }} title={request.employeeName}>
                                 {request.employeeName}
                               </span>
                             </div>
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={request.leaveType}>
+                            <span className="text-[13px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                               {request.leaveType}
                             </span>
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center overflow-hidden" style={{ wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: 0 }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={request.dateRange}>
+                            <span className="text-[13px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                               {request.dateRange}
                             </span>
                           </td>
@@ -956,7 +958,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                               {request.status}
                             </span>
                           </td>
-                          <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
+                          <td className="px-[8px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <div className="flex items-center justify-center gap-[8px]">
                               <button
                                 onClick={() => {
@@ -1125,7 +1127,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   style={{ overflow: 'hidden', overflowY: 'hidden', overflowX: 'hidden', maxHeight: 'none' }}
                 >
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile

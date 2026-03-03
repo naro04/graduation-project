@@ -21,7 +21,7 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const { locationName, activityName } = useParams();
   const [activeMenu, setActiveMenu] = useState("5-3");
 

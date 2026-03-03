@@ -1,7 +1,18 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+
+// Fix default marker icons in Leaflet with Vite/bundler
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
 
 // Action icons
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
@@ -9,11 +20,25 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 
 const roleDisplayNames = { superAdmin: "Super Admin", hr: "HR Admin", manager: "Manager", fieldEmployee: "Field Employee", officer: "Officer" };
 
+function MapFitBounds({ current, assigned }) {
+  const map = useMap();
+  const hasCurrent = current && !Number.isNaN(current[0]) && !Number.isNaN(current[1]);
+  const hasAssigned = assigned && !Number.isNaN(assigned[0]) && !Number.isNaN(assigned[1]);
+  React.useEffect(() => {
+    if (hasCurrent && hasAssigned) {
+      try {
+        map.fitBounds(L.latLngBounds(current, assigned), { padding: [24, 24], maxZoom: 16 });
+      } catch (_) {}
+    }
+  }, [map, hasCurrent, hasAssigned, current, assigned]);
+  return null;
+}
+
 const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const employee = location.state?.employee;
   const selectedDate = location.state?.date || new Date(2025, 11, 7);
   const [showWarningModal, setShowWarningModal] = useState(false);
@@ -35,14 +60,29 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
     );
   }
 
-  // GPS Location data
+  const raw = employee.originalData ?? {};
+  const parseNum = (v) => (v !== null && v !== undefined && v !== "" ? Number(v) : NaN);
+  const currentLat = parseNum(raw.location_latitude);
+  const currentLng = parseNum(raw.location_longitude);
+  const assignedLat = parseNum(raw.assigned_latitude);
+  const assignedLng = parseNum(raw.assigned_longitude);
+  const hasCurrent = !Number.isNaN(currentLat) && !Number.isNaN(currentLng);
+  const hasAssigned = !Number.isNaN(assignedLat) && !Number.isNaN(assignedLng);
+
+  const mapCenter = useMemo(() => {
+    if (hasCurrent) return [currentLat, currentLng];
+    if (hasAssigned) return [assignedLat, assignedLng];
+    return [31.5, 34.4667];
+  }, [hasCurrent, hasAssigned, currentLat, currentLng, assignedLat, assignedLng]);
+
+  // GPS Location data (for display below map)
   const gpsLocationData = {
-    location: employee.location || "Hattin School",
-    currentCoordinates: { lat: "31.50123", lng: "34.46673" },
-    assignedCoordinates: { lat: "31.50090", lng: "34.46710" },
-    distanceDifference: employee.distanceDifference || "51 m",
-    timestamp: `${employee.checkIn} - ${formatDate(selectedDate)}`,
-    status: employee.status || "Verified"
+    location: employee.location || raw.location_name || raw.location_address || "—",
+    currentCoordinates: { lat: hasCurrent ? String(currentLat) : "—", lng: hasCurrent ? String(currentLng) : "—" },
+    assignedCoordinates: { lat: hasAssigned ? String(assignedLat) : "—", lng: hasAssigned ? String(assignedLng) : "—" },
+    distanceDifference: employee.distanceDifference ?? (raw.distance_from_base != null ? `${Math.round(Number(raw.distance_from_base))} m` : "—"),
+    timestamp: `${employee.checkIn || ""} - ${formatDate(selectedDate)}`,
+    status: employee.status ?? raw.gps_status ?? "—"
   };
 
   return (
@@ -148,25 +188,36 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
                   className="rounded-[10px] overflow-hidden"
                   style={{ 
                     width: '430px',
-                    height: '178px',
-                    backgroundColor: '#E5E7EB',
-                    border: '1px solid #E0E0E0'
+                    height: '220px',
+                    border: '1px solid #E0E0E0',
+                    minHeight: '220px'
                   }}
                 >
-                  {/* Map placeholder */}
-                  <div className="w-full h-full flex items-center justify-center bg-[#1E3A8A] relative">
-                    <div className="text-white text-center">
-                      <p className="text-[16px] mb-[8px]">Map View</p>
-                      <p className="text-[12px] opacity-75">GPS Location Map</p>
-                    </div>
-                    {/* Map markers placeholder */}
-                    <div className="absolute top-[40%] left-[45%] w-[24px] h-[24px] bg-red-500 rounded-full border-2 border-white flex items-center justify-center text-white text-[12px] font-bold">
-                      A
-                    </div>
-                    <div className="absolute top-[50%] left-[50%] w-[24px] h-[24px] bg-red-500 rounded-full border-2 border-white flex items-center justify-center text-white text-[12px] font-bold">
-                      C
-                    </div>
-                  </div>
+                  <MapContainer
+                    center={mapCenter}
+                    zoom={hasCurrent || hasAssigned ? 15 : 10}
+                    style={{ height: '100%', width: '100%' }}
+                    scrollWheelZoom={true}
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <MapFitBounds
+                      current={hasCurrent ? [currentLat, currentLng] : null}
+                      assigned={hasAssigned ? [assignedLat, assignedLng] : null}
+                    />
+                    {hasCurrent && (
+                      <Marker position={[currentLat, currentLng]}>
+                        <Popup>Current check-in location</Popup>
+                      </Marker>
+                    )}
+                    {hasAssigned && (
+                      <Marker position={[assignedLat, assignedLng]}>
+                        <Popup>Assigned location</Popup>
+                      </Marker>
+                    )}
+                  </MapContainer>
                 </div>
               </div>
 

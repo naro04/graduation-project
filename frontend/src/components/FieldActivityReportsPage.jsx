@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getLocationActivityReports } from "../services/locationActivities";
+import { exportToExcel, exportToPdf } from "../utils/exportReport";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -18,7 +19,7 @@ const ExportIcon = new URL("../images/icons/export.png", import.meta.url).href;
 const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("7-2");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("All Type");
@@ -35,6 +36,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [reportsData, setReportsData] = useState([]);
+  const [reportsStats, setReportsStats] = useState({ completionTrend: [], participantsByType: [] });
   const [reportsLoading, setReportsLoading] = useState(true);
   const [reportsError, setReportsError] = useState(null);
   const typeDropdownRef = useRef(null);
@@ -53,14 +55,28 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
     officer: "Officer",
   };
 
-  // Fetch reports from API
+  // Fetch reports from API (GET /api/v1/location-activities/reports)
   useEffect(() => {
     let cancelled = false;
     setReportsLoading(true);
     setReportsError(null);
-    getLocationActivityReports({ from: fromDate, to: toDate })
-      .then((list) => {
-        if (!cancelled) setReportsData(Array.isArray(list) ? list : []);
+    const params = {
+      from: fromDate,
+      to: toDate,
+      ...(selectedType && selectedType !== "All Type" && { type: selectedType }),
+      ...(selectedStatus && selectedStatus !== "All Status" && { status: selectedStatus }),
+      ...(searchQuery && searchQuery.trim() && { search: searchQuery.trim() }),
+    };
+    getLocationActivityReports(params)
+      .then((payload) => {
+        if (cancelled) return;
+        const records = payload?.records ?? (Array.isArray(payload) ? payload : []);
+        const stats = payload?.stats ?? { completionTrend: [], participantsByType: [] };
+        setReportsData(Array.isArray(records) ? records : []);
+        setReportsStats({
+          completionTrend: Array.isArray(stats.completionTrend) ? stats.completionTrend : [],
+          participantsByType: Array.isArray(stats.participantsByType) ? stats.participantsByType : [],
+        });
       })
       .catch((err) => {
         if (!cancelled) setReportsError(err?.response?.data?.message || err?.message || "Failed to load reports");
@@ -69,19 +85,22 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
         if (!cancelled) setReportsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, selectedType, selectedStatus, searchQuery]);
 
-  // Normalize report rows for table (API may use different field names)
+  // Normalize report rows for table (matches backend getActivityReports: id, name, type, location, responsible_employee, start_date, end_date, actual_date, attendees, status)
   const fieldActivityData = React.useMemo(() => {
+    const fmt = (d) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
     return (reportsData || []).map((r) => ({
       id: r.id ?? r.report_id,
-      activity: r.activity ?? r.activity_name ?? r.name ?? "",
+      activity: r.name ?? r.activity ?? r.activity_name ?? "",
       type: r.type ?? r.activity_type ?? "",
       location: r.location ?? r.location_name ?? "",
       responsibleEmployee: r.responsible_employee ?? r.responsibleEmployee ?? r.employee_name ?? "",
-      plannedDate: r.planned_date ?? r.plannedDate ?? "",
-      actualDate: r.actual_date ?? r.actualDate ?? "-",
-      attendees: r.attendees ?? r.attendee_count ?? ""
+      plannedDate: r.start_date ? (r.end_date ? `${fmt(r.start_date)} - ${fmt(r.end_date)}` : fmt(r.start_date)) : (r.planned_date ?? r.plannedDate ?? ""),
+      actualDate: r.actual_date ? fmt(r.actual_date) : (r.actual_date ?? "-"),
+      attendees: r.attendees ?? r.attendees_count ?? r.attendee_count ?? "",
+      status: r.status ?? r.implementation_status ?? "",
+      approval: r.approval ?? r.approval_status ?? "",
     }));
   }, [reportsData]);
 
@@ -128,37 +147,32 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
     }
   ];
 
-  // Monthly activity completion trend data (line chart) - matching the image
-  const monthlyTrendData = [
-    { month: "Jan", implemented: 35, planned: 0 },
-    { month: "Feb", implemented: 42, planned: 5 },
-    { month: "Mar", implemented: 48, planned: 12 },
-    { month: "Apr", implemented: 55, planned: 20 },
-    { month: "May", implemented: 52, planned: 20 },
-    { month: "Jun", implemented: 50, planned: 20 },
-    { month: "Jul", implemented: 47, planned: 20 },
-    { month: "Aug", implemented: 45, planned: 20 },
-    { month: "Sep", implemented: 42, planned: 15 },
-    { month: "Oct", implemented: 40, planned: 0 },
-    { month: "Nov", implemented: 50, planned: 10 },
-    { month: "Dec", implemented: 75, planned: 30 }
-  ];
+  // Chart 1: from API stats.completionTrend (month, planned, implemented); fill 12 months
+  const MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthlyTrendData = React.useMemo(() => {
+    const byMonth = {};
+    (reportsStats.completionTrend || []).forEach((r) => {
+      const m = (r.month || "").trim().slice(0, 3);
+      if (m) byMonth[m] = { month: m, implemented: Number(r.implemented) || 0, planned: Number(r.planned) || 0 };
+    });
+    return MONTH_ORDER.map((m) => byMonth[m] || { month: m, implemented: 0, planned: 0 });
+  }, [reportsStats.completionTrend]);
 
-  // Monthly participants by activity type data (grouped bar chart) - matching the first image
-  const monthlyParticipantsData = [
-    { month: "Jan", workshop: 40, groupSession: 20 },
-    { month: "Feb", workshop: 60, groupSession: 30 },
-    { month: "Mar", workshop: 15, groupSession: 40 },
-    { month: "Apr", workshop: 80, groupSession: 60 },
-    { month: "May", workshop: 25, groupSession: 80 },
-    { month: "Jun", workshop: 80, groupSession: 40 },
-    { month: "Jul", workshop: 80, groupSession: 65 },
-    { month: "Aug", workshop: 40, groupSession: 20 },
-    { month: "Sep", workshop: 80, groupSession: 40 },
-    { month: "Oct", workshop: 20, groupSession: 80 },
-    { month: "Nov", workshop: 60, groupSession: 40 },
-    { month: "Dec", workshop: 40, groupSession: 20 }
-  ];
+  // Chart 2: from records – group by month and activity type, sum attendees
+  const monthlyParticipantsData = React.useMemo(() => {
+    const byMonth = {};
+    MONTH_ORDER.forEach((m) => { byMonth[m] = { month: m, workshop: 0, groupSession: 0 }; });
+    (reportsData || []).forEach((r) => {
+      const d = r.start_date ? new Date(r.start_date) : null;
+      const monthKey = d ? MONTH_ORDER[d.getMonth()] : null;
+      if (!monthKey || !byMonth[monthKey]) return;
+      const type = (r.type || "").toLowerCase().replace(/\s+/g, "");
+      const attendees = Number(r.attendees) || 0;
+      if (type.includes("workshop")) byMonth[monthKey].workshop += attendees;
+      else if (type.includes("group") || type.includes("session")) byMonth[monthKey].groupSession += attendees;
+    });
+    return MONTH_ORDER.map((m) => byMonth[m] || { month: m, workshop: 0, groupSession: 0 });
+  }, [reportsData]);
 
   // Activity types
   const activityTypes = ["All Type", "Workshop", "Group Session"];
@@ -221,6 +235,16 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   }, [isExportAllDropdownOpen, isExportSelectedDropdownOpen]);
 
   // Filter data
+  const FIELD_ACTIVITY_EXPORT_COLUMNS = [
+    { key: "activity", label: "Activity" },
+    { key: "type", label: "Type" },
+    { key: "location", label: "Location" },
+    { key: "responsibleEmployee", label: "Responsible Employee" },
+    { key: "plannedDate", label: "Planned Date" },
+    { key: "actualDate", label: "Actual Date" },
+    { key: "attendees", label: "Attendees" },
+  ];
+
   const filteredData = fieldActivityData.filter(record => {
     const matchesSearch = record.activity.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = selectedType === "All Type" || record.type === selectedType;
@@ -317,7 +341,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       style={{ overflow: 'hidden' }}
                     >
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -418,7 +442,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       </div>
                       <button
                         onClick={() => {
-                          console.log('Export All as Excel');
+                          exportToExcel(filteredData, FIELD_ACTIVITY_EXPORT_COLUMNS, "field-activity-reports.xlsx");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA]"
@@ -428,7 +452,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <button
                         onClick={() => {
-                          console.log('Export All as PDF');
+                          exportToPdf(filteredData, FIELD_ACTIVITY_EXPORT_COLUMNS, "field-activity-reports.pdf");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA] rounded-b-[8px]"
@@ -902,7 +926,8 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                         </div>
                         <button
                           onClick={() => {
-                            console.log('Export selected as Excel', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToExcel(rows, FIELD_ACTIVITY_EXPORT_COLUMNS, "field-activity-reports-selected.xlsx");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -912,7 +937,8 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                         </button>
                         <button
                           onClick={() => {
-                            console.log('Export selected as PDF', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToPdf(rows, FIELD_ACTIVITY_EXPORT_COLUMNS, "field-activity-reports-selected.pdf");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -1156,7 +1182,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   style={{ overflow: 'hidden', overflowY: 'hidden', overflowX: 'hidden', maxHeight: 'none' }}
                 >
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile

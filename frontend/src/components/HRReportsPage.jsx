@@ -3,6 +3,36 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getHRReports } from "../services/employees";
+import { apiClient } from "../services/apiClient";
+import { exportToExcel, exportToPdf } from "../utils/exportReport";
+
+const API_ORIGIN = (apiClient.defaults.baseURL || "").replace(/\/api\/v1\/?$/, "");
+function toAbsoluteAvatarUrl(avatarUrl) {
+  if (!avatarUrl || typeof avatarUrl !== "string") return null;
+  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
+  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
+  return `${API_ORIGIN}${path}`;
+}
+function getInitials(name) {
+  if (!name || typeof name !== "string") return "?";
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().slice(0, 2);
+  return (parts[0] || "?")[0].toUpperCase();
+}
+function EmployeeAvatar({ src, name, className = "w-[32px] h-[32px] rounded-full object-cover flex-shrink-0" }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImg = src && !imgFailed;
+  const initials = getInitials(name);
+  return (
+    <div className={`${className} flex items-center justify-center bg-[#00564F] text-white text-[11px] font-semibold overflow-hidden rounded-full`}>
+      {showImg ? (
+        <img src={src} alt={name} className="w-full h-full object-cover" onError={() => setImgFailed(true)} />
+      ) : (
+        <span>{initials}</span>
+      )}
+    </div>
+  );
+}
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -27,7 +57,7 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 const HRReportsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("7-4");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("All Departments");
@@ -60,16 +90,19 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
       const data = await getHRReports({ from_date: fromDate, to_date: toDate });
       const list = Array.isArray(data) ? data : [];
       setHrReportsData(
-        list.map((item) => ({
-          id: item.id ?? item.employee_id,
-          employeeName: item.employee_name ?? item.employeeName ?? "—",
-          employeePhoto: item.avatar_url ?? item.employeePhoto ?? item.profile_image ?? AmeerJamalPhoto,
-          department: item.department ?? item.department_name ?? "—",
-          position: item.position ?? item.position_title ?? item.job_title ?? "—",
-          attendanceRate: Number(item.attendance_rate ?? item.attendanceRate ?? 0) || 0,
-          leaveDaysTaken: Number(item.leave_days_taken ?? item.leaveDaysTaken ?? item.leave_days ?? 0) || 0,
-          status: item.status ?? "Active",
-        }))
+        list.map((item) => {
+          const fullName = item.name ?? item.full_name ?? item.employee_name ?? item.employeeName ?? ([item.first_name, item.last_name].filter(Boolean).join(" ") || "—");
+          return {
+            id: item.id ?? item.employee_id,
+            employeeName: fullName,
+            employeePhoto: toAbsoluteAvatarUrl(item.avatar_url ?? item.employeePhoto ?? item.profile_image) || AmeerJamalPhoto,
+            department: item.department ?? item.department_name ?? "—",
+            position: item.position ?? item.position_title ?? item.job_title ?? "—",
+            attendanceRate: Number(item.attendance_rate ?? item.attendanceRate ?? 0) || 0,
+            leaveDaysTaken: Number(item.leave_days_taken ?? item.leaveDaysTaken ?? item.leave_days ?? 0) || 0,
+            status: item.status ?? "Active",
+          };
+        })
       );
     } catch (err) {
       const msg = err?.response?.data?.message ?? err?.message ?? "Failed to load HR reports";
@@ -242,6 +275,15 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
     };
   }, [isExportAllDropdownOpen, isExportSelectedDropdownOpen]);
 
+  const HR_EXPORT_COLUMNS = [
+    { key: "employeeName", label: "Employee" },
+    { key: "department", label: "Department" },
+    { key: "position", label: "Position" },
+    { key: "attendanceRate", label: "Attendance %" },
+    { key: "leaveDaysTaken", label: "Leave Days" },
+    { key: "status", label: "Status" },
+  ];
+
   // Filter data
   const filteredData = hrReportsData.filter(record => {
     const matchesSearch = record.employeeName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -330,7 +372,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                       style={{ overflow: 'hidden' }}
                     >
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -431,7 +473,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                       </div>
                       <button
                         onClick={() => {
-                          console.log('Export All as Excel');
+                          exportToExcel(filteredData, HR_EXPORT_COLUMNS, "hr-reports.xlsx");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA]"
@@ -441,7 +483,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <button
                         onClick={() => {
-                          console.log('Export All as PDF');
+                          exportToPdf(filteredData, HR_EXPORT_COLUMNS, "hr-reports.pdf");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA] rounded-b-[8px]"
@@ -868,7 +910,8 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                         </div>
                         <button
                           onClick={() => {
-                            console.log('Export selected as Excel', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToExcel(rows, HR_EXPORT_COLUMNS, "hr-reports-selected.xlsx");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -878,7 +921,8 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                         </button>
                         <button
                           onClick={() => {
-                            console.log('Export selected as PDF', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToPdf(rows, HR_EXPORT_COLUMNS, "hr-reports-selected.pdf");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -953,11 +997,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <div className="flex items-center justify-center gap-[12px]">
-                              <img
-                                src={record.employeePhoto}
-                                alt={record.employeeName}
-                                className="w-[32px] h-[32px] rounded-full object-cover"
-                              />
+                              <EmployeeAvatar src={record.employeePhoto} name={record.employeeName} className="w-[32px] h-[32px] rounded-full flex-shrink-0" />
                               <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
                                 {record.employeeName}
                               </span>
@@ -1131,7 +1171,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                   style={{ overflow: 'hidden', overflowY: 'hidden', overflowX: 'hidden', maxHeight: 'none' }}
                 >
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -1484,11 +1524,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                 >
                   {/* Header with Employee Info */}
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#F0F0F0]">
-                    <img
-                      src={record.employeePhoto}
-                      alt={record.employeeName}
-                      className="w-[48px] h-[48px] rounded-full object-cover flex-shrink-0"
-                    />
+                    <EmployeeAvatar src={record.employeePhoto} name={record.employeeName} className="w-[48px] h-[48px] rounded-full flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <h3 className="text-[15px] font-semibold text-[#000000] truncate">{record.employeeName}</h3>
                       <p className="text-[12px] text-[#6B7280]">{record.position}</p>

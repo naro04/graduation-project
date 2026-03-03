@@ -84,6 +84,21 @@ export const getJobInfo = async () => {
 };
 
 /**
+ * Update job information (Super Admin)
+ * PUT http://localhost:5000/api/v1/profile/job-info
+ * @param {object} data - { departmentId, positionId, employmentType }
+ * @returns {Promise<object>}
+ */
+export const updateJobInfo = async (data) => {
+  try {
+    const response = await apiClient.put("/profile/job-info", data);
+    return response.data?.data ?? response.data;
+  } catch (error) {
+    handleApiError(error, "Failed to update job info. Please try again.");
+  }
+};
+
+/**
  * Get emergency contact(s)
  * GET http://localhost:5000/api/v1/profile/emergency-contact
  * @returns {Promise<object|Array>} - Emergency contact(s)
@@ -137,5 +152,21 @@ export const getAccountSecurity = async () => {
     return response.data?.data ?? response.data;
   } catch (error) {
     handleApiError(error, "Failed to load account security. Please try again.");
+  }
+};
+
+/**
+ * Get assigned locations for current user
+ * GET http://localhost:5000/api/v1/profile/location
+ * @returns {Promise<Array>} - Locations (id, name, address, location_type, latitude, longitude)
+ */
+export const getProfileLocation = async () => {
+  try {
+    const response = await apiClient.get("/profile/location");
+    const data = response.data;
+    return Array.isArray(data) ? data : data?.data ?? [];
+  } catch (error) {
+    handleApiError(error, "Failed to load locations. Please try again.");
+    return [];
   }
 };

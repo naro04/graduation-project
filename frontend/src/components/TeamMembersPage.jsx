@@ -2,8 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
-import { getTeamMembers } from "../services/employees.js";
-import { getCurrentUser, logout } from "../services/auth.js";
+import { getTeamMembers, deleteEmployee, updateEmployee, createEmployee } from "../services/employees.js";
+import { getDepartments } from "../services/departments.js";
+import { getPositions } from "../services/positions.js";
+import { getRoles } from "../services/rbac.js";
+import { getCurrentUser, getEffectiveRole, logout, getMe } from "../services/auth.js";
+import AddEditEmployeeModal from "./AddEditEmployeeModal.jsx";
 import { BASE_URL } from "../services/api.js";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
@@ -31,8 +35,32 @@ const IconOnLeave = new URL("../images/icons/a9eb57da395b447737c7f11633900d8eba0
 // Table actions
 const EditIcon = new URL("../images/icons/edit6.png", import.meta.url).href;
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
-const DefaultProfileImage = new URL("../images/icons/ece298d0ec2c16f10310d45724b276a6035cb503.png", import.meta.url).href;
+const DefaultProfileImage = null; // we use AvatarBlock instead of img for placeholders
+const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).href;
 
+/** Always-visible avatar: shows image from URL or grey circle with person icon (no broken img) */
+function AvatarBlock({ src, alt, className = "w-[40px] h-[40px]" }) {
+  const [failed, setFailed] = React.useState(false);
+  const hasValidSrc = src && (src.startsWith("data:") || src.startsWith("http"));
+  const showImg = hasValidSrc && !failed;
+  return (
+    <div className={`${className} rounded-full bg-[#E5E7EB] flex items-center justify-center overflow-hidden flex-shrink-0`}>
+      {showImg && (
+        <img
+          src={src}
+          alt={alt || ""}
+          className="w-full h-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
+      {(!showImg || failed) && (
+        <svg className="w-1/2 h-1/2 text-[#9CA3AF]" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+        </svg>
+      )}
+    </div>
+  );
+}
 const ITEMS_PER_PAGE = 10;
 
 const normalizeRoleKey = (role) => {
@@ -51,6 +79,8 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
   const [activeMenu, setActiveMenu] = useState("2-1");
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const userDropdownRef = useRef(null);
 
   const [teamMembers, setTeamMembers] = useState([]);
@@ -59,8 +89,26 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [employeeModalMode, setEmployeeModalMode] = useState(null);
+  const [myEmployeeId, setMyEmployeeId] = useState(null);
+  const [departmentsList, setDepartmentsList] = useState([]);
+  const [positionsList, setPositionsList] = useState([]);
+  const [rolesList, setRolesList] = useState([]);
 
-  const effectiveUserRole = currentUser ? normalizeRoleKey(currentUser.role ?? currentUser.roles?.[0]) : userRole;
+  const departmentPositions = {
+    "HR": ["HR Manager"],
+    "Field Operations": ["Activity Facilitator", "Trainer", "Social Worker"],
+    "Office": ["Administrative Assistant", "Data Entry", "Office Coordinator"],
+    "Project Management": ["Project Manager", "Team Leader", "Field Supervisor"],
+    "Finance": ["Finance Manager", "Accountant", "Financial Analyst"],
+    "IT": ["System Administration"],
+  };
+
+  const effectiveUserRole = getEffectiveRole();
 
   const roleDisplayNames = {
     superAdmin: "Super Admin",
@@ -73,6 +121,24 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
   useEffect(() => {
     const user = getCurrentUser();
     if (user) setCurrentUser(user);
+  }, []);
+
+  useEffect(() => {
+    getMe()
+      .then((me) => {
+        const user = me?.data?.user ?? me?.user ?? me;
+        const id = user?.employee_id ?? user?.employee?.id ?? null;
+        setMyEmployeeId(id);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    Promise.all([getDepartments(), getPositions(), getRoles()]).then(([depts, positions, roles]) => {
+      setDepartmentsList(Array.isArray(depts) ? depts : []);
+      setPositionsList(Array.isArray(positions) ? positions : []);
+      setRolesList(Array.isArray(roles) ? roles : []);
+    }).catch((err) => console.error("Failed to load depts/positions/roles:", err));
   }, []);
 
   useEffect(() => {
@@ -90,8 +156,9 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
           position: emp.position_title || "—",
           role: emp.role_name || "—",
           status: emp.status === "active" ? "Active" : emp.status === "under_review" ? "Under Review" : "Inactive",
-          photo: toAbsoluteAvatarUrl(emp.avatar_url) || DefaultProfileImage,
+          photo: toAbsoluteAvatarUrl(emp.avatar_url) || null,
           onLeaveToday: !!emp.on_leave_today,
+          originalData: emp,
         }));
         setTeamMembers(transformed);
       } catch (err) {
@@ -103,11 +170,13 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
       }
     };
     fetchTeam();
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     if (!isUserDropdownOpen) return;
     const handleClickOutside = (e) => {
+      const isLogoutButton = e.target.closest("button")?.textContent?.trim() === "Log Out";
+      if (isLogoutButton) return;
       if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) setIsUserDropdownOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -118,9 +187,14 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
   const activeMembers = teamMembers.filter((m) => m.status === "Active").length;
   const onLeaveToday = teamMembers.filter((m) => m.onLeaveToday).length;
 
-  const totalPages = Math.max(1, Math.ceil(teamMembers.length / ITEMS_PER_PAGE));
+  const filteredMembers = teamMembers.filter((m) => {
+    const q = (searchQuery || "").toLowerCase().trim();
+    if (!q) return true;
+    return (m.name || "").toLowerCase().includes(q) || String(m.employeeId || "").toLowerCase().includes(q);
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / ITEMS_PER_PAGE));
   const start = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedMembers = teamMembers.slice(start, start + ITEMS_PER_PAGE);
+  const paginatedMembers = filteredMembers.slice(start, start + ITEMS_PER_PAGE);
 
   const handleSelectAll = (e) => {
     if (e.target.checked) setSelectedIds(paginatedMembers.map((m) => m.id));
@@ -167,7 +241,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
 
         <main className="flex-1 flex flex-col bg-[#F5F7FA]" style={{ minWidth: 0, maxWidth: "100%", overflowX: "hidden" }}>
           {/* Header */}
-          <header className="bg-white px-[40px] py-[24px]" style={{ minWidth: 0, maxWidth: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
+          <header className="bg-white px-[40px] py-[24px]" style={{ minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
             <div className="flex items-center justify-between mb-[16px]" style={{ minWidth: 0, maxWidth: "100%" }}>
               <div className="relative flex-shrink-0">
                 <svg className="absolute left-[16px] top-1/2 -translate-y-1/2 w-[20px] h-[20px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -176,6 +250,8 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                 <input
                   type="text"
                   placeholder="Search"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                   className="w-[280px] h-[44px] pl-[48px] pr-[16px] rounded-[10px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40] transition-colors"
                   style={{ fontWeight: 400 }}
                 />
@@ -206,19 +282,21 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || getCurrentUser()?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onClick={() => navigate("/profile")}>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors cursor-pointer" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]" />
                       <button
                         type="button"
-                        onClick={() => {
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setIsUserDropdownOpen(false);
                           setIsLogoutModalOpen(true);
                         }}
-                        className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
+                        className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors cursor-pointer"
                       >
                         Log Out
                       </button>
@@ -241,16 +319,29 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
           {/* Page Content */}
           <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ overflowX: "hidden", maxWidth: "100%", width: "100%", boxSizing: "border-box" }}>
             {/* Page Header */}
-            <div className="mb-[24px]">
-              <h1
-                className="text-[28px] font-semibold mb-[4px]"
-                style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, color: "#003934" }}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-[24px]">
+              <div>
+                <h1
+                  className="text-[28px] font-semibold mb-[4px]"
+                  style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, color: "#003934" }}
+                >
+                  Team Members
+                </h1>
+                <p className="text-[14px]" style={{ fontFamily: "Inter, sans-serif", fontWeight: 400, color: "#6B7280" }}>
+                  Overview of your assigned team members
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEmployeeModalMode("add")}
+                className="px-[20px] py-[12px] text-white rounded-[5px] hover:opacity-90 transition-opacity flex items-center justify-center gap-[8px] border border-[#B5B1B1]"
+                style={{ fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: "14px", backgroundColor: "#0C8DFE", height: "46px", width: "205px" }}
               >
-                Team Members
-              </h1>
-              <p className="text-[14px]" style={{ fontFamily: "Inter, sans-serif", fontWeight: 400, color: "#6B7280" }}>
-                Overview of your assigned team members
-              </p>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                Add Employee
+              </button>
             </div>
 
             {/* Summary Cards - Icon on right, number + label on left (match design) */}
@@ -275,7 +366,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                         </span>
                       </div>
                     </div>
-                    <div className="w-[48px] h-[48px] rounded-[8px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#02706680" }}>
+                    <div className="w-[48px] h-[48px] min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#02706680" }}>
                       <img src={card.icon} alt="" className="w-[28px] h-[28px] object-contain" />
                     </div>
                   </div>
@@ -364,15 +455,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                           </td>
                           <td className="py-[16px] px-[20px] text-center" style={{ borderRight: "1px solid #E0E0E0" }}>
                             <div className="flex items-center justify-center gap-[12px]">
-                              <img
-                                src={member.photo || DefaultProfileImage}
-                                alt={member.name}
-                                className="w-[40px] h-[40px] rounded-full object-cover flex-shrink-0"
-                                onError={(e) => {
-                                  e.target.onerror = null;
-                                  e.target.src = DefaultProfileImage;
-                                }}
-                              />
+                              <AvatarBlock src={member.photo} alt={member.name} className="w-[40px] h-[40px]" />
                               <p className="text-[14px] font-medium" style={{ fontFamily: "Inter, sans-serif", fontWeight: 500, color: "#000000" }}>
                                 {member.name}
                               </p>
@@ -392,11 +475,12 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                           </td>
                           <td className="py-[16px] px-[20px] text-center" style={{ borderRight: "1px solid #E0E0E0" }}>
                             <span
-                              className="inline-block px-[8px] py-[4px] rounded-full text-[12px] font-semibold text-white"
+                              className="inline-block px-[8px] py-[4px] rounded-[6px] text-[12px] font-semibold"
                               style={{
                                 fontFamily: "Inter, sans-serif",
                                 fontWeight: 600,
-                                backgroundColor: member.status === "Active" ? "#00564F" : member.status === "Under Review" ? "#92400E" : "#4A4A4A",
+                                backgroundColor: member.status === "Active" ? "#7BD9D9" : member.status === "Under Review" ? "#FCD34D" : "#DCDCDC",
+                                color: member.status === "Active" ? "#056B6E" : member.status === "Under Review" ? "#92400E" : "#696969",
                               }}
                             >
                               {member.status}
@@ -404,11 +488,11 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                           </td>
                           <td className="py-[16px] px-[20px] text-center">
                             <div className="flex items-center justify-center gap-0">
-                              <button className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity" title="Edit">
+                              <button type="button" onClick={() => { setSelectedMember(member); setEmployeeModalMode("edit"); }} className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity" title="Edit">
                                 <img src={EditIcon} alt="Edit" className="w-full h-full object-contain" />
                               </button>
                               <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]" />
-                              <button className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity" title="Delete">
+                              <button type="button" onClick={() => { setMemberToDelete(member); setShowDeleteModal(true); }} className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity" title="Delete">
                                 <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
                               </button>
                             </div>
@@ -461,24 +545,188 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
         </main>
       </div>
 
-      {/* Mobile */}
-      <div className="lg:hidden">
-        <p className="p-[24px] text-center text-[#6B7280]" style={{ fontFamily: "Inter, sans-serif" }}>
-          Mobile view coming soon
-        </p>
+      {/* Mobile Layout */}
+      <div className="lg:hidden flex flex-col min-h-screen bg-[#F5F7FA]">
+        <header className="h-[70px] bg-white flex items-center justify-between px-[16px] sticky top-0 z-30 border-b border-[#E0E0E0]">
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="w-[40px] h-[40px] rounded-[8px] bg-[#004D40] flex items-center justify-center hover:bg-[#003830] transition-colors"
+          >
+            <svg className="w-[24px] h-[24px] text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <div className="flex items-center gap-[12px]">
+            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
+              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
+            </button>
+            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
+              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
+              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full" />
+            </button>
+            <div className="relative" ref={userDropdownRef}>
+              <div className="flex items-center gap-[8px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
+                <img src={UserAvatar} alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                <img src={DropdownArrow} alt="" className={`w-[12px] h-[12px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
+              </div>
+              {isUserDropdownOpen && (
+                <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
+                  <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || getCurrentUser()?.email || ""}</p></div>
+                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                  <div className="h-[1px] bg-[#DC2626] my-[4px]" />
+                  <button type="button" onClick={() => { setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+        {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsMobileMenuOpen(false)} />}
+        <div className={`fixed top-0 left-0 h-full z-50 transform transition-transform duration-300 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
+          <Sidebar userRole={effectiveUserRole} activeMenu={activeMenu} setActiveMenu={setActiveMenu} isMobile={true} onClose={() => setIsMobileMenuOpen(false)} onLogoutClick={() => setIsLogoutModalOpen(true)} />
+        </div>
+        <div className="flex-1 p-[16px] pb-10">
+          <div className="mb-[16px]">
+            <h1 className="text-[20px] font-semibold text-[#000000] mb-[4px]" style={{ fontFamily: "Inter, sans-serif", fontWeight: 600 }}>Team Members</h1>
+            <p className="text-[12px] text-[#6B7280] mb-3" style={{ fontFamily: "Inter, sans-serif" }}>Overview of your assigned team members</p>
+            <button
+              type="button"
+              onClick={() => setEmployeeModalMode("add")}
+              className="w-full mb-[16px] px-[20px] py-[12px] text-white rounded-[10px] hover:opacity-90 transition-opacity flex items-center justify-center gap-[8px]"
+              style={{ fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: "14px", backgroundColor: "#0C8DFE" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              Add Employee
+            </button>
+          </div>
+          {/* Summary Cards - Mobile */}
+          <div className="flex flex-col gap-[12px] mb-[16px]">
+            {summaryCards.map((card) => (
+              <div key={card.id} className="bg-white rounded-[10px] border border-[#E0E0E0] p-[16px] flex items-center justify-between">
+                <div className="flex items-center gap-[12px]">
+                  <div className="w-[48px] h-[48px] min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#02706680" }}>
+                    <img src={card.icon} alt="" className="w-[24px] h-[24px] object-contain" />
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-semibold text-[#00675E]" style={{ fontFamily: "Inter, sans-serif", fontWeight: 600 }}>{card.value}</p>
+                    <p className="text-[12px] text-[#3F817C]" style={{ fontFamily: "Inter, sans-serif", fontWeight: 500 }}>{card.title}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Search - Mobile */}
+          <div className="relative mb-[16px]">
+            <svg className="absolute left-[16px] top-1/2 -translate-y-1/2 w-[20px] h-[20px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by name or ID"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              className="w-full h-[44px] pl-[48px] pr-[16px] rounded-[10px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40]"
+              style={{ fontWeight: 400 }}
+            />
+          </div>
+          {error && <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+          {isLoading && <div className="py-8 text-center text-[14px] text-[#6B7280]">Loading team members...</div>}
+          {!isLoading && (
+            <>
+              <div className="flex flex-col gap-[12px]">
+                {paginatedMembers.map((member) => (
+                  <div key={member.id} className="bg-white rounded-[10px] border border-[#E0E0E0] shadow-sm p-[16px]">
+                    <div className="flex items-start justify-between mb-[12px]">
+                      <div className="flex items-center gap-[12px]">
+                        <AvatarBlock src={member.photo} alt={member.name} className="w-[40px] h-[40px]" />
+                        <div>
+                          <p className="text-[14px] font-medium text-[#111827] mb-[2px]" style={{ fontFamily: "Inter, sans-serif", fontWeight: 500 }}>{member.name}</p>
+                          <p className="text-[12px] text-[#6B7280]" style={{ fontFamily: "Inter, sans-serif" }}>#{member.employeeId}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-[8px]">
+                        <button type="button" onClick={() => { setSelectedMember(member); setEmployeeModalMode("edit"); }} className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors" title="Edit">
+                          <img src={EditIcon} alt="Edit" className="w-[16px] h-[16px] object-contain" />
+                        </button>
+                        <button type="button" onClick={() => { setMemberToDelete(member); setShowDeleteModal(true); }} className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors" title="Delete">
+                          <img src={DeleteIcon} alt="Delete" className="w-[16px] h-[16px] object-contain" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-[4px]">
+                      <p className="text-[12px] text-[#6B7280]"><span className="font-medium text-[#374151]">Department:</span> {member.department}</p>
+                      <p className="text-[12px] text-[#6B7280]"><span className="font-medium text-[#374151]">Position:</span> {member.position}</p>
+                      <p className="text-[12px] text-[#6B7280]"><span className="font-medium text-[#374151]">Role:</span> {member.role}</p>
+                      <span className={`inline-block mt-2 px-[8px] py-[4px] rounded-[6px] text-[12px] font-semibold ${member.status === "Active" ? "bg-[#7BD9D9] text-[#056B6E]" : member.status === "Under Review" ? "bg-[#FCD34D] text-[#92400E]" : "bg-[#DCDCDC] text-[#696969]"}`}>{member.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {paginatedMembers.length === 0 && <div className="py-[60px] text-center"><p className="text-[16px] text-[#6B7280]">No team members found</p></div>}
+              {totalPages > 1 && (
+                <div className="mt-[24px] flex items-center justify-center gap-[8px]">
+                  <button type="button" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center disabled:opacity-50">
+                    <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    <button key={p} onClick={() => setCurrentPage(p)} className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === p ? "font-semibold border-[#027066] text-[#027066]" : ""}`}>{p}</button>
+                  ))}
+                  <button type="button" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center disabled:opacity-50">
+                    <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
+
+      <AddEditEmployeeModal
+        isOpen={employeeModalMode === "add" || employeeModalMode === "edit"}
+        onClose={() => { setEmployeeModalMode(null); setSelectedMember(null); }}
+        mode={employeeModalMode === "edit" ? "edit" : "add"}
+        initialData={employeeModalMode === "edit" ? selectedMember : null}
+        departmentsList={departmentsList}
+        positionsList={positionsList}
+        rolesList={rolesList}
+        departmentPositions={departmentPositions}
+        supervisorId={employeeModalMode === "add" ? myEmployeeId : null}
+        onSave={async (payload) => {
+          if (employeeModalMode === "edit" && selectedMember?.id) {
+            await updateEmployee(selectedMember.id, payload);
+          } else {
+            await createEmployee(payload);
+          }
+          setRefreshKey((k) => k + 1);
+        }}
+      />
+
+      {/* Delete member warning modal */}
+      {showDeleteModal && memberToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setShowDeleteModal(false); setMemberToDelete(null); }}>
+          <div className="bg-white shadow-lg relative rounded-[8px] w-full max-w-[469px] mx-4 overflow-hidden" style={{ background: "linear-gradient(180deg, #FFDBDB 0%, #FFFFFF 100%)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-center pt-10 pb-5">
+              <img src={WarningIcon} alt="Warning" className="w-[73px] h-[61px] object-contain" />
+            </div>
+            <p className="text-center text-[#B70B0B] font-semibold text-[16px] mb-2" style={{ fontFamily: "Inter, sans-serif" }}>Warning</p>
+            <p className="text-center text-[#000000] text-[16px] px-5 mb-1" style={{ fontFamily: "Inter, sans-serif" }}>Are you sure you want to delete {memberToDelete.name} from the team?</p>
+            <p className="text-center text-[#4E4E4E] text-[10px] px-5 pb-10" style={{ fontFamily: "Inter, sans-serif" }}>This action can&apos;t be undone</p>
+            <div className="flex items-center justify-center gap-5 px-5 pb-6">
+              <button type="button" onClick={async () => { try { await deleteEmployee(memberToDelete.id); setRefreshKey((k) => k + 1); } catch (_) {} setShowDeleteModal(false); setMemberToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#A20000] hover:bg-[#8a0000]" style={{ fontFamily: "Inter, sans-serif" }}>Delete</button>
+              <button type="button" onClick={() => { setShowDeleteModal(false); setMemberToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#7A7A7A] hover:bg-[#666]" style={{ fontFamily: "Inter, sans-serif" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={async () => {
+        onConfirm={() => {
           setIsLogoutModalOpen(false);
-          try {
-            await logout();
-            navigate("/login", { replace: true });
-          } catch (e) {
-            navigate("/login", { replace: true });
-          }
+          logout();
+          window.location.href = "/login";
         }}
       />
     </div>

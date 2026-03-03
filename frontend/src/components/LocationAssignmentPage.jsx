@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import AddAssignLocationModal from "./AddAssignLocationModal";
 import ViewActivitiesModal from "./ViewActivitiesModal";
 import EditActivityModal from "./EditActivityModal";
 import ViewEmployeesModal from "./ViewEmployeesModal";
 import ViewLocationEmployeesModal from "./ViewLocationEmployeesModal";
 import { getLocationAssignments, createLocationAssignment, deleteLocationAssignment } from "../services/locationAssignments";
-import { getLocationActivities, getLocationActivityById } from "../services/locationActivities";
+import { getLocationActivities, getLocationActivityById, createLocationActivity } from "../services/locationActivities";
 import { getLocations } from "../services/locations";
 import { getLocationEmployees } from "../services/locations";
 import { getEmployees } from "../services/employees";
@@ -29,7 +29,7 @@ const AssignIcon = new URL("../images/icons/employee2.png", import.meta.url).hre
 const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("5-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -274,21 +274,39 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
       .catch(() => {});
   };
 
-  const handleAddAssignmentSave = (locationId, employeeIds) => {
+  const handleAddAssignmentSave = (locationId, employeeIds, extra = {}) => {
     if (!locationId || !Array.isArray(employeeIds) || employeeIds.length === 0) {
       return Promise.reject(new Error("Please select a location and at least one employee."));
     }
-    return Promise.all(
+    const assignmentsPromise = Promise.all(
       employeeIds.map((empId) => createLocationAssignment({ employee_id: String(empId), location_id: String(locationId) }))
-    )
+    );
+    const activityName = extra.activityName?.trim();
+    const dates = Array.isArray(extra.activityDates) ? extra.activityDates.filter(Boolean) : [];
+    const hasActivity = activityName && dates.length > 0;
+    const activityPromise = hasActivity
+      ? createLocationActivity({
+          name: activityName,
+          location_id: String(locationId),
+          employee_ids: employeeIds.map(String),
+          activity_days: extra.numberOfDays || dates.length,
+          dates,
+          responsible_employee_id: extra.responsibleEmployeeId || null,
+          description: [extra.projectName?.trim(), ...(extra.activityImageUrls || [])].filter(Boolean).join("\n"),
+        })
+      : Promise.resolve();
+
+    return Promise.all([assignmentsPromise, activityPromise])
       .then(() => refreshAssignments())
       .then(() => {
+        setCurrentPage(1);
         setShowAddAssignmentPage(false);
         setError(null);
       })
       .catch((err) => {
         const msg = err?.response?.data?.message || err?.message || "Failed to assign";
         setError(msg);
+        refreshAssignments().then(() => setCurrentPage(1));
         throw err;
       });
   };
@@ -323,6 +341,8 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
+      const isLogoutButton = event.target.closest("button")?.textContent?.trim() === "Log Out";
+      if (isLogoutButton) return;
       if (typeDropdownRef.current && !typeDropdownRef.current.contains(event.target)) {
         setIsTypeDropdownOpen(false);
       }
@@ -410,7 +430,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50" style={{ overflow: 'hidden' }}>
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -421,6 +441,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
+                          logout();
                           navigate("/login");
                         }}
                         className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
@@ -873,7 +894,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50" style={{ overflow: 'hidden' }}>
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -884,6 +905,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      logout();
                       navigate("/login");
                     }}
                     className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"

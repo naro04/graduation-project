@@ -3,7 +3,7 @@
  * @see swagger.js: GET /support/tickets, POST /support/tickets (subject, message, priority)
  */
 import { apiClient } from "./apiClient";
-import { uploadImage } from "./uploads";
+import { uploadSupportFile } from "./uploads";
 
 const TICKETS = "/support/tickets";
 
@@ -32,7 +32,7 @@ export const createSupportTicket = async (ticketData) => {
   let attachmentUrl = null;
   if (ticketData.file) {
     try {
-      attachmentUrl = await uploadImage(ticketData.file);
+      attachmentUrl = await uploadSupportFile(ticketData.file);
     } catch (err) {
       console.error("Failed to upload attachment:", err);
       const msg =

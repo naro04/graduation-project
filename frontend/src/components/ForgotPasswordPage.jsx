@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { forgotPassword } from "../services/auth";
 
 // Logo images
 const LogoDesktop = new URL("../images/LogoDesktop.png", import.meta.url).href;
@@ -13,13 +14,23 @@ const Ellipse1 = new URL("../images/Shapes/Ellipse 1.png", import.meta.url).href
 
 const ForgotPasswordPage = () => {
   const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Handle form submission here
-    console.log("Reset link sent to:", email);
-    // You can add success message or redirect logic here
+    setError("");
+    setLoading(true);
+    try {
+      await forgotPassword(email);
+      setSuccess(true);
+    } catch (err) {
+      setError(err.message || "حدث خطأ. حاول مرة أخرى.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
@@ -71,16 +82,23 @@ const ForgotPasswordPage = () => {
             />
           </div>
 
+          {error && <p className="text-[14px] text-red-600">{error}</p>}
+          {success && (
+            <p className="text-[14px] font-medium" style={{ color: '#00564F' }}>
+              إذا كان الحساب موجوداً، تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك.
+            </p>
+          )}
           {/* Send Reset Link Button */}
           <button 
             type="submit"
-            className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px]"
+            disabled={loading}
+            className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px] disabled:opacity-70"
             style={{ 
               backgroundColor: '#00564F',
               border: '1px solid rgba(28, 137, 154, 0.7)'
             }}
           >
-            SEND RESET LINK
+            {loading ? "جاري الإرسال..." : "SEND RESET LINK"}
           </button>
 
           {/* Back to Login Link */}
@@ -286,16 +304,23 @@ const ForgotPasswordPage = () => {
                 />
               </div>
 
+              {error && <p className="text-[14px] text-red-600">{error}</p>}
+              {success && (
+                <p className="text-[14px] font-medium" style={{ color: '#00564F' }}>
+                  إذا كان الحساب موجوداً، تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك.
+                </p>
+              )}
               {/* Send Reset Link Button */}
               <button 
                 type="submit"
-                className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px]"
+                disabled={loading}
+                className="w-full h-[50px] rounded-[8px] text-white text-[16px] font-semibold mt-[19px] disabled:opacity-70"
                 style={{ 
                   backgroundColor: '#00564F',
                   border: '1px solid rgba(28, 137, 154, 0.7)'
                 }}
               >
-                SEND RESET LINK
+                {loading ? "جاري الإرسال..." : "SEND RESET LINK"}
               </button>
 
               {/* Back to Login Link */}

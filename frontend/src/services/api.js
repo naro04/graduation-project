@@ -1,11 +1,9 @@
 // API Service Layer
 // Base configuration for all API requests
 
-const RAILWAY_API = "https://graduation-project-production-0a21.up.railway.app/api/v1";
-// افتراضياً Railway. للباك محلي: VITE_API_BASE_URL=http://localhost:5000/api/v1 في .env
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || RAILWAY_API;
+// الباكند المرفوع على Railway
+const BASE_URL = "https://graduation-project-production-b02b.up.railway.app/api/v1";
 
-// Log the API base URL on initialization (so production shows Railway URL in console)
 console.log('🌐 API Base URL:', BASE_URL);
 
 /**
@@ -131,8 +129,7 @@ const apiRequest = async (endpoint, options = {}) => {
       data: error.data
     });
     
-    // Handle network errors
-    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+    if (error.name === 'TypeError' && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
       throw new Error('Network error: Unable to connect to server. Please check your connection.');
     }
     throw error;
