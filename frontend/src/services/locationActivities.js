@@ -24,13 +24,25 @@ export async function createLocationActivity(payload) {
 
 /**
  * GET http://localhost:5000/api/v1/location-activities/reports
- * تقارير أنشطة المواقع
+ * تقارير أنشطة المواقع (from, to, type, status, search)
+ * Returns { records, stats: { completionTrend, participantsByType } } for table + charts
  */
 export async function getLocationActivityReports(params = {}) {
   const res = await apiClient.get(`${BASE}/reports`, { params });
-  const raw = res.data?.data ?? res.data;
-  if (Array.isArray(raw)) return raw;
-  return raw?.items ?? raw?.records ?? raw?.reports ?? [];
+  const data = res.data;
+  if (!data) return { records: [], stats: { completionTrend: [], participantsByType: [] } };
+  if (Array.isArray(data)) return { records: data, stats: { completionTrend: [], participantsByType: [] } };
+  const raw = data.data ?? data;
+  const records = Array.isArray(raw)
+    ? raw
+    : (raw?.records ?? raw?.items ?? raw?.reports ?? []);
+  const stats = raw?.stats ?? data?.stats ?? {};
+  const completionTrend = Array.isArray(stats.completionTrend) ? stats.completionTrend : [];
+  const participantsByType = Array.isArray(stats.participantsByType) ? stats.participantsByType : [];
+  return {
+    records: Array.isArray(records) ? records : [],
+    stats: { completionTrend, participantsByType },
+  };
 }
 
 /**
@@ -75,5 +87,16 @@ export async function approveLocationActivity(id) {
  */
 export async function rejectLocationActivity(id) {
   const res = await apiClient.patch(`${BASE}/${id}/reject`);
+  return res.data?.data ?? res.data;
+}
+
+/**
+ * POST http://localhost:5000/api/v1/location-activities/:id/assign
+ * تعيين الفريق لنشاط (للمدير) – Team Activities assign
+ * @param {string|number} activityId
+ * @param {{ employee_ids: number[] }} payload
+ */
+export async function assignTeamToActivity(activityId, payload) {
+  const res = await apiClient.post(`${BASE}/${activityId}/assign`, payload);
   return res.data?.data ?? res.data;
 }

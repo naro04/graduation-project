@@ -17,7 +17,7 @@ const UploadIcon = new URL("../images/icons/upload.png", import.meta.url).href;
 
 const RequestLeavePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const location = useLocation();
   const [activeMenu, setActiveMenu] = useState("6-1");
   const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);

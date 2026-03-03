@@ -26,7 +26,8 @@ export async function createEmployee(payload) {
 
 /**
  * GET http://localhost:5000/api/v1/employees/team/members
- * أعضاء الفريق التابعين لي (للمدير)
+ * أعضاء الفريق التابعين لي (للمدير) – Team Members
+ * (استخدام /team/members يتجنب تطابق الطلب مع مسار /:id في الباكند)
  */
 export async function getTeamMembers(params = {}) {
   const res = await apiClient.get(`${BASE}/team/members`, { params });

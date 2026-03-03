@@ -5,6 +5,7 @@
 import { apiClient } from "./apiClient";
 
 const UPLOAD_IMAGES = "/uploads/upload-images";
+const UPLOAD_SUPPORT_FILE = "/uploads/upload-support-file";
 const DELETE_IMAGE = "/uploads/delete-image";
 
 /**
@@ -32,6 +33,20 @@ export const uploadImages = async (files) => {
 export const uploadImage = async (file) => {
   const result = await uploadImages([file]);
   return Array.isArray(result) ? result[0] : result;
+};
+
+/**
+ * Upload support ticket attachment (PDF, DOC, DOCX, or image; max 10MB)
+ * POST /uploads/upload-support-file
+ * @param {File} file - One file
+ * @returns {Promise<string|undefined>} - Uploaded file URL
+ */
+export const uploadSupportFile = async (file) => {
+  if (!file) return null;
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await apiClient.post(UPLOAD_SUPPORT_FILE, formData);
+  return response.data?.url ?? response.data?.fileUrl ?? response.data?.data ?? null;
 };
 
 /**

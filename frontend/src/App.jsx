@@ -33,6 +33,8 @@ import ViewEmployeesPage from './components/ViewEmployeesPage.jsx'
 import ViewLocationEmployeesPage from './components/ViewLocationEmployeesPage.jsx'
 import TeamMembersPage from './components/TeamMembersPage.jsx'
 import TeamAttendancePage from './components/TeamAttendancePage.jsx'
+import TeamActivitiesPage from './components/TeamActivitiesPage.jsx'
+import TeamLeaveRequestsPage from './components/TeamLeaveRequestsPage.jsx'
 import LeaveManagementPage from './components/LeaveRequestsPage.jsx'
 import RequestLeavePage from './components/RequestLeavePage.jsx'
 import MyLeavePage from './components/MyLeavePage.jsx'
@@ -101,8 +103,8 @@ function App() {
         {/* My Team (Manager) routes */}
         <Route path="/my-team/members" element={<TeamMembersPage userRole="manager" />} />
         <Route path="/my-team/attendance" element={<TeamAttendancePage userRole="manager" />} />
-        <Route path="/my-team/activities" element={<ActivitiesPage userRole="superAdmin" />} />
-        <Route path="/my-team/leave" element={<LeaveManagementPage userRole="superAdmin" />} />
+        <Route path="/my-team/activities" element={<TeamActivitiesPage userRole="manager" />} />
+        <Route path="/my-team/leave" element={<TeamLeaveRequestsPage userRole="manager" />} />
 
         {/* Leave Management routes */}
         <Route path="/leave/requests" element={<LeaveManagementPage userRole="superAdmin" />} />

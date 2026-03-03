@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import ProfilePage from "./ProfilePage";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // Header icons
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -10,6 +11,8 @@ const NotificationIcon = new URL("../images/ebf8a1610effc5cf80410fb898c4452b8d53
 const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href;
 
 const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
+  const currentUser = getCurrentUser();
+  const effectiveRole = getEffectiveRole();
   const navigate = useNavigate();
   const [activeMenu, setActiveMenu] = useState(null); // No active menu item on profile page
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -39,14 +42,14 @@ const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
       <div className="hidden lg:flex min-h-screen overflow-x-hidden">
         {/* Sidebar Component */}
         <Sidebar 
-          userRole={userRole}
+          userRole={effectiveRole}
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
         />
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col bg-[#F5F7FA] overflow-x-hidden">
-          <ProfilePage userRole={userRole} />
+          <ProfilePage userRole={effectiveRole} />
         </main>
       </div>
 
@@ -99,7 +102,7 @@ const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
               {isDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -132,7 +135,7 @@ const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
           }`}
         >
           <Sidebar 
-            userRole={userRole}
+            userRole={effectiveRole}
             activeMenu={activeMenu}
             setActiveMenu={setActiveMenu}
             isMobile={true}
@@ -141,7 +144,7 @@ const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
         </div>
 
         {/* Mobile Content */}
-        <ProfilePage userRole={userRole} />
+        <ProfilePage userRole={effectiveRole} />
       </div>
     </div>
   );

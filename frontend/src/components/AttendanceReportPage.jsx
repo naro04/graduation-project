@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LogoutModal from "./LogoutModal";
 import { getAttendanceReports, getAttendanceLocations } from "../services/attendance";
+import { getTeamMembers } from "../services/employees";
+import { getLocationActivities } from "../services/locationActivities";
+import { getTeamReports } from "../services/reports";
+import { exportToExcel, exportToPdf } from "../utils/exportReport";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -16,6 +20,13 @@ const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7
 // Action icons
 const ExportIcon = new URL("../images/icons/export.png", import.meta.url).href;
 
+// Team report summary card icons (same style as TeamMembersPage)
+const IconTeamMembers = new URL("../images/icons/3d87f948737dea3440aecb37fdcbcdb3e9f23dab.png", import.meta.url).href;
+const IconActiveEmployees = new URL("../images/icons/3da8b7c409ce43ff5ddfa27c211bbd28aada5f9d.png", import.meta.url).href;
+const IconCompletedTasks = new URL("../images/icons/approved.png", import.meta.url).href;
+const IconOverdueTasks = new URL("../images/icons/warnning.png", import.meta.url).href;
+const IconAttendanceCommitment = new URL("../images/icons/Attendance1.png", import.meta.url).href;
+
 // Employee Photos
 const MohamedAliPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).href;
 const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
@@ -24,8 +35,12 @@ const JanaHassanPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).hr
 
 const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isTeamReportPage = location.pathname === "/reports/team";
+  const pageTitle = isTeamReportPage ? "Team Reports" : "Attendance Reports";
+  const pageSubtitle = isTeamReportPage ? "Attendance and check-in for your team members" : "Track daily attendance and check-in behavior";
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("7-1");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("All Locations");
@@ -46,6 +61,10 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const [reportLocations, setReportLocations] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [reportsError, setReportsError] = useState(null);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamActivities, setTeamActivities] = useState([]);
+  const [teamReportApi, setTeamReportApi] = useState(null);
+  const [teamMetricsLoading, setTeamMetricsLoading] = useState(false);
   const locationDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const exportAllDropdownRef = useRef(null);
@@ -81,6 +100,26 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     });
     return () => { cancelled = true; };
   }, [fromDate, toDate]);
+
+  useEffect(() => {
+    if (!isTeamReportPage) return;
+    let cancelled = false;
+    setTeamMetricsLoading(true);
+    setTeamReportApi(null);
+    Promise.all([
+      getTeamReports({ from: fromDate, to: toDate }).catch(() => null),
+      getTeamMembers().catch(() => []),
+      getLocationActivities({}).catch(() => []),
+    ]).then(([report, members, activities]) => {
+      if (cancelled) return;
+      setTeamReportApi(report && typeof report === "object" ? report : null);
+      setTeamMembers(Array.isArray(members) ? members : []);
+      setTeamActivities(Array.isArray(activities) ? activities : []);
+    }).finally(() => {
+      if (!cancelled) setTeamMetricsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [isTeamReportPage, fromDate, toDate]);
 
   const attendanceData = React.useMemo(() => {
     return (reportsFromApi || []).map((r) => ({
@@ -126,6 +165,46 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     const missingCheckout = list.filter((r) => (String(r.status || "").toLowerCase()).includes("missing") || (r.status || "").toLowerCase() === "missing check-out").length;
     return { present, late, absent, missingCheckout: missingCheckout || 0 };
   }, [attendanceData]);
+
+  const teamReportMetrics = React.useMemo(() => {
+    if (!isTeamReportPage) return null;
+    const api = teamReportApi;
+    if (api && typeof api.teamMembersCount === "number" && typeof api.activeEmployeesCount === "number") {
+      return {
+        teamMembersCount: api.teamMembersCount,
+        activeEmployeesCount: api.activeEmployeesCount,
+        completedTasks: typeof api.completedTasks === "number" ? api.completedTasks : 0,
+        overdueTasks: typeof api.overdueTasks === "number" ? api.overdueTasks : 0,
+        attendanceCommitmentRate: typeof api.attendanceCommitmentRate === "number" ? api.attendanceCommitmentRate : 0,
+      };
+    }
+    const members = teamMembers || [];
+    const teamMembersCount = members.length;
+    const activeEmployeesCount = members.filter((m) => (String(m.status || "").toLowerCase()) === "active").length;
+    const activities = teamActivities || [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const completedTasks = activities.filter((a) => (String(a.implementation_status || "").toLowerCase()) === "implemented").length;
+    const overdueTasks = activities.filter((a) => {
+      const end = a.end_date ? new Date(a.end_date) : null;
+      if (!end) return false;
+      end.setHours(0, 0, 0, 0);
+      const notCompleted = (String(a.implementation_status || "").toLowerCase()) !== "implemented";
+      return end < today && notCompleted;
+    }).length;
+    const totalRecords = (reportsFromApi || []).length;
+    const committedRecords = (reportsFromApi || []).filter(
+      (r) => ((r.status || "").toLowerCase() === "present" || (r.status || "").toLowerCase() === "late")
+    ).length;
+    const attendanceCommitmentRate = totalRecords > 0 ? Math.round((committedRecords / totalRecords) * 100) : 0;
+    return {
+      teamMembersCount,
+      activeEmployeesCount,
+      completedTasks,
+      overdueTasks,
+      attendanceCommitmentRate,
+    };
+  }, [isTeamReportPage, teamReportApi, teamMembers, teamActivities, reportsFromApi]);
 
   const locations = ["All Locations", ...(reportLocations || []).map((l) => l.name ?? l.location_name ?? "").filter(Boolean)];
 
@@ -185,6 +264,16 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isExportAllDropdownOpen, isExportSelectedDropdownOpen]);
+
+  const ATTENDANCE_REPORT_EXPORT_COLUMNS = [
+    { key: "employeeName", label: "Employee" },
+    { key: "employeeId", label: "Employee ID" },
+    { key: "checkIn", label: "Check-in" },
+    { key: "checkOut", label: "Check-out" },
+    { key: "attendanceType", label: "Type" },
+    { key: "location", label: "Location" },
+    { key: "status", label: "Status" },
+  ];
 
   const filteredData = attendanceData.filter((record) => {
     const name = (record.employeeName || "").toLowerCase();
@@ -326,7 +415,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       style={{ overflow: 'hidden' }}
                     >
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -355,7 +444,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               <p className="text-[12px]" style={{ fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
                 <span style={{ color: '#B0B0B0' }}>Reports</span>
                 <span className="mx-[8px]" style={{ color: '#B0B0B0' }}>&gt;</span>
-                <span style={{ color: '#8E8C8C' }}>Attendance Reports</span>
+                <span style={{ color: '#8E8C8C' }}>{pageTitle}</span>
               </p>
             </div>
           </header>
@@ -378,7 +467,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       textAlign: 'left'
                     }}
                   >
-                    Attendance Reports
+                    {pageTitle}
                   </h1>
                   <p
                     style={{
@@ -390,7 +479,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       color: '#6B7280'
                     }}
                   >
-                    Track daily attendance and check-in behavior
+                    {pageSubtitle}
                   </p>
                 </div>
                 <div className="relative flex-shrink-0" style={{ marginTop: '48px' }} ref={exportAllDropdownRef}>
@@ -428,7 +517,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       </div>
                       <button
                         onClick={() => {
-                          console.log('Export All as Excel');
+                          exportToExcel(filteredData, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports.xlsx");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA]"
@@ -438,7 +527,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <button
                         onClick={() => {
-                          console.log('Export All as PDF');
+                          exportToPdf(filteredData, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports.pdf");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA] rounded-b-[8px]"
@@ -452,19 +541,52 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
+            {isTeamReportPage && (() => {
+              const cardColor = "#02706680";
+              const cardConfig = [
+                { title: "Team Members", value: teamMetricsLoading ? "—" : (teamReportMetrics?.teamMembersCount ?? 0), icon: IconTeamMembers, color: cardColor },
+                { title: "Active Employees", value: teamMetricsLoading ? "—" : (teamReportMetrics?.activeEmployeesCount ?? 0), icon: IconActiveEmployees, color: cardColor },
+                { title: "Completed Tasks", value: teamMetricsLoading ? "—" : (teamReportMetrics?.completedTasks ?? 0), icon: IconCompletedTasks, color: cardColor },
+                { title: "Overdue Tasks", value: teamMetricsLoading ? "—" : (teamReportMetrics?.overdueTasks ?? 0), icon: IconOverdueTasks, color: cardColor },
+                { title: "Attendance Commitment", value: teamMetricsLoading ? "—" : `${teamReportMetrics?.attendanceCommitmentRate ?? 0}%`, icon: IconAttendanceCommitment, color: cardColor },
+              ];
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[16px] mb-[24px]">
+                  {cardConfig.map((card, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white rounded-[10px] overflow-hidden border border-[#E0E0E0] shadow-sm flex flex-col"
+                      style={{ minHeight: "120px" }}
+                    >
+                      <div className="p-[16px] flex-1 flex items-start justify-between gap-[10px]">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12px] font-medium text-[#6B7280] mb-[8px]" style={{ fontFamily: "Inter, sans-serif" }}>{card.title}</p>
+                          <p className="text-[20px] font-bold text-[#111827]" style={{ fontFamily: "Inter, sans-serif", lineHeight: "100%" }}>{card.value}</p>
+                        </div>
+                        <div className="w-[44px] h-[44px] min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: card.color }}>
+                          <img src={card.icon} alt="" className="w-[24px] h-[24px] object-contain" />
+                        </div>
+                      </div>
+                      <div className="h-[14px] w-full" style={{ backgroundColor: card.color }} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
             {reportsError && (
               <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
                 {reportsError}
               </div>
             )}
 
-            {reportsLoading ? (
+            {!isTeamReportPage && (reportsLoading ? (
               <div className="bg-white rounded-[10px] p-[40px] text-center" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
                 <p className="text-[14px] text-[#6B7280]">Loading attendance reports...</p>
               </div>
             ) : (
             <>
-            {/* Charts Section */}
+            {/* Charts Section - Attendance Report only */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-[20px] mb-[32px]">
               {/* Daily Attendance Bar Chart */}
               <div className="bg-white rounded-[10px] p-[20px]" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #888888' }}>
@@ -890,7 +1012,8 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                         </div>
                         <button
                           onClick={() => {
-                            console.log('Export selected as Excel', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToExcel(rows, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports-selected.xlsx");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -900,7 +1023,8 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                         </button>
                         <button
                           onClick={() => {
-                            console.log('Export selected as PDF', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToPdf(rows, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports-selected.pdf");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -1103,7 +1227,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
             </>
-            )}
+            ))}
           </div>
         </main>
       </div>
@@ -1158,7 +1282,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                   style={{ overflow: 'hidden', overflowY: 'hidden', overflowX: 'hidden', maxHeight: 'none' }}
                 >
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -1198,10 +1322,41 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
         <div className="flex-1 p-4 pb-10">
           {/* Title */}
           <div className="mb-6">
-            <h1 className="text-[20px] font-semibold text-[#000000] mb-1">Attendance Reports</h1>
-            <p className="text-[12px] text-[#6B7280]">Track daily attendance and check-in behavior</p>
+            <h1 className="text-[20px] font-semibold text-[#000000] mb-1">{pageTitle}</h1>
+            <p className="text-[12px] text-[#6B7280]">{pageSubtitle}</p>
           </div>
 
+          {isTeamReportPage && (() => {
+            const mobileCardColor = "#02706680";
+            const mobileCards = [
+              { title: "Team Members", value: teamMetricsLoading ? "—" : (teamReportMetrics?.teamMembersCount ?? 0), icon: IconTeamMembers, color: mobileCardColor },
+              { title: "Active Employees", value: teamMetricsLoading ? "—" : (teamReportMetrics?.activeEmployeesCount ?? 0), icon: IconActiveEmployees, color: mobileCardColor },
+              { title: "Completed Tasks", value: teamMetricsLoading ? "—" : (teamReportMetrics?.completedTasks ?? 0), icon: IconCompletedTasks, color: mobileCardColor },
+              { title: "Overdue Tasks", value: teamMetricsLoading ? "—" : (teamReportMetrics?.overdueTasks ?? 0), icon: IconOverdueTasks, color: mobileCardColor },
+              { title: "Attendance Commitment", value: teamMetricsLoading ? "—" : `${teamReportMetrics?.attendanceCommitmentRate ?? 0}%`, icon: IconAttendanceCommitment, color: mobileCardColor, fullWidth: true },
+            ];
+            return (
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                {mobileCards.map((card, idx) => (
+                  <div key={idx} className={`bg-white rounded-[10px] overflow-hidden border border-[#E0E0E0] shadow-sm flex flex-col ${card.fullWidth ? "col-span-2" : ""}`}>
+                    <div className="p-3 flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] text-[#6B7280] mb-0.5">{card.title}</p>
+                        <p className="text-[16px] font-bold text-[#111827]">{card.value}</p>
+                      </div>
+                      <div className="w-[40px] h-[40px] min-w-[40px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: card.color }}>
+                        <img src={card.icon} alt="" className="w-[20px] h-[20px] object-contain" />
+                      </div>
+                    </div>
+                    <div className="h-[10px] w-full" style={{ backgroundColor: card.color }} />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {!isTeamReportPage && (
+          <>
           {/* Charts Section - Mobile */}
           <div className="flex flex-col gap-4 mb-6">
             {/* Daily Attendance Chart - Mobile */}
@@ -1637,6 +1792,8 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                 <svg className="w-[16px] h-[16px] text-[#000000]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18L15 12L9 6" /></svg>
               </button>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>

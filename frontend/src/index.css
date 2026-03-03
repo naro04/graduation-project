@@ -12,6 +12,23 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* الجداول: خط Inter ومحاذاة موحدة */
+table th,
+table td,
+table th span,
+table td span {
+  font-family: 'Inter', sans-serif;
+}
+table thead th {
+  text-align: center;
+}
+table tbody td {
+  text-align: center;
+}
+table tbody td .flex {
+  justify-content: center;
+}
+
 /* Prevent scrollbar on API Keys white container */
 .api-keys-white-container,
 .api-keys-white-container * {

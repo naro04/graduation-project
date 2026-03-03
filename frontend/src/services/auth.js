@@ -45,6 +45,11 @@ const login = async (email, password, rememberMe = false) => {
       userData = response.data;
     }
 
+    // الباكند يرجّع role_name؛ نضبط role عشان السايدبار واسم الرول يظهران صح
+    if (userData && userData.role_name && !userData.role) {
+      userData.role = userData.role_name;
+    }
+
     // If rememberMe is true, fetch complete user data from /auth/me endpoint
     // This ensures we have full user data including permissions and role info
     if (rememberMe && token) {
@@ -62,7 +67,8 @@ const login = async (email, password, rememberMe = false) => {
         } else if (meResponse.data) {
           userData = meResponse.data;
         }
-        
+        if (userData && userData.role_name && !userData.role) userData.role = userData.role_name;
+
         // Store in localStorage for persistent session
         if (userData) {
           localStorage.setItem('userData', JSON.stringify(userData));
@@ -260,7 +266,7 @@ const getCurrentUser = () => {
 const getEffectiveRole = (fallback = 'superAdmin') => {
   const user = getCurrentUser();
   if (!user) return fallback;
-  const role = user.role ?? user.roles?.[0];
+  const role = user.role ?? user.role_name ?? user.roles?.[0];
   if (!role || typeof role !== 'string') return fallback;
   const r = role.toLowerCase().trim();
   if (r === 'super admin' || r === 'superadmin') return 'superAdmin';
@@ -323,4 +329,18 @@ const getMe = async () => {
   }
 };
 
-export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, getCurrentUser, getEffectiveRole, getMe };
+/**
+ * Request password reset link
+ * POST /auth/forgot-password
+ * @param {string} email - User email
+ * @returns {Promise<object>} - { status, message }
+ */
+const forgotPassword = async (email) => {
+  const response = await apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email: email.trim() }),
+  });
+  return response;
+};
+
+export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, getCurrentUser, getEffectiveRole, getMe, forgotPassword };

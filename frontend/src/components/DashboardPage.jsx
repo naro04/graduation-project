@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getDashboardStats } from "../services/dashboard.js";
-import { getCurrentUser, getMe, logout } from "../services/auth.js";
+import { getCurrentUser, getMe, getEffectiveRole, logout } from "../services/auth.js";
 
 // Logo images
 const LogoMobile = new URL("../images/LogoMobile.jpg", import.meta.url).href;
@@ -60,10 +60,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
   const dropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
-  // Use role from logged-in user so Manager sees "Manager" and Manager menu, not Super Admin
-  const effectiveUserRole = currentUser
-    ? normalizeRoleKey(currentUser.role ?? currentUser.roles?.[0])
-    : userRole;
+  // دور المستخدم المسجّل من الـ auth (مش من الـ route) عشان اسم الرول والسايدبار يظهروا صح لكل الأدوار
+  const effectiveUserRole = getEffectiveRole();
 
   // Fetch dashboard data on component mount
   useEffect(() => {
@@ -445,9 +443,9 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
   ];
 
   return (
-    <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen w-full bg-[#F5F7FA] overflow-x-hidden" style={{ fontFamily: 'Inter, sans-serif' }}>
       {/* Desktop Layout */}
-      <div className="hidden lg:flex min-h-screen">
+      <div className="hidden lg:flex min-h-screen overflow-x-hidden">
         {/* Sidebar Component */}
         <Sidebar
           userRole={effectiveUserRole}
@@ -456,8 +454,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
           onLogoutClick={() => setIsLogoutModalOpen(true)}
         />
 
-        {/* Main Content */}
-        <main className="flex-1 flex flex-col bg-[#F5F7FA]">
+        {/* Main Content - min-w-0 يسمح للفلكس بالتصغير ويمنع السكرول الأفقي */}
+        <main className="flex-1 flex flex-col bg-[#F5F7FA] min-w-0 overflow-x-hidden">
           {/* Header - White background */}
           <header className="bg-white px-[40px] py-[24px]">
             <div className="flex items-center justify-between mb-[16px]">
@@ -518,7 +516,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -550,7 +548,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
           </header>
 
           {/* Dashboard Content */}
-          <div className="flex-1 p-[36px] overflow-x-hidden overflow-y-auto bg-[#F5F7FA]">
+          <div className="flex-1 p-[36px] overflow-x-hidden overflow-y-auto bg-[#F5F7FA] min-w-0">
             {/* Page Title */}
             <div className="mb-[28px]">
               <h1 className="text-[28px] font-semibold text-[#00564F]" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -634,10 +632,10 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
               ))}
             </div>
 
-            {/* Content Cards */}
-            <div className="grid grid-cols-2 gap-0">
+            {/* Content Cards - flex بدل عرض ثابت لتفادي السكرول الأفقي */}
+            <div className="flex gap-[16px] flex-wrap">
               {/* Calendar Card */}
-              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden" style={{ width: '378px', height: '293px' }}>
+              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden flex-shrink-0" style={{ width: '378px', minWidth: '320px', height: '293px' }}>
                 <div className="p-[20px] h-full flex flex-col box-border">
                   {/* Calendar Header */}
                   <div ref={dropdownRef} className="relative flex items-center gap-[8px] mb-[16px] flex-shrink-0">
@@ -757,8 +755,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
-              {/* Organization-wide Attendance Chart */}
-              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[20px] flex flex-col" style={{ width: '630px', height: '293px', marginLeft: '-120px' }}>
+              {/* Organization-wide Attendance Chart - يأخذ المساحة المتبقية ويتكيف */}
+              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[20px] flex flex-col flex-1 min-w-0" style={{ minWidth: '280px', height: '293px' }}>
                 {/* Chart Title */}
                 <h3 className="text-[16px] font-semibold text-[#000000] mb-[20px] text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
                   Organization-wide Attendance
@@ -866,10 +864,10 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
-            {/* Bottom Row: Activity Statistics, User Metrics, and Quick Navigation */}
-            <div className="mt-[20px] flex gap-[16px]">
+            {/* Bottom Row: Activity Statistics | User Metrics | البطاقات الثلاث — سطر واحد، عرض البطاقات أقل عشان الوسع */}
+            <div className="mt-[20px] flex gap-[12px] flex-nowrap min-w-0">
               {/* Activity Statistics Chart */}
-              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden" style={{ width: '378px', height: '293px', flexShrink: 0 }}>
+              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden flex-shrink-0" style={{ width: '378px', height: '293px' }}>
                 <div className="p-[20px] h-full flex flex-col box-border">
                   {/* Chart Title */}
                   <h3 className="text-[16px] font-semibold text-[#000000] mb-[20px] text-left flex-shrink-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
@@ -1045,8 +1043,10 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
+              {/* User Metrics + البطاقات الثلاث — جمب Activity Statistics */}
+              <div className="flex gap-[12px] flex-shrink-0 min-w-0">
               {/* User Metrics Section */}
-              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden" style={{ width: '280px', height: '195px', flexShrink: 0 }}>
+              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden flex-shrink-0" style={{ width: '260px', height: '195px' }}>
                 <div className="p-[18px] h-full flex flex-col box-border">
                   {/* Section Title */}
                   <h3 className="text-[16px] font-semibold text-[#000000] mb-[18px] text-left flex-shrink-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
@@ -1133,39 +1133,22 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
-              {/* Quick Navigation Section - Separate Cards */}
-              <div className="flex flex-col gap-[12px]" style={{ width: '325px', flexShrink: 0 }}>
-                {/* Employees Card */}
+              {/* البطاقات الثلاث — Employees، Locations، Activities */}
+              <div className="flex flex-col gap-[8px] flex-shrink-0" style={{ width: '340px' }}>
                 <button
                   onClick={() => navigate("/user-management/employees")}
-                  className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[16px] flex items-center gap-[12px] cursor-pointer"
+                  className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
                 >
-                  <img
-                    src={EmployeesIcon}
-                    alt="Employees"
-                    className="w-[24px] h-[24px] object-contain"
-                  />
-                  <p className="text-[16px] font-semibold" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>
-                    Employees
-                  </p>
+                  <img src={EmployeesIcon} alt="Employees" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
+                  <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Employees</p>
                 </button>
-
-                {/* Locations Card */}
                 <button
                   onClick={() => navigate("/locations/all")}
-                  className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[16px] flex items-center gap-[12px] cursor-pointer"
+                  className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
                 >
-                  <img
-                    src={LocationsIcon}
-                    alt="Locations"
-                    className="w-[24px] h-[24px] object-contain"
-                  />
-                  <p className="text-[16px] font-semibold" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>
-                    Locations
-                  </p>
+                  <img src={LocationsIcon} alt="Locations" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
+                  <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Locations</p>
                 </button>
-
-                {/* Activities Card — لا صفحة مستقلة لـ Activities؛ التوجيه حسب الدور لأول فرعي */}
                 <button
                   onClick={() => {
                     const role = normalizeRoleKey(userRole);
@@ -1174,17 +1157,12 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                     else if (role === "officer") navigate("/dashboard");
                     else navigate("/activities");
                   }}
-                  className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[16px] flex items-center gap-[12px] cursor-pointer"
+                  className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
                 >
-                  <img
-                    src={ActivitiesIcon}
-                    alt="Activities"
-                    className="w-[24px] h-[24px] object-contain"
-                  />
-                  <p className="text-[16px] font-semibold" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>
-                    Activities
-                  </p>
+                  <img src={ActivitiesIcon} alt="Activities" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
+                  <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Activities</p>
                 </button>
+              </div>
               </div>
             </div>
           </div>
@@ -1236,7 +1214,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -1833,16 +1811,10 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={async () => {
+        onConfirm={() => {
           setIsLogoutModalOpen(false);
-          try {
-            await logout();
-            navigate("/login");
-          } catch (error) {
-            console.error('Logout error:', error);
-            // Navigate to login even if logout API fails
-            navigate("/login");
-          }
+          logout();
+          window.location.href = "/login";
         }}
       />
     </div>

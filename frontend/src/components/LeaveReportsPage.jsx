@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getLeaveReports } from "../services/leaves";
+import { exportToExcel, exportToPdf } from "../utils/exportReport";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -23,7 +24,7 @@ const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).hr
 const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("7-3");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLeaveType, setSelectedLeaveType] = useState("All Leave Type");
@@ -47,23 +48,48 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const [leaveReportsData, setLeaveReportsData] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
 
+  const formatDateShort = (val) => {
+    if (!val) return "—";
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val).length > 20 ? String(val).slice(0, 10) : String(val);
+    const day = d.getDate();
+    const month = monthNames[d.getMonth()];
+    const year = d.getFullYear();
+    return `${day} ${month} ${year}`;
+  };
+
+  const formatDateRangeDisplay = (startVal, endVal, rawRange) => {
+    if (startVal && endVal) return `${formatDateShort(startVal)} - ${formatDateShort(endVal)}`;
+    if (rawRange && typeof rawRange === "string" && rawRange.includes(" - ")) {
+      const [s, e] = rawRange.split(" - ").map((x) => x.trim());
+      return `${formatDateShort(s)} - ${formatDateShort(e)}`;
+    }
+    return rawRange && String(rawRange).length > 25 ? formatDateShort(String(rawRange).slice(0, 10)) + "…" : (rawRange || "—");
+  };
+
   const fetchReports = async () => {
     try {
       setReportsLoading(true);
       const data = await getLeaveReports({ from_date: fromDate, to_date: toDate });
       const list = Array.isArray(data) ? data : [];
       setLeaveReportsData(
-        list.map((item) => ({
-          id: item.id,
-          employeeName: item.employee_name ?? item.employeeName ?? "—",
-          employeePhoto: item.avatar_url ?? item.employeePhoto ?? AmeerJamalPhoto,
-          leaveType: item.leave_type ?? item.leaveType ?? "—",
-          dateRange: item.date_range ?? (item.start_date && item.end_date ? `${item.start_date} - ${item.end_date}` : "—"),
-          totalDays: item.total_days ?? item.totalDays ?? 0,
-          submittedDate: item.submitted_date ?? item.created_at ?? item.submittedDate ?? "—",
-          status: item.status ?? "Pending",
-          startDate: item.start_date ?? item.startDate ?? null,
-        }))
+        list.map((item) => {
+          const startDate = item.start_date ?? item.startDate ?? null;
+          const endDate = item.end_date ?? item.endDate ?? null;
+          const rawRange = item.date_range ?? (startDate && endDate ? `${startDate} - ${endDate}` : "—");
+          const submittedRaw = item.submitted_date ?? item.created_at ?? item.submittedDate ?? "—";
+          return {
+            id: item.id,
+            employeeName: item.employee_name ?? item.employeeName ?? "—",
+            employeePhoto: item.avatar_url ?? item.employeePhoto ?? AmeerJamalPhoto,
+            leaveType: item.leave_type ?? item.leaveType ?? "—",
+            dateRange: formatDateRangeDisplay(startDate, endDate, rawRange),
+            totalDays: item.total_days ?? item.totalDays ?? 0,
+            submittedDate: formatDateShort(submittedRaw),
+            status: item.status ?? "Pending",
+            startDate: startDate ?? null,
+          };
+        })
       );
     } catch (err) {
       console.error("Failed to fetch leave reports:", err);
@@ -213,11 +239,22 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
     };
   }, [isExportAllDropdownOpen, isExportSelectedDropdownOpen]);
 
+  const LEAVE_EXPORT_COLUMNS = [
+    { key: "employeeName", label: "Employee" },
+    { key: "leaveType", label: "Leave Type" },
+    { key: "dateRange", label: "Date Range" },
+    { key: "totalDays", label: "Total Days" },
+    { key: "submittedDate", label: "Submitted Date" },
+    { key: "status", label: "Status" },
+  ];
+
   // Filter data
   const filteredData = leaveReportsData.filter(record => {
     const matchesSearch = record.employeeName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesLeaveType = selectedLeaveType === "All Leave Type" || record.leaveType === selectedLeaveType;
-    const matchesStatus = selectedStatus === "All Status" || record.status === selectedStatus;
+    const statusNorm = (record.status || '').toLowerCase();
+    const selectedNorm = selectedStatus === "All Status" ? '' : selectedStatus.toLowerCase();
+    const matchesStatus = selectedStatus === "All Status" || statusNorm === selectedNorm;
     return matchesSearch && matchesLeaveType && matchesStatus;
   });
 
@@ -303,7 +340,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                       style={{ overflow: 'hidden' }}
                     >
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -404,7 +441,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                       </div>
                       <button
                         onClick={() => {
-                          console.log('Export All as Excel');
+                          exportToExcel(filteredData, LEAVE_EXPORT_COLUMNS, "leave-reports.xlsx");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA]"
@@ -414,7 +451,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <button
                         onClick={() => {
-                          console.log('Export All as PDF');
+                          exportToPdf(filteredData, LEAVE_EXPORT_COLUMNS, "leave-reports.pdf");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA] rounded-b-[8px]"
@@ -802,7 +839,8 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                         </div>
                         <button
                           onClick={() => {
-                            console.log('Export selected as Excel', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToExcel(rows, LEAVE_EXPORT_COLUMNS, "leave-reports-selected.xlsx");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -812,7 +850,8 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                         </button>
                         <button
                           onClick={() => {
-                            console.log('Export selected as PDF', selectedRecords);
+                            const rows = filteredData.filter((r) => selectedRecords.includes(r.id));
+                            exportToPdf(rows, LEAVE_EXPORT_COLUMNS, "leave-reports-selected.pdf");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -840,12 +879,21 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
             )}
 
             {/* Leave Reports Table */}
-            <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #B5B1B1' }}>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+            <div className="bg-white rounded-[10px] overflow-hidden min-w-0" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #B5B1B1' }}>
+              <div className="overflow-x-hidden min-w-0">
+                <table className="w-full min-w-0" style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '3%' }} />
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '24%' }} />
+                    <col style={{ width: '8%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '21%' }} />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[8px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         <input
                           type="checkbox"
                           checked={selectedRecords.length === paginatedData.length && paginatedData.length > 0}
@@ -853,16 +901,16 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                           className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                         />
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[12px] py-[12px] text-left text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         Employee name
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, fontSize: '14px', minWidth: 0 }}>
                         Leave Type
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, fontSize: '14px', minWidth: 0 }}>
                         Date Range
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                      <th className="px-[8px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         Total Days
                       </th>
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
@@ -877,7 +925,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                     {paginatedData.length > 0 ? (
                       paginatedData.map((record) => (
                         <tr key={record.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                          <td className="px-[8px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <input
                               type="checkbox"
                               checked={selectedRecords.includes(record.id)}
@@ -885,29 +933,29 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                               className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                             />
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <div className="flex items-center justify-center gap-[12px]">
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <div className="flex items-center gap-[12px] min-w-0">
                               <img
                                 src={record.employeePhoto}
                                 alt={record.employeeName}
-                                className="w-[32px] h-[32px] rounded-full object-cover"
+                                className="w-[32px] h-[32px] rounded-full object-cover flex-shrink-0"
                               />
-                              <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              <span className="text-[13px] text-[#333333] truncate" style={{ fontWeight: 600 }} title={record.employeeName}>
                                 {record.employeeName}
                               </span>
                             </div>
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={record.leaveType}>
+                            <span className="text-[13px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                               {record.leaveType}
                             </span>
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={record.dateRange}>
+                            <span className="text-[13px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                               {record.dateRange}
                             </span>
                           </td>
-                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                          <td className="px-[8px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
                               {record.totalDays}
                             </span>
@@ -925,14 +973,12 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                                 fontSize: '13px',
                                 lineHeight: '100%',
                                 whiteSpace: 'nowrap',
-                                color: record.status === "Pending" ? '#4A4A4A' :
-                                  record.status === "Approved" ? '#00564F' : '#830000',
-                                backgroundColor: record.status === "Pending" ? '#D2D2D2' :
-                                  record.status === "Approved" ? '#68BFCCB2' : '#FFBDB6B2',
+                                color: (() => { const s = (record.status || '').toLowerCase(); return s === 'pending' ? '#4A4A4A' : s === 'approved' ? '#00564F' : '#830000'; })(),
+                                backgroundColor: (() => { const s = (record.status || '').toLowerCase(); return s === 'pending' ? '#D2D2D2B2' : s === 'approved' ? '#68BFCCB2' : '#FFBDB6B2'; })(),
                                 textAlign: 'center'
                               }}
                             >
-                              {record.status}
+                              {(record.status || '').charAt(0).toUpperCase() + (record.status || '').slice(1).toLowerCase()}
                             </span>
                           </td>
                         </tr>
@@ -1056,7 +1102,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                   style={{ overflow: 'hidden', overflowY: 'hidden', overflowX: 'hidden', maxHeight: 'none' }}
                 >
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -1438,13 +1484,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                       <span
                         className="inline-block px-[14px] py-[6px] rounded-[8px] text-[13px] font-bold shadow-sm"
                         style={{
-                          color: record.status === "Pending" ? '#4A4A4A' :
-                            record.status === "Approved" ? '#00564F' : '#830000',
-                          backgroundColor: record.status === "Pending" ? '#D2D2D2' :
-                            record.status === "Approved" ? '#68BFCCB2' : '#FFBDB6B2'
+                          color: (() => { const s = (record.status || '').toLowerCase(); return s === 'pending' ? '#4A4A4A' : s === 'approved' ? '#00564F' : '#830000'; })(),
+                          backgroundColor: (() => { const s = (record.status || '').toLowerCase(); return s === 'pending' ? '#D2D2D2B2' : s === 'approved' ? '#68BFCCB2' : '#FFBDB6B2'; })()
                         }}
                       >
-                        {record.status}
+                        {(record.status || '').charAt(0).toUpperCase() + (record.status || '').slice(1).toLowerCase()}
                       </span>
                     </div>
                   </div>

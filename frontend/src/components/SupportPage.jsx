@@ -35,7 +35,7 @@ const roleDisplayNames = {
 const SupportPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("8-6");
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isDesktopDropdownOpen, setIsDesktopDropdownOpen] = useState(false);
@@ -67,8 +67,14 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
         if (!cancelled) setTickets(Array.isArray(data) ? data : []);
       } catch (err) {
         if (!cancelled) {
-          setTicketsError(err.message || "Failed to load tickets");
-          setTickets([]);
+          const status = err.response?.status;
+          if (status === 404) {
+            setTicketsError(null);
+            setTickets([]);
+          } else {
+            setTicketsError(err.message || "Failed to load tickets");
+            setTickets([]);
+          }
         }
       } finally {
         if (!cancelled) setTicketsLoading(false);
@@ -143,7 +149,12 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
       setTickets(Array.isArray(data) ? data : []);
       setTimeout(() => setSubmitSuccess(false), 4000);
     } catch (err) {
-      setSubmitError(err.message || "Failed to submit ticket.");
+      const status = err.response?.status;
+      const friendlyMessage =
+        status === 404
+          ? "خدمة الدعم غير متاحة حالياً. يرجى المحاولة لاحقاً أو التواصل مع المسؤول."
+          : err.response?.data?.message || err.message || "Failed to submit ticket.";
+      setSubmitError(friendlyMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -235,7 +246,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                       style={{ overflow: 'hidden' }}
                     >
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -1083,7 +1094,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-[180px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-2 z-50">
                   <div className="px-4 py-2">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-4 py-2 text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile

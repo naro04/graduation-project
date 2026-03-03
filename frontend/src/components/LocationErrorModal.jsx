@@ -57,7 +57,7 @@ const LocationErrorModal = ({ isOpen, onClose, onSelectLocation }) => {
                         lineHeight: "1.2"
                     }}
                 >
-                    Use the button below to record your current location and complete check-in
+                    Please select your current work location to continue
                 </p>
 
                 <button
@@ -74,7 +74,7 @@ const LocationErrorModal = ({ isOpen, onClose, onSelectLocation }) => {
                         minWidth: "160px"
                     }}
                 >
-                    Use my location
+                    Select Location
                 </button>
             </div>
         </div>
