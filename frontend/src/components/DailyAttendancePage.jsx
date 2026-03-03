@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getDailyAttendance, getAttendanceLocations, deleteAttendance } from "../services/attendance";
+import { exportToExcel, exportToPdf } from "../utils/exportReport";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -42,7 +43,7 @@ const IdIcon = new URL("../images/icons/id.png", import.meta.url).href;
 const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("3-1");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -51,7 +52,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedDate, setSelectedDate] = useState(new Date(2025, 11, 7)); // December 7, 2025
+  const [selectedDate, setSelectedDate] = useState(() => new Date()); // default: today
   const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [isExportAllDropdownOpen, setIsExportAllDropdownOpen] = useState(false);
   const [isExportSelectedDropdownOpen, setIsExportSelectedDropdownOpen] = useState(false);
@@ -111,17 +112,24 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
 
   const locationOptions = ["All Locations", ...(attendanceLocations || []).map((l) => l.name ?? l.location_name ?? "")].filter(Boolean);
 
+  const formatTimeForDisplay = (val) => {
+    if (val == null || val === "") return "—";
+    const d = typeof val === "string" ? new Date(val) : val;
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  };
+
   const attendanceData = React.useMemo(() => {
     return (attendanceFromApi || []).map((r) => ({
       id: r.id ?? r.attendance_id,
-      name: r.employee_name ?? r.name ?? "—",
-      employeeId: r.employee_id ?? r.employeeId ?? "—",
-      checkIn: r.check_in ?? r.check_in_time ?? r.checkIn ?? "—",
-      checkOut: r.check_out ?? r.check_out_time ?? r.checkOut ?? "—",
-      attendanceType: r.attendance_type ?? r.check_method ?? r.type ?? "—",
-      location: r.location_name ?? r.location ?? "—",
+      name: r.employeeName ?? r.employee_name ?? r.name ?? "—",
+      employeeId: r.employeeCode ?? r.employee_id ?? r.employeeId ?? "—",
+      checkIn: formatTimeForDisplay(r.checkInAt ?? r.check_in ?? r.check_in_time ?? r.checkIn),
+      checkOut: formatTimeForDisplay(r.checkOutAt ?? r.check_out ?? r.check_out_time ?? r.checkOut),
+      attendanceType: r.attendanceType ?? r.attendance_type ?? r.check_method ?? r.type ?? "—",
+      location: r.location ?? r.location_name ?? "—",
       status: r.status ?? "Present",
-      photo: r.photo ?? r.avatar_url ?? MohamedAliPhoto,
+      photo: r.avatarUrl ?? r.photo ?? r.avatar_url ?? MohamedAliPhoto,
     }));
   }, [attendanceFromApi]);
 
@@ -195,6 +203,16 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
     };
   }, [isLocationDropdownOpen, isStatusDropdownOpen, isExportAllDropdownOpen, isExportSelectedDropdownOpen, isUserDropdownOpen]);
 
+  const ATTENDANCE_EXPORT_COLUMNS = [
+    { key: "name", label: "Employee" },
+    { key: "employeeId", label: "Employee ID" },
+    { key: "checkIn", label: "Check-in" },
+    { key: "checkOut", label: "Check-out" },
+    { key: "attendanceType", label: "Attendance Type" },
+    { key: "location", label: "Location" },
+    { key: "status", label: "Status" },
+  ];
+
   // Filter data based on search, location, and status
   const filteredData = attendanceData.filter(employee => {
     const matchesSearch = employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -256,7 +274,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
         />
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col bg-[#F5F7FA]">
+        <main className="flex-1 flex flex-col min-w-0 bg-[#F5F7FA]">
           {/* Header */}
           <header className="bg-white px-[40px] py-[24px]">
             <div className="flex items-center justify-between mb-[16px]">
@@ -309,7 +327,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -343,7 +361,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
           </header>
 
           {/* Page Content */}
-          <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ overflowX: 'hidden', overflowY: 'hidden', maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
+          <div className="flex-1 p-[36px] bg-[#F5F7FA] min-w-0 overflow-x-hidden" style={{ maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
             {/* Page Header */}
             <div className="mb-[20px]" style={{ minWidth: 0, maxWidth: '100%' }}>
               <div className="flex items-start justify-between" style={{ minWidth: 0, maxWidth: '100%' }}>
@@ -411,7 +429,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                       </div>
                       <button
                         onClick={() => {
-                          console.log('Export All as Excel');
+                          exportToExcel(filteredData, ATTENDANCE_EXPORT_COLUMNS, "daily-attendance.xlsx");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA]"
@@ -421,7 +439,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <button
                         onClick={() => {
-                          console.log('Export All as PDF');
+                          exportToPdf(filteredData, ATTENDANCE_EXPORT_COLUMNS, "daily-attendance.pdf");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA] rounded-b-[8px]"
@@ -746,7 +764,8 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                         </div>
                         <button
                           onClick={() => {
-                            console.log('Export selected as Excel', selectedEmployees);
+                            const rows = filteredData.filter((e) => selectedEmployees.includes(e.id));
+                            exportToExcel(rows, ATTENDANCE_EXPORT_COLUMNS, "daily-attendance-selected.xlsx");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -756,7 +775,8 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                         </button>
                         <button
                           onClick={() => {
-                            console.log('Export selected as PDF', selectedEmployees);
+                            const rows = filteredData.filter((e) => selectedEmployees.includes(e.id));
+                            exportToPdf(rows, ATTENDANCE_EXPORT_COLUMNS, "daily-attendance-selected.pdf");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -807,9 +827,20 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                 <p className="text-[14px] text-[#6B7280]">Loading daily attendance...</p>
               </div>
             ) : (
-            <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+            <div className="bg-white rounded-[10px] overflow-hidden min-w-0" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
+              <div className="overflow-x-hidden min-w-0">
+                <table className="w-full min-w-0" style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '44px' }} />
+                    <col style={{ width: '18%' }} />
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '72px' }} />
+                    <col style={{ width: '72px' }} />
+                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '80px' }} />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
                       <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
@@ -820,28 +851,28 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                           className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                         />
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
                         Employee
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
-                        Employee ID
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
+                        Employee<br />ID
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
-                        Check-in
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
+                        Check-<br />in
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
-                        Check-out
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
+                        Check-<br />out
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
-                        Attendance Type
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
+                        Attendance<br />Type
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
                         Location
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
                         Status
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] leading-tight" style={{ fontWeight: 500 }}>
                         Action
                       </th>
                     </tr>
@@ -857,20 +888,20 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                             className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                           />
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left" style={{ whiteSpace: 'nowrap' }}>
-                          <div className="flex items-center gap-[8px]">
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ overflow: 'hidden' }}>
+                          <div className="flex items-center gap-[8px] min-w-0">
                             <img
                               src={employee.photo}
                               alt={employee.name}
                               className="w-[28px] h-[28px] rounded-full object-cover flex-shrink-0"
                             />
-                            <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            <span className="text-[14px] text-[#333333] truncate block min-w-0" style={{ fontWeight: 600 }} title={employee.name}>
                               {employee.name}
                             </span>
                           </div>
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600 }}>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center min-w-0" style={{ overflow: 'hidden' }} title={employee.employeeId}>
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                             {employee.employeeId}
                           </span>
                         </td>
@@ -889,8 +920,8 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                             {employee.attendanceType}
                           </span>
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600 }}>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center min-w-0" style={{ overflow: 'hidden' }} title={employee.location}>
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                             {employee.location}
                           </span>
                         </td>
@@ -1041,7 +1072,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile

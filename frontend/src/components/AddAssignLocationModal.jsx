@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { uploadImages } from "../services/uploads";
+
+const UploadIcon = new URL("../images/icons/upload.png", import.meta.url).href;
 
 const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [], onSave }) => {
     const navigate = useNavigate();
@@ -7,8 +10,11 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
     // Form state
     const [formData, setFormData] = useState({
         location: "",
-        activityName: ""
+        activityName: "",
+        projectName: ""
     });
+    const [responsibleEmployeeId, setResponsibleEmployeeId] = useState("");
+    const [activityImageFiles, setActivityImageFiles] = useState([]);
     const [selectedEmployees, setSelectedEmployees] = useState([]);
     const [numberOfDays, setNumberOfDays] = useState(1);
     const [activityDates, setActivityDates] = useState([""]);
@@ -20,8 +26,11 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
         if (isOpen) {
             setFormData({
                 location: "",
-                activityName: ""
+                activityName: "",
+                projectName: ""
             });
+            setResponsibleEmployeeId("");
+            setActivityImageFiles([]);
             setSelectedEmployees([]);
             setNumberOfDays(1);
             setActivityDates([""]);
@@ -67,7 +76,20 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
         }
         setSaving(true);
         try {
-            const result = onSave(locationId, selectedEmployees);
+            let activityImageUrls = [];
+            if (activityImageFiles.length > 0) {
+                const urls = await uploadImages(activityImageFiles);
+                activityImageUrls = Array.isArray(urls) ? urls : (urls ? [urls] : []);
+            }
+            const extra = {
+                activityName: formData.activityName?.trim() || "",
+                projectName: formData.projectName?.trim() || "",
+                responsibleEmployeeId: responsibleEmployeeId || null,
+                activityImageUrls,
+                numberOfDays,
+                activityDates: activityDates.filter(Boolean),
+            };
+            const result = onSave(locationId, selectedEmployees, extra);
             if (result && typeof result.then === "function") {
                 await result;
             }
@@ -185,6 +207,120 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
                                         color: '#000000'
                                     }}
                                 />
+                            </div>
+
+                            {/* Project Name */}
+                            <div className="flex flex-col">
+                                <label className="text-[16px] font-medium text-[#181818] mb-[8px]">
+                                    Project Name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={formData.projectName}
+                                    onChange={(e) => setFormData({ ...formData, projectName: e.target.value })}
+                                    placeholder="Enter project name"
+                                    className="focus:outline-none bg-white w-full"
+                                    style={{
+                                        height: '36px',
+                                        padding: '0 12px',
+                                        borderRadius: '4px',
+                                        border: '0.8px solid #939393',
+                                        fontSize: '14px',
+                                        color: '#000000'
+                                    }}
+                                />
+                            </div>
+
+                            {/* Responsible Person */}
+                            <div className="flex flex-col">
+                                <label className="text-[16px] font-medium text-[#181818] mb-[8px]">
+                                    Responsible Person
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        value={responsibleEmployeeId}
+                                        onChange={(e) => setResponsibleEmployeeId(e.target.value)}
+                                        className="focus:outline-none bg-white appearance-none cursor-pointer w-full"
+                                        style={{
+                                            height: '36px',
+                                            padding: '0 12px',
+                                            paddingRight: '32px',
+                                            borderRadius: '4px',
+                                            border: '0.8px solid #939393',
+                                            fontSize: '14px',
+                                            color: responsibleEmployeeId ? '#000000' : '#9CA3AF'
+                                        }}
+                                    >
+                                        <option value="" disabled style={{ color: '#9CA3AF' }}>Select responsible person</option>
+                                        {(Array.isArray(employees) ? employees : []).map((emp) => (
+                                            <option key={emp.id} value={emp.id} style={{ color: '#727272' }}>{emp.name}</option>
+                                        ))}
+                                    </select>
+                                    <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+
+                            {/* Activity Images */}
+                            <div className="flex flex-col">
+                                <label className="text-[16px] font-medium text-[#181818] mb-[8px]">
+                                    Activity Images
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="file"
+                                        id="activity-images-upload"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={(e) => setActivityImageFiles(e.target.files ? Array.from(e.target.files) : [])}
+                                        className="hidden"
+                                    />
+                                    <label
+                                        htmlFor="activity-images-upload"
+                                        className="w-full min-h-[120px] border-2 border-dashed border-[#E0E0E0] rounded-[5px] flex flex-col items-center justify-center cursor-pointer hover:border-[#004D40] transition-colors bg-[#FAFAFA]"
+                                    >
+                                        <img src={UploadIcon} alt="Upload" className="w-[32px] h-[32px] mb-[8px] object-contain" />
+                                        {activityImageFiles.length > 0 ? (
+                                            <p
+                                                className="text-center px-[16px]"
+                                                style={{
+                                                    fontFamily: 'Inter, sans-serif',
+                                                    fontSize: '14px',
+                                                    fontWeight: 400,
+                                                    color: '#6B7280'
+                                                }}
+                                            >
+                                                {activityImageFiles.length} image(s) selected
+                                            </p>
+                                        ) : (
+                                            <div className="flex flex-col items-center gap-[4px]">
+                                                <p
+                                                    className="text-center px-[16px]"
+                                                    style={{
+                                                        fontFamily: 'Inter, sans-serif',
+                                                        fontSize: '14px',
+                                                        fontWeight: 400,
+                                                        color: '#6B6B6B'
+                                                    }}
+                                                >
+                                                    Click to upload or drag and drop
+                                                </p>
+                                                <p
+                                                    className="text-center px-[16px]"
+                                                    style={{
+                                                        fontFamily: 'Inter, sans-serif',
+                                                        fontSize: '14px',
+                                                        fontWeight: 400,
+                                                        color: '#949494'
+                                                    }}
+                                                >
+                                                    Images only
+                                                </p>
+                                            </div>
+                                        )}
+                                    </label>
+                                </div>
                             </div>
 
                             {/* Assign Employee */}

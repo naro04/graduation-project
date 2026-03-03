@@ -15,7 +15,7 @@ const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7
 const RolesPermissionsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("2-2");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -1072,7 +1072,7 @@ const RolesPermissionsPage = ({ userRole = "superAdmin" }) => {
                       onMouseDown={(e) => e.stopPropagation()}
                     >
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -2621,7 +2621,7 @@ const RolesPermissionsPage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile

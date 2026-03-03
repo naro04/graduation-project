@@ -47,6 +47,18 @@ export async function getDailyAttendance(params = {}) {
 }
 
 /**
+ * GET /attendance/team
+ * حضور الفريق (للمدير) – Team Attendance
+ * @param {Object} params - { date?, from?, to?, ... }
+ */
+export async function getTeamAttendance(params = {}) {
+  const res = await apiClient.get(`${BASE}/team`, { params });
+  const raw = res.data?.data ?? res.data;
+  if (Array.isArray(raw)) return raw;
+  return raw?.items ?? raw?.records ?? raw?.attendance ?? [];
+}
+
+/**
  * GET /attendance/reports
  * تقارير الحضور
  * @param {Object} params - { from?, to?, location_id?, status?, page?, limit? }

@@ -31,7 +31,7 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 const DepartmentsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("2-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,8 +70,9 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
   const normalizeDepartment = (item) => {
     const statusRaw = (item.status || "active").toString().toLowerCase();
     const isReviewed = item.is_reviewed === true || item.is_reviewed === "true";
-    const statusDisplay =
-      statusRaw === "under_review" || isReviewed
+    const statusDisplay = isReviewed
+      ? "Active"
+      : statusRaw === "under_review"
         ? "Under Review"
         : statusRaw === "active"
           ? "Active"
@@ -259,7 +260,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -544,11 +545,13 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                             <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
                             <button
                               onClick={() => {
+                                if ((department.employeeCount ?? 0) > 0) return;
                                 setDepartmentToDelete(department);
                                 setShowWarningModal(true);
                               }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="Delete"
+                              disabled={(department.employeeCount ?? 0) > 0}
+                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
+                              title={(department.employeeCount ?? 0) > 0 ? "Cannot delete: department has employees" : "Delete"}
                             >
                               <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
                             </button>
@@ -1285,7 +1288,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -1478,10 +1481,13 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                     </button>
                     <button
                       onClick={() => {
+                        if ((department.employeeCount ?? 0) > 0) return;
                         setDepartmentToDelete(department);
                         setShowWarningModal(true);
                       }}
-                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors"
+                      disabled={(department.employeeCount ?? 0) > 0}
+                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#F3F4F6]"
+                      title={(department.employeeCount ?? 0) > 0 ? "Cannot delete: department has employees" : "Delete"}
                     >
                       <img src={DeleteIcon} alt="Delete" className="w-[16px] h-[16px] object-contain" />
                     </button>

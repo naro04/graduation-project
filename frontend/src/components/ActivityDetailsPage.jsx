@@ -18,7 +18,7 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const activity = location.state?.activity;
   const [showWarningModal, setShowWarningModal] = useState(false);
 

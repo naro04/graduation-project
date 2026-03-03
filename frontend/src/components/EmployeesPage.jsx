@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
 import { logout, getCurrentUser, getEffectiveRole } from "../services/auth.js";
@@ -47,9 +46,8 @@ const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).hr
 const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
 
 const EmployeesPage = ({ userRole = "superAdmin" }) => {
-  const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState(2);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -625,7 +623,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -637,7 +635,8 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                           e.preventDefault();
                           e.stopPropagation();
                           setIsUserDropdownOpen(false);
-                          setIsLogoutModalOpen(true);
+                          logout();
+                          window.location.href = "/login";
                         }}
                         className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
                       >
@@ -1132,20 +1131,20 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setIsUserDropdownOpen(false);
-                      setTimeout(() => {
-                        navigate("/login", { replace: true });
-                      }, 100);
+                      logout();
+                      window.location.href = "/login";
                     }}
                     className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
                   >
@@ -2017,7 +2016,9 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   <button
                     type="button"
                     onClick={() => {
-                      setEmployeeToDelete(editingEmployee);
+                      setEmployeeToDelete(editingEmployee ?? null);
+                      setShowEditEmployeePage(false);
+                      setEditingEmployee(null);
                       setShowWarningModal(true);
                     }}
                     className="px-[24px] py-[6px] rounded-[5px] hover:opacity-90 transition-opacity"
@@ -2077,15 +2078,10 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={async () => {
+        onConfirm={() => {
           setIsLogoutModalOpen(false);
-          try {
-            await logout();
-            navigate("/login", { replace: true });
-          } catch (error) {
-            console.error('Logout error:', error);
-            navigate("/login", { replace: true });
-          }
+          logout();
+          window.location.href = "/login";
         }}
       />
     </div>

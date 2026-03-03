@@ -30,7 +30,7 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 
 const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const { locationName } = useParams();
   const [activeMenu, setActiveMenu] = useState("5-3");
   const [showEditPage, setShowEditPage] = useState(false);

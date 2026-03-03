@@ -1,11 +1,7 @@
 import axios from "axios";
 
-const RAILWAY_API = "https://graduation-project-production-0a21.up.railway.app/api/v1";
-const baseURL = import.meta.env.VITE_API_BASE_URL || RAILWAY_API;
-// للتأكد: افتح Console في المتصفح وشوف لون الطلبات يروح على وين
-if (import.meta.env.DEV) {
-  console.log("[API] الطلبات تروح على:", baseURL);
-}
+// الباكند المرفوع على Railway
+const baseURL = "https://graduation-project-production-b02b.up.railway.app/api/v1";
 export const apiClient = axios.create({
   baseURL,
   headers: { "Content-Type": "application/json" },

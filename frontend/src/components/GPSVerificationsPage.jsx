@@ -3,6 +3,44 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getGPSVerifications, getGPSVerificationsStats, verifyGPSCheckIn, updateGPSVerificationStatus, deleteGPSVerification } from "../services/gpsVerifications";
+import { apiClient } from "../services/apiClient";
+import { exportToExcel, exportToPdf } from "../utils/exportReport";
+
+const API_ORIGIN = (apiClient.defaults.baseURL || "").replace(/\/api\/v1\/?$/, "");
+
+function toAbsoluteAvatarUrl(avatarUrl) {
+  if (!avatarUrl || typeof avatarUrl !== "string") return null;
+  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
+  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
+  return `${API_ORIGIN}${path}`;
+}
+
+function getInitials(name) {
+  if (!name || typeof name !== "string") return "?";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().slice(0, 2);
+  return (parts[0] || "?")[0].toUpperCase();
+}
+
+function EmployeeAvatar({ src, name, className = "w-[28px] h-[28px] rounded-full object-cover flex-shrink-0" }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImg = src && !imgFailed;
+  const initials = getInitials(name);
+  return (
+    <div className={`${className} flex items-center justify-center bg-[#00564F] text-white text-[11px] font-semibold overflow-hidden`}>
+      {showImg ? (
+        <img
+          src={src}
+          alt={name}
+          className="w-full h-full object-cover"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span>{initials}</span>
+      )}
+    </div>
+  );
+}
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -32,7 +70,7 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("3-2");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -80,7 +118,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
         location: item.location_address ?? item.location_name ?? '-',
         distanceDifference: item.distance_from_base != null ? `${Math.round(Number(item.distance_from_base))} m` : '-',
         status: (item.gps_status ?? "Not Verified").replace(/\s+/g, " ").trim(),
-        photo: item.avatar_url ?? null,
+        photo: toAbsoluteAvatarUrl(item.avatar_url) || item.avatar_url || null,
         originalData: item
       }));
 
@@ -210,6 +248,15 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
     filterStatus === "All Status" || normalizeStatus(empStatus) === normalizeStatus(filterStatus);
 
   // Filter data based on search and status
+  const GPS_EXPORT_COLUMNS = [
+    { key: "name", label: "Employee" },
+    { key: "employeeId", label: "Employee ID" },
+    { key: "checkIn", label: "Check-in" },
+    { key: "location", label: "Location" },
+    { key: "distanceDifference", label: "Distance" },
+    { key: "status", label: "Status" },
+  ];
+
   const filteredData = gpsVerifications.filter((employee) => {
     const matchesSearch =
       employee.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -302,7 +349,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button
                         onClick={() => {
@@ -341,7 +388,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
           </header>
 
           {/* Page Content */}
-          <div ref={pageContentRef} className="flex-1 p-[36px] bg-[#F5F7FA] overflow-y-auto" style={{ overflowX: 'hidden', maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
+          <div ref={pageContentRef} className="flex-1 p-[36px] bg-[#F5F7FA] overflow-y-auto min-w-0 overflow-x-hidden" style={{ maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
             {/* Page Header */}
             <div className="mb-[20px]" style={{ minWidth: 0, maxWidth: '100%' }}>
               <div className="flex items-start justify-between" style={{ minWidth: 0, maxWidth: '100%' }}>
@@ -409,7 +456,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                       </div>
                       <button
                         onClick={() => {
-                          console.log('Export All as Excel');
+                          exportToExcel(filteredData, GPS_EXPORT_COLUMNS, "gps-verifications.xlsx");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA]"
@@ -419,7 +466,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <button
                         onClick={() => {
-                          console.log('Export All as PDF');
+                          exportToPdf(filteredData, GPS_EXPORT_COLUMNS, "gps-verifications.pdf");
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA] rounded-b-[8px]"
@@ -724,7 +771,8 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                         </div>
                         <button
                           onClick={() => {
-                            console.log('Export selected as Excel', selectedEmployees);
+                            const rows = filteredData.filter((e) => selectedEmployees.includes(e.id));
+                            exportToExcel(rows, GPS_EXPORT_COLUMNS, "gps-verifications-selected.xlsx");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -734,7 +782,8 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                         </button>
                         <button
                           onClick={() => {
-                            console.log('Export selected as PDF', selectedEmployees);
+                            const rows = filteredData.filter((e) => selectedEmployees.includes(e.id));
+                            exportToPdf(rows, GPS_EXPORT_COLUMNS, "gps-verifications-selected.pdf");
                             setIsExportSelectedDropdownOpen(false);
                           }}
                           className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] first:rounded-t-[8px] last:rounded-b-[8px]"
@@ -797,12 +846,12 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
             )}
 
             {/* Table */}
-            <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+            <div className="bg-white rounded-[10px] overflow-hidden min-w-0" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
+              <div className="overflow-x-hidden min-w-0">
+                <table className="w-full min-w-0" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
-                      <th className="px-[12px] py-[12px] text-center text-[12px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[8px] py-[12px] text-center text-[12px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', width: '44px' }}>
                         <input
                           type="checkbox"
                           checked={selectedEmployees.length === paginatedData.length && paginatedData.length > 0}
@@ -810,25 +859,25 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                           className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                         />
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', minWidth: 0 }}>
                         Employee
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', width: '100px' }}>
                         Employee ID
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', width: '90px' }}>
                         Check-in
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', minWidth: 0 }}>
                         Location
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, width: '110px', minWidth: '110px', whiteSpace: 'normal', lineHeight: 1.3, overflow: 'hidden' }}>
                         Distance difference
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', width: '100px' }}>
                         Status
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <th className="px-[8px] py-[12px] text-center text-[14px] text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', width: '80px' }}>
                         Action
                       </th>
                     </tr>
@@ -836,7 +885,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                   <tbody>
                     {paginatedData.map((employee) => (
                       <tr key={employee.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                        <td className="px-[8px] py-[12px] border-r border-[#E0E0E0] text-center w-[44px]" style={{ whiteSpace: 'nowrap' }}>
                           <input
                             type="checkbox"
                             checked={selectedEmployees.includes(employee.id)}
@@ -844,20 +893,16 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                             className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                           />
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left" style={{ whiteSpace: 'nowrap' }}>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ whiteSpace: 'nowrap' }}>
                           <div className="flex items-center gap-[8px]">
-                            <img
-                              src={employee.photo}
-                              alt={employee.name}
-                              className="w-[28px] h-[28px] rounded-full object-cover flex-shrink-0"
-                            />
+                            <EmployeeAvatar src={employee.photo} name={employee.name} />
                             <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
                               {employee.name}
                             </span>
                           </div>
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600 }}>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center max-w-[100px]" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={employee.employeeId}>
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                             {employee.employeeId}
                           </span>
                         </td>
@@ -866,8 +911,8 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                             {employee.checkIn}
                           </span>
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600 }}>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={employee.location}>
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }}>
                             {employee.location}
                           </span>
                         </td>
@@ -888,7 +933,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                             {employee.status}
                           </span>
                         </td>
-                        <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
+                        <td className="px-[8px] py-[12px] text-center w-[80px]" style={{ whiteSpace: 'nowrap' }}>
                           <div className="flex items-center justify-center gap-0">
                             <button
                               type="button"
@@ -1295,9 +1340,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
               <div key={employee.id} className="bg-white rounded-[10px] border border-[#E0E0E0] shadow-sm p-[16px]">
                 <div className="flex items-start justify-between mb-[12px]">
                   <div className="flex items-center gap-[12px]">
-                    <div className="w-[40px] h-[40px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" />
-                    </div>
+                    <EmployeeAvatar src={employee.photo} name={employee.name} className="w-[40px] h-[40px] rounded-full object-cover flex-shrink-0" />
                     <div>
                       <p className="text-[14px] font-medium text-[#111827] mb-[2px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
                         {employee.name}

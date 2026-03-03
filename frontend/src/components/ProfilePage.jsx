@@ -6,12 +6,16 @@ import {
   getPersonalInfo,
   updatePersonalInfo,
   getJobInfo,
+  updateJobInfo,
   getEmergencyContact,
   updateEmergencyContact,
   getWorkSchedule,
   getAccountSecurity,
+  getProfileLocation,
 } from "../services/profile.js";
-import { getEffectiveRole } from "../services/auth.js";
+import { getDepartments } from "../services/departments.js";
+import { getPositions } from "../services/positions.js";
+import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -47,6 +51,7 @@ import LogoutModal from "./LogoutModal";
 // const LogoutIcon2 = new URL("../images/icons/logout2.png", import.meta.url).href;
 
 const ProfilePage = ({ userRole = "superAdmin" }) => {
+  const currentUser = getCurrentUser();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("personal");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -78,9 +83,21 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   const [isSavingEmergency, setIsSavingEmergency] = useState(false);
   const [emergencySaveError, setEmergencySaveError] = useState(null);
   const [emergencySaveSuccess, setEmergencySaveSuccess] = useState(false);
+  const [isJobEditMode, setIsJobEditMode] = useState(false);
+  const [jobFormData, setJobFormData] = useState({ departmentId: "", positionId: "", employmentType: "" });
+  const [departmentsList, setDepartmentsList] = useState([]);
+  const [positionsList, setPositionsList] = useState([]);
+  const [isSavingJob, setIsSavingJob] = useState(false);
+  const [jobSaveError, setJobSaveError] = useState(null);
+  const [isLocationsEditMode, setIsLocationsEditMode] = useState(false);
+  const [isScheduleInfoOpen, setIsScheduleInfoOpen] = useState(false);
 
   // Role display names
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
+  // Profile edit permissions by role (aligned with Roles & Permissions page)
+  const canEditProfileJob = effectiveRole === "superAdmin" || effectiveRole === "hr";       // user:edit / editEmployee
+  const canEditProfileLocations = effectiveRole === "superAdmin";                            // location:assign_employees
+  const canEditProfileSchedule = effectiveRole === "superAdmin";                             // no schedule permission in RBAC
   const roleDisplayNames = {
     superAdmin: "Super Admin",
     hr: "HR Admin",
@@ -173,7 +190,26 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
           if (data) setProfileData((prev) => ({ ...prev, employee: { ...(prev?.employee || {}), ...data } }));
         } else if (activeTab === "job") {
           const data = await getJobInfo();
-          if (data) setProfileData((prev) => ({ ...prev, employee: { ...(prev?.employee || {}), ...data }, jobInfo: data }));
+          if (data) {
+            setProfileData((prev) => {
+              const prevEmp = prev?.employee || {};
+              return {
+                ...prev,
+                employee: {
+                  ...prevEmp,
+                  department: data.department != null ? { name: data.department } : prevEmp.department,
+                  position: data.position != null ? { title: data.position } : prevEmp.position,
+                  supervisor: data.supervisor != null ? { name: data.supervisor } : prevEmp.supervisor,
+                  employmentType: data.employment_type ?? data.employmentType ?? prevEmp.employmentType,
+                  employee_type: data.employee_type,
+                  department_id: data.department_id,
+                  position_id: data.position_id,
+                  role_id: data.role_id,
+                },
+                jobInfo: data,
+              };
+            });
+          }
         } else if (activeTab === "emergency") {
           const data = await getEmergencyContact();
           const contacts = data?.emergencyContacts ?? (Array.isArray(data) ? data : []);
@@ -181,6 +217,9 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
         } else if (activeTab === "schedule") {
           const data = await getWorkSchedule();
           if (data) setProfileData((prev) => ({ ...prev, workSchedule: data }));
+        } else if (activeTab === "locations") {
+          const list = await getProfileLocation();
+          setProfileData((prev) => ({ ...prev, locations: Array.isArray(list) ? list : [] }));
         } else if (activeTab === "security") {
           const data = await getAccountSecurity();
           if (data) setProfileData((prev) => ({ ...prev, accountSecurity: data }));
@@ -197,6 +236,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   useEffect(() => {
     if (profileData && isEditMode) {
       setFormData({
+        employeeCode: profileData.employee?.employeeCode || profileData.employee?.employee_code || "",
+        status: profileData.employee?.status || "",
         firstName: profileData.employee?.firstName || profileData.name?.split(' ')[0] || "",
         middleName: profileData.employee?.middleName || "",
         lastName: profileData.employee?.lastName || profileData.name?.split(' ').slice(1).join(' ') || "",
@@ -234,6 +275,33 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
       );
     }
   }, [profileData, isEmergencyEditMode]);
+
+  // Load departments and positions when Job tab is active (for edit dropdowns)
+  useEffect(() => {
+    if (activeTab !== "job") return;
+    let cancelled = false;
+    Promise.all([getDepartments(), getPositions()])
+      .then(([depts, positions]) => {
+        if (!cancelled) {
+          setDepartmentsList(Array.isArray(depts) ? depts : []);
+          setPositionsList(Array.isArray(positions) ? positions : []);
+        }
+      })
+      .catch((err) => console.error("Failed to load departments/positions:", err));
+    return () => { cancelled = true; };
+  }, [activeTab]);
+
+  // Initialize job form when entering job edit mode
+  useEffect(() => {
+    if (activeTab === "job" && isJobEditMode && profileData?.jobInfo) {
+      const j = profileData.jobInfo;
+      setJobFormData({
+        departmentId: j.department_id ?? j.departmentId ?? "",
+        positionId: j.position_id ?? j.positionId ?? "",
+        employmentType: j.employment_type ?? j.employmentType ?? "",
+      });
+    }
+  }, [activeTab, isJobEditMode, profileData?.jobInfo]);
 
   // Handle edit mode toggle
   const handleEditClick = () => {
@@ -324,6 +392,57 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleJobEditClick = () => {
+    setJobSaveError(null);
+    setIsJobEditMode(true);
+  };
+  const handleCancelJobEdit = () => {
+    setIsJobEditMode(false);
+    setJobFormData({ departmentId: "", positionId: "", employmentType: "" });
+  };
+  const handleSaveJob = async () => {
+    setIsSavingJob(true);
+    setJobSaveError(null);
+    try {
+      await updateJobInfo({
+        departmentId: jobFormData.departmentId || undefined,
+        positionId: jobFormData.positionId || undefined,
+        employmentType: jobFormData.employmentType || undefined,
+      });
+      const data = await getJobInfo();
+      if (data) {
+        setProfileData((prev) => {
+          const prevEmp = prev?.employee || {};
+          return {
+            ...prev,
+            employee: {
+              ...prevEmp,
+              department: data.department != null ? { name: data.department } : prevEmp.department,
+              position: data.position != null ? { title: data.position } : prevEmp.position,
+              supervisor: data.supervisor != null ? { name: data.supervisor } : prevEmp.supervisor,
+              employmentType: data.employment_type ?? data.employmentType ?? prevEmp.employmentType,
+              department_id: data.department_id,
+              position_id: data.position_id,
+            },
+            jobInfo: data,
+          };
+        });
+      }
+      setIsJobEditMode(false);
+    } catch (err) {
+      setJobSaveError(err?.message || "Failed to save job info.");
+    } finally {
+      setIsSavingJob(false);
+    }
+  };
+
+  const handleLocationsEditClick = () => {
+    setIsLocationsEditMode(true);
+  };
+  const handleCancelLocationsEdit = () => {
+    setIsLocationsEditMode(false);
   };
 
   // Handle emergency contact edit mode toggle
@@ -450,6 +569,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
       }
       if (formData.gender !== undefined) updateData.gender = formData.gender;
       if (formData.maritalStatus !== undefined) updateData.maritalStatus = formData.maritalStatus;
+      if (effectiveRole === "superAdmin" && formData.employeeCode !== undefined) updateData.employeeCode = formData.employeeCode;
+      if (effectiveRole === "superAdmin" && formData.status !== undefined) updateData.status = formData.status;
 
       // Use updatePersonalInfo endpoint with PUT method
       await updatePersonalInfo(updateData);
@@ -522,14 +643,19 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
     status: profileData.employee?.status || "",
     avatarUrl: profileData.avatarUrl || profileData.employee?.avatarUrl || null,
     roles: profileData.roles || [],
-    department: profileData.employee?.department?.name || "",
-    position: profileData.employee?.position?.title || "",
+    department: (() => { const d = profileData.employee?.department; return typeof d === "string" ? d : d?.name ?? profileData.jobInfo?.department ?? ""; })(),
+    position: (() => { const p = profileData.employee?.position; return typeof p === "string" ? p : p?.title ?? profileData.jobInfo?.position ?? ""; })(),
     employeeCode: profileData.employee?.employeeCode || "",
     hiredAt: formatDate(profileData.employee?.hiredAt),
-    employmentType: profileData.employee?.employmentType || "",
-    supervisor: profileData.employee?.supervisor?.name || null,
+    employmentType: profileData.employee?.employmentType || profileData.employee?.employment_type || profileData.jobInfo?.employment_type || "",
+    supervisor: (() => { const s = profileData.employee?.supervisor; return typeof s === "string" ? s : s?.name ?? profileData.jobInfo?.supervisor ?? null; })(),
     emergencyContacts: profileData.employee?.emergencyContacts || [],
   } : null;
+
+  const profileLocations = profileData?.locations ?? [];
+  const primaryLocation = profileLocations[0] ?? null;
+  const secondaryLocation = profileLocations[1] ?? null;
+  const mapLocation = profileLocations.find((l) => l.latitude != null && l.longitude != null) || primaryLocation;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -612,7 +738,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
               {isDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
@@ -676,8 +802,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
-              {/* Tabs - At the bottom of green header */}
-              <div className="flex gap-[8px] pl-[220px] mt-auto pt-[24px]">
+              {/* Tabs - At the bottom of green header (aligned with content) */}
+              <div className="flex gap-[8px] pl-[256px] mt-auto pt-[24px]">
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
@@ -711,7 +837,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
             {!isLoading && !error && userData && (
             <div className="flex pt-[20px]">
               {/* Left Side - Contact Info (Below green header, aligned with avatar) */}
-              <div className="w-[180px] pl-[16px] pr-[24px] pb-[20px] flex-shrink-0">
+              <div className="min-w-[200px] w-[240px] max-w-[280px] pl-[16px] pr-[24px] pb-[20px] flex-shrink-0">
                 {/* Contact Info */}
                 <div className="flex flex-col gap-[14px] mt-[20px]">
                   {/* Employee ID */}
@@ -730,20 +856,20 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                     <span className="text-[13px] text-[#666666] whitespace-nowrap">{userData?.phone || "N/A"}</span>
                   </div>
 
-                  {/* Email */}
-                  <div className="flex items-center gap-[10px]">
-                    <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0">
+                  {/* Email - allow full text to show (wrap if needed) */}
+                  <div className="flex items-start gap-[10px]">
+                    <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 mt-[1px]">
                       <img src={EmailIcon} alt="Email" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <span className="text-[13px] text-[#666666]">{userData?.email || "N/A"}</span>
+                    <span className="text-[13px] text-[#666666] break-all min-w-0">{userData?.email || "N/A"}</span>
                   </div>
 
-                  {/* Location */}
-                  <div className="flex items-center gap-[10px]">
-                    <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0">
+                  {/* Location - allow wrap for long text */}
+                  <div className="flex items-start gap-[10px]">
+                    <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 mt-[1px]">
                       <img src={LocationIcon} alt="Location" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <span className="text-[13px] text-[#666666]">{userData?.location || "N/A"}</span>
+                    <span className="text-[13px] text-[#666666] break-words min-w-0">{userData?.location || "N/A"}</span>
                   </div>
 
                   {/* Divider Line */}
@@ -764,8 +890,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
-              {/* Right Side - Form Content (White background) */}
-              <div className="flex-1 px-[24px] pb-[24px] pt-0 bg-white">
+              {/* Right Side - Form Content (White background). Extra right padding on Schedule so edit icon is never cut off. */}
+              <div className={`flex-1 pl-[24px] pb-[24px] pt-0 bg-white ${activeTab === "schedule" ? "pr-[120px]" : "pr-[24px]"}`}>
                 {activeTab === "personal" && (
                   <div>
                     {/* Personal Section Header */}
@@ -774,7 +900,13 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <img src={PersonalIcon} alt="Personal" className="w-[24px] h-[24px] object-contain" />
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Personal</h2>
                       </div>
-                      <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
+                      <button
+                        type="button"
+                        onClick={handleEditClick}
+                        disabled={isEditMode}
+                        className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={effectiveRole === "superAdmin" ? "Edit (Super Admin: all fields)" : "Edit Personal (ID and Status are read-only)"}
+                      >
                         <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                       </button>
                     </div>
@@ -788,25 +920,27 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
 
                       {/* Form Grid - 2 columns */}
                       <div className="grid grid-cols-2 gap-x-[20px] gap-y-[12px]">
-                        {/* Employee # */}
+                        {/* Employee # - editable only for Super Admin */}
                         <div>
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Employee #</label>
                           <input
                             type="text"
-                            value={userData?.employeeCode || userData?.employeeId || ""}
-                            readOnly
-                            className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none"
+                            value={effectiveRole === "superAdmin" && isEditMode ? (formData.employeeCode ?? (userData?.employeeCode || userData?.employeeId || "")) : (userData?.employeeCode || userData?.employeeId || "")}
+                            onChange={effectiveRole === "superAdmin" ? (e) => handleInputChange('employeeCode', e.target.value) : undefined}
+                            readOnly={!(effectiveRole === "superAdmin" && isEditMode)}
+                            className={`w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none ${effectiveRole === "superAdmin" && isEditMode ? 'bg-white focus:border-[#00564F]' : 'bg-[#F9FAFB]'}`}
                           />
                         </div>
 
-                        {/* Status */}
+                        {/* Status - editable only for Super Admin */}
                         <div>
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Status</label>
                           <input
                             type="text"
-                            value={userData?.status || ""}
-                            readOnly
-                            className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none"
+                            value={effectiveRole === "superAdmin" && isEditMode ? (formData.status ?? (userData?.status || "")) : (userData?.status || "")}
+                            onChange={effectiveRole === "superAdmin" ? (e) => handleInputChange('status', e.target.value) : undefined}
+                            readOnly={!(effectiveRole === "superAdmin" && isEditMode)}
+                            className={`w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none ${effectiveRole === "superAdmin" && isEditMode ? 'bg-white focus:border-[#00564F]' : 'bg-[#F9FAFB]'}`}
                           />
                         </div>
 
@@ -991,9 +1125,11 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <img src={JobIcon} alt="Job" className="w-[20px] h-[20px] object-contain" />
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Job</h2>
                       </div>
-                      <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
-                        <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
-                      </button>
+                      {canEditProfileJob && (
+                        <button type="button" onClick={handleJobEditClick} disabled={isJobEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Job">
+                          <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
+                        </button>
+                      )}
                     </div>
 
                     {/* Job Information */}
@@ -1003,6 +1139,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <h3 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Job Information</h3>
                       </div>
 
+                      {jobSaveError && <p className="text-red-600 text-[13px] mb-3">{jobSaveError}</p>}
+
                       {/* Form Grid - 2 columns */}
                       <div className="grid grid-cols-2 gap-x-[20px] gap-y-[12px]">
                         {/* Department */}
@@ -1010,18 +1148,16 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Department</label>
                           <div className="relative">
                             <select
-                              value={userData?.department || ""}
-                              readOnly
-                              disabled
-                              className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none"
+                              value={isJobEditMode ? (jobFormData.departmentId ?? "") : (profileData?.jobInfo?.department_id ?? profileData?.employee?.department_id ?? "")}
+                              onChange={isJobEditMode ? (e) => setJobFormData((prev) => ({ ...prev, departmentId: e.target.value })) : undefined}
+                              readOnly={!isJobEditMode}
+                              disabled={!isJobEditMode}
+                              className={`w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none appearance-none ${isJobEditMode ? "bg-white cursor-pointer" : "bg-[#F9FAFB]"}`}
                             >
                               <option value="">Select Department</option>
-                              <option value="HR">HR</option>
-                              <option value="Field Operations">Field Operations</option>
-                              <option value="Office">Office</option>
-                              <option value="Project Management">Project Management</option>
-                              <option value="Finance">Finance</option>
-                              <option value="IT">IT</option>
+                              {departmentsList.map((d) => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                              ))}
                             </select>
                             <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                               <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1034,17 +1170,16 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Position</label>
                           <div className="relative">
                             <select
-                              value={userData?.position || ""}
-                              readOnly
-                              disabled
-                              className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none"
+                              value={isJobEditMode ? (jobFormData.positionId ?? "") : (profileData?.jobInfo?.position_id ?? profileData?.employee?.position_id ?? "")}
+                              onChange={isJobEditMode ? (e) => setJobFormData((prev) => ({ ...prev, positionId: e.target.value })) : undefined}
+                              readOnly={!isJobEditMode}
+                              disabled={!isJobEditMode}
+                              className={`w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none appearance-none ${isJobEditMode ? "bg-white cursor-pointer" : "bg-[#F9FAFB]"}`}
                             >
                               <option value="">Select Position</option>
-                              <option value="System Administration">System Administration</option>
-                              <option value="Manager">Manager</option>
-                              <option value="Developer">Developer</option>
-                              <option value="Designer">Designer</option>
-                              <option value="Analyst">Analyst</option>
+                              {positionsList.map((p) => (
+                                <option key={p.id} value={p.id}>{p.title ?? p.name}</option>
+                              ))}
                             </select>
                             <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                               <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1057,10 +1192,11 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Employee Type</label>
                           <div className="relative">
                             <select
-                              value={userData?.employmentType || ""}
-                              readOnly
-                              disabled
-                              className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none"
+                              value={isJobEditMode ? (jobFormData.employmentType ?? "") : ((userData?.employmentType || profileData?.jobInfo?.employment_type) ?? "")}
+                              onChange={isJobEditMode ? (e) => setJobFormData((prev) => ({ ...prev, employmentType: e.target.value })) : undefined}
+                              readOnly={!isJobEditMode}
+                              disabled={!isJobEditMode}
+                              className={`w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none appearance-none ${isJobEditMode ? "bg-white cursor-pointer" : "bg-[#F9FAFB]"}`}
                             >
                               <option value="">Select Employee Type</option>
                               <option value="Full-Time">Full-Time</option>
@@ -1074,7 +1210,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           </div>
                         </div>
 
-                        {/* Supervisor */}
+                        {/* Supervisor - read-only (not updated by API yet) */}
                         <div>
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Supervisor</label>
                           <div className="relative">
@@ -1086,7 +1222,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                             >
                               <option value="">Select Supervisor</option>
                               <option value="none">None</option>
-                              <option value={userData?.supervisor || ""}>{userData?.supervisor || "None"}</option>
+                              <option value={userData?.supervisor || ""}>{typeof userData?.supervisor === "string" ? userData.supervisor : (userData?.supervisor?.name ?? "None")}</option>
                             </select>
                             <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                               <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1094,12 +1230,16 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           </div>
                         </div>
 
-                        {/* Employment Type */}
+                        {/* Employment Type (same as Employee Type for save) */}
                         <div>
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Employment Type</label>
                           <div className="relative">
                             <select
-                              className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer"
+                              value={isJobEditMode ? (jobFormData.employmentType ?? "") : ((userData?.employmentType || profileData?.jobInfo?.employment_type) ?? "")}
+                              onChange={isJobEditMode ? (e) => setJobFormData((prev) => ({ ...prev, employmentType: e.target.value })) : undefined}
+                              readOnly={!isJobEditMode}
+                              disabled={!isJobEditMode}
+                              className={`w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none appearance-none ${isJobEditMode ? "bg-white cursor-pointer" : "bg-[#F9FAFB]"}`}
                             >
                               <option value="">Select Employment Type</option>
                               <option value="Full-Time">Full-Time</option>
@@ -1115,6 +1255,17 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           </div>
                         </div>
                       </div>
+
+                      {isJobEditMode && (
+                        <div className="flex items-center justify-end gap-[12px] mt-[20px]">
+                          <button type="button" onClick={handleCancelJobEdit} disabled={isSavingJob} className="px-[24px] py-[8px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#737373] text-[14px] font-medium hover:bg-[#F5F5F5] transition-colors disabled:opacity-50">
+                            Cancel
+                          </button>
+                          <button type="button" onClick={handleSaveJob} disabled={isSavingJob} className="px-[24px] py-[8px] rounded-[6px] bg-[#00564F] text-white text-[14px] font-semibold hover:bg-[#004D40] transition-colors disabled:opacity-50">
+                            {isSavingJob ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1127,10 +1278,27 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <img src={LocationIcon2} alt="Locations" className="w-[20px] h-[20px] object-contain" />
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Locations</h2>
                       </div>
-                      <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
-                        <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
-                      </button>
+                      {canEditProfileLocations && (
+                        <button type="button" onClick={handleLocationsEditClick} disabled={isLocationsEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Locations">
+                          <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
+                        </button>
+                      )}
                     </div>
+
+                    {isLocationsEditMode && (
+                      <div className="mb-[20px] p-[16px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
+                        <p className="text-[13px] text-[#0C4A6E] mb-2">
+                          {canEditProfileLocations ? (
+                            <>To change assigned locations, go to <strong>Locations Management → Location Assignment</strong> and update the employee&apos;s locations.</>
+                          ) : (
+                            <>Assigned locations are set by an admin. <strong>Contact your admin or HR</strong> to request or change your assigned locations. (Location Assignment is only available to roles with that permission.)</>
+                          )}
+                        </p>
+                        <button type="button" onClick={handleCancelLocationsEdit} className="px-[16px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[13px] font-medium hover:bg-[#F5F5F5]">
+                          Close
+                        </button>
+                      </div>
+                    )}
 
                     {/* Assigned Locations */}
                     <div className="bg-[#F5F7FA] rounded-[8px] p-[20px] mb-[24px]">
@@ -1139,103 +1307,36 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <h3 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Assigned Locations</h3>
                       </div>
 
-                      {/* Primary Location */}
+                      {profileLocations.length === 0 && (
+                        <div className="mb-[20px] p-[16px] rounded-[8px] bg-amber-50 border border-amber-200 text-[13px] text-amber-800">
+                          <p className="font-medium mb-1">No locations assigned yet.</p>
+                          <p>{canEditProfileLocations ? (
+                            <>Locations are assigned from <strong>Locations Management → Location Assignment</strong>. Click the edit icon above for more.</>
+                          ) : (
+                            <>Locations are assigned by an admin. <strong>Contact your admin or HR</strong> to have locations assigned to you.</>
+                          )}</p>
+                        </div>
+                      )}
+
+                      {/* Primary Location - from DB */}
                       <div className="mb-[24px]">
                         <h4 className="text-[14px] font-semibold text-[#333333] mb-[16px]">Primary Location</h4>
                         <div className="grid grid-cols-3 gap-x-[20px] gap-y-[12px]">
-                          {/* Location Type */}
                           <div>
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Location Type</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Type</option>
-                                <option value="Office">Office</option>
-                                <option value="School">School</option>
-                                <option value="Field">Field</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
+                            <input type="text" readOnly value={primaryLocation?.location_type ?? ""} placeholder="Select Type" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
-
-                          {/* Location Name */}
                           <div>
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Location Name</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Location</option>
-                                <option value="Foundation Office">Foundation Office</option>
-                                <option value="Hittin School">Hittin School</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
+                            <input type="text" readOnly value={primaryLocation?.name ?? ""} placeholder="Select Location" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
-
-                          {/* Location Code */}
                           <div>
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Location Code</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
+                            <input type="text" readOnly value={primaryLocation?.id ?? ""} placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
-
-                          {/* Status */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Status</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Status</option>
-                                <option value="Active">Active</option>
-                                <option value="Inactive">Inactive</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
-                          </div>
-
-                          {/* Physical Address */}
-                          <div>
+                          <div className="col-span-3">
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Physical Address</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
-                          </div>
-
-                          {/* Operating Days */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Operating Days</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Days</option>
-                                <option value="Sunday - Thursday">Sunday - Thursday</option>
-                                <option value="Monday - Friday">Monday - Friday</option>
-                                <option value="Saturday - Wednesday">Saturday - Wednesday</option>
-                                <option value="Sunday - Friday">Sunday - Friday</option>
-                                <option value="Monday - Saturday">Monday - Saturday</option>
-                                <option value="All Week">All Week</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
-                          </div>
-
-                          {/* Contact Person Name */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Contact Person Name</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
-                          </div>
-
-                          {/* Contact Person Phone */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Contact Person Phone</label>
-                            <input type="tel" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
-                          </div>
-
-                          {/* Opening Time / Closing Time */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Opening Time / Closing Time</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
+                            <input type="text" readOnly value={primaryLocation?.address ?? ""} placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
                         </div>
                       </div>
@@ -1243,103 +1344,25 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       {/* Divider Line */}
                       <div className="h-[1px] bg-[#E0E0E0] my-[24px]"></div>
 
-                      {/* Secondary Location */}
+                      {/* Secondary Location - from DB */}
                       <div>
                         <h4 className="text-[14px] font-semibold text-[#333333] mb-[16px]">Secondary Location</h4>
                         <div className="grid grid-cols-3 gap-x-[20px] gap-y-[12px]">
-                          {/* Location Type */}
                           <div>
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Location Type</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Type</option>
-                                <option value="Office">Office</option>
-                                <option value="School">School</option>
-                                <option value="Field">Field</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
+                            <input type="text" readOnly value={secondaryLocation?.location_type ?? ""} placeholder="Select Type" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
-
-                          {/* Location Name */}
                           <div>
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Location Name</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Location</option>
-                                <option value="Foundation Office">Foundation Office</option>
-                                <option value="Hittin School">Hittin School</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
+                            <input type="text" readOnly value={secondaryLocation?.name ?? ""} placeholder="Select Location" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
-
-                          {/* Location Code */}
                           <div>
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Location Code</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
+                            <input type="text" readOnly value={secondaryLocation?.id ?? ""} placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
-
-                          {/* Status */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Status</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Status</option>
-                                <option value="Active">Active</option>
-                                <option value="Inactive">Inactive</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
-                          </div>
-
-                          {/* Physical Address */}
-                          <div>
+                          <div className="col-span-3">
                             <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Physical Address</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
-                          </div>
-
-                          {/* Operating Days */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Operating Days</label>
-                            <div className="relative">
-                              <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
-                                <option value="">Select Days</option>
-                                <option value="Sunday - Thursday">Sunday - Thursday</option>
-                                <option value="Monday - Friday">Monday - Friday</option>
-                                <option value="Saturday - Wednesday">Saturday - Wednesday</option>
-                                <option value="Sunday - Friday">Sunday - Friday</option>
-                                <option value="Monday - Saturday">Monday - Saturday</option>
-                                <option value="All Week">All Week</option>
-                              </select>
-                              <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
-                                <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
-                          </div>
-
-                          {/* Contact Person Name */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Contact Person Name</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
-                          </div>
-
-                          {/* Contact Person Phone */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Contact Person Phone</label>
-                            <input type="tel" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
-                          </div>
-
-                          {/* Opening Time / Closing Time */}
-                          <div>
-                            <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Opening Time / Closing Time</label>
-                            <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
+                            <input type="text" readOnly value={secondaryLocation?.address ?? ""} placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none" />
                           </div>
                         </div>
                       </div>
@@ -1347,11 +1370,21 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       {/* Divider Line */}
                       <div className="h-[1px] bg-[#E0E0E0] my-[24px]"></div>
 
-                      {/* Current Location */}
+                      {/* Current Location - real map from DB lat/lng */}
                       <div>
                         <h3 className="text-[15px] font-semibold text-[#333333] mb-[16px]">Current Location</h3>
-                        <div className="w-[65%] overflow-hidden">
-                          <img src={MapImage} alt="Current Location Map" className="w-full h-[178px] object-cover" />
+                        <div className="w-[65%] overflow-hidden rounded-[8px] border border-[#E0E0E0]">
+                          {mapLocation?.latitude != null && mapLocation?.longitude != null ? (
+                            <iframe
+                              title="Location Map"
+                              src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(mapLocation.longitude) - 0.01}%2C${Number(mapLocation.latitude) - 0.01}%2C${Number(mapLocation.longitude) + 0.01}%2C${Number(mapLocation.latitude) + 0.01}&layer=mapnik&marker=${mapLocation.latitude}%2C${mapLocation.longitude}`}
+                              className="w-full h-[278px] border-0"
+                              loading="lazy"
+                              referrerPolicy="no-referrer-when-downgrade"
+                            />
+                          ) : (
+                            <img src={MapImage} alt="Current Location Map" className="w-full h-[178px] object-cover" />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1360,16 +1393,29 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
 
                 {activeTab === "schedule" && (
                   <div>
-                    {/* Schedule Section Header */}
-                    <div className="flex items-center justify-between mb-[20px] pl-[8px] mt-[4px]">
-                      <div className="flex items-center gap-[8px]">
-                        <img src={ScheduleIcon} alt="Schedule" className="w-[24px] h-[24px] object-contain" />
+                    {/* Schedule Section Header - same layout as Job, Locations (edit icon on the right; column has extra pr when schedule) */}
+                    <div className="flex items-center justify-between mb-[20px] pl-[8px] mt-[4px] min-w-0">
+                      <div className="flex items-center gap-[8px] min-w-0">
+                        <img src={ScheduleIcon} alt="Schedule" className="w-[24px] h-[24px] object-contain flex-shrink-0" />
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Schedule</h2>
                       </div>
-                      <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
-                        <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
-                      </button>
+                      {canEditProfileSchedule && (
+                        <button type="button" onClick={() => setIsScheduleInfoOpen((v) => !v)} className="flex-shrink-0 w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Schedule">
+                          <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
+                        </button>
+                      )}
                     </div>
+
+                    {isScheduleInfoOpen && (
+                      <div className="mb-[20px] p-[16px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
+                        <p className="text-[13px] text-[#0C4A6E] mb-2">
+                          Work schedule editing from profile is not available yet. To change your schedule, contact your admin or HR. This will be available in a future update.
+                        </p>
+                        <button type="button" onClick={() => setIsScheduleInfoOpen(false)} className="px-[16px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[13px] font-medium hover:bg-[#F5F5F5]">
+                          Close
+                        </button>
+                      </div>
+                    )}
 
                     {/* Work Schedule Section */}
                     <div className="bg-[#F5F7FA] rounded-[8px] p-[20px]">
@@ -1483,9 +1529,11 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Emergency Contact</h2>
                       </div>
                       <button 
+                        type="button"
                         onClick={handleEmergencyEditClick}
                         disabled={isEmergencyEditMode}
                         className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Edit Emergency Contact"
                       >
                         <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                       </button>
@@ -1726,7 +1774,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <img src={SecurityIcon} alt="Account Security" className="w-[24px] h-[24px] object-contain" />
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Account Security</h2>
                       </div>
-                      <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
+                      <button type="button" className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Change your password below">
                         <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                       </button>
                     </div>
@@ -1901,7 +1949,13 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       <img src={PersonalIcon} alt="Personal" className="w-[18px] h-[18px] object-contain" />
                       <h2 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Personal</h2>
                     </div>
-                    <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
+                    <button
+                      type="button"
+                      onClick={handleEditClick}
+                      disabled={isEditMode}
+                      className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={effectiveRole === "superAdmin" ? "Edit (Super Admin: all fields)" : "Edit Personal (ID and Status are read-only)"}
+                    >
                       <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                     </button>
                   </div>
@@ -1914,16 +1968,28 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                     </div>
 
                     <div className="space-y-[12px]">
-                      {/* Employee # */}
+                      {/* Employee # - editable only for Super Admin */}
                       <div>
                         <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Employee #</label>
-                        <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
+                        <input
+                          type="text"
+                          value={effectiveRole === "superAdmin" && isEditMode ? (formData.employeeCode ?? (userData?.employeeCode || userData?.employeeId || "")) : (userData?.employeeCode || userData?.employeeId || "")}
+                          onChange={effectiveRole === "superAdmin" ? (e) => handleInputChange('employeeCode', e.target.value) : undefined}
+                          readOnly={!(effectiveRole === "superAdmin" && isEditMode)}
+                          className={`w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none ${effectiveRole === "superAdmin" && isEditMode ? 'bg-white' : 'bg-[#F9FAFB]'}`}
+                        />
                       </div>
 
-                      {/* Status */}
+                      {/* Status - editable only for Super Admin */}
                       <div>
                         <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Status</label>
-                        <input type="text" placeholder="" className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
+                        <input
+                          type="text"
+                          value={effectiveRole === "superAdmin" && isEditMode ? (formData.status ?? (userData?.status || "")) : (userData?.status || "")}
+                          onChange={effectiveRole === "superAdmin" ? (e) => handleInputChange('status', e.target.value) : undefined}
+                          readOnly={!(effectiveRole === "superAdmin" && isEditMode)}
+                          className={`w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] text-[13px] text-[#333333] focus:outline-none ${effectiveRole === "superAdmin" && isEditMode ? 'bg-white' : 'bg-[#F9FAFB]'}`}
+                        />
                       </div>
 
                       {/* First Name */}
@@ -2024,9 +2090,11 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       <img src={JobIcon} alt="Job" className="w-[18px] h-[18px] object-contain" />
                       <h2 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Job</h2>
                     </div>
-                    <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
-                      <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
-                    </button>
+                    {canEditProfileJob && (
+                      <button type="button" onClick={handleJobEditClick} disabled={isJobEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Job">
+                        <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Job Information */}
@@ -2118,7 +2186,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       <div>
                         <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Employment Type</label>
                         <div className="relative">
-                          <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
+                          <select value={userData?.employmentType || ""} readOnly disabled className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none">
                             <option value="">Select Employment Type</option>
                             <option value="Full-Time">Full-Time</option>
                             <option value="Part-Time">Part-Time</option>
@@ -2145,10 +2213,25 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       <img src={LocationIcon2} alt="Locations" className="w-[18px] h-[18px] object-contain" />
                       <h2 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Locations</h2>
                     </div>
-                    <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
-                      <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
-                    </button>
+                    {canEditProfileLocations && (
+                      <button type="button" onClick={handleLocationsEditClick} disabled={isLocationsEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Locations">
+                        <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
+                      </button>
+                    )}
                   </div>
+
+                  {isLocationsEditMode && (
+                    <div className="mb-[16px] p-[12px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
+                      <p className="text-[12px] text-[#0C4A6E] mb-2">
+                        {canEditProfileLocations ? (
+                          <>To change assigned locations, go to <strong>Locations Management → Location Assignment</strong>.</>
+                        ) : (
+                          <>Assigned locations are set by an admin. <strong>Contact your admin or HR</strong> to request or change your locations.</>
+                        )}
+                      </p>
+                      <button type="button" onClick={handleCancelLocationsEdit} className="px-[12px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[12px] font-medium">Close</button>
+                    </div>
+                  )}
 
                   {/* Assigned Locations */}
                   <div className="bg-[#F5F7FA] rounded-[8px] p-[16px] mb-[20px]">
@@ -2156,6 +2239,13 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       <img src={LocationIcon2} alt="Assigned Locations" className="w-[16px] h-[16px] object-contain" />
                       <h3 className="text-[16px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Assigned Locations</h3>
                     </div>
+
+                    {profileLocations.length === 0 && (
+                      <div className="mb-[16px] p-[12px] rounded-[8px] bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
+                        <p className="font-medium mb-1">No locations assigned yet.</p>
+                        <p>{canEditProfileLocations ? "Go to Locations Management → Location Assignment." : "Contact your admin or HR to have locations assigned."}</p>
+                      </div>
+                    )}
 
                     {/* Primary Location */}
                     <div className="mb-[20px]">
@@ -2359,28 +2449,47 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                     </div>
                   </div>
 
-                  {/* Current Location */}
+                  {/* Current Location - real map from DB */}
                   <div className="bg-[#F5F7FA] rounded-[8px] p-[16px]">
                     <h3 className="text-[14px] font-semibold text-[#333333] mb-[12px]">Current Location</h3>
-                    <div className="w-full rounded-[8px] overflow-hidden">
-                      <img src={MapImage} alt="Current Location Map" className="w-full h-[150px] object-cover" />
+                    <div className="w-full rounded-[8px] overflow-hidden border border-[#E0E0E0]">
+                      {mapLocation?.latitude != null && mapLocation?.longitude != null ? (
+                        <iframe
+                          title="Location Map"
+                          src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(mapLocation.longitude) - 0.01}%2C${Number(mapLocation.latitude) - 0.01}%2C${Number(mapLocation.longitude) + 0.01}%2C${Number(mapLocation.latitude) + 0.01}&layer=mapnik&marker=${mapLocation.latitude}%2C${mapLocation.longitude}`}
+                          className="w-full h-[200px] border-0"
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                        />
+                      ) : (
+                        <img src={MapImage} alt="Current Location Map" className="w-full h-[150px] object-cover" />
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
               {activeTab === "schedule" && (
-                <div>
-                  {/* Schedule Section Header */}
-                  <div className="flex items-center justify-between mb-[16px]">
-                    <div className="flex items-center gap-[8px]">
-                      <img src={ScheduleIcon} alt="Schedule" className="w-[18px] h-[18px] object-contain" />
+                <div className="pr-[72px]">
+                  {/* Schedule Section Header - same as other tabs (edit on the right, large padding so icon visible) */}
+                  <div className="flex items-center justify-between mb-[16px] pl-[8px] mt-[4px] min-w-0">
+                    <div className="flex items-center gap-[8px] min-w-0">
+                      <img src={ScheduleIcon} alt="Schedule" className="w-[18px] h-[18px] object-contain flex-shrink-0" />
                       <h2 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Schedule</h2>
                     </div>
-                    <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
-                      <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
-                    </button>
+                    {canEditProfileSchedule && (
+                      <button type="button" onClick={() => setIsScheduleInfoOpen((v) => !v)} className="flex-shrink-0 w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Schedule">
+                        <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
+                      </button>
+                    )}
                   </div>
+
+                  {isScheduleInfoOpen && (
+                    <div className="mb-[16px] p-[12px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
+                      <p className="text-[12px] text-[#0C4A6E] mb-2">Work schedule editing from profile is not available yet. Contact your admin or HR.</p>
+                      <button type="button" onClick={() => setIsScheduleInfoOpen(false)} className="px-[12px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[12px] font-medium">Close</button>
+                    </div>
+                  )}
 
                   {/* Work Schedule Section */}
                   <div className="bg-[#F5F7FA] rounded-[8px] p-[16px]">
@@ -2478,9 +2587,11 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       <h2 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Emergency Contact</h2>
                     </div>
                     <button 
+                      type="button"
                       onClick={handleEmergencyEditClick}
                       disabled={isEmergencyEditMode}
                       className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Edit Emergency Contact"
                     >
                       <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                     </button>
@@ -2719,7 +2830,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       <img src={SecurityIcon} alt="Account Security" className="w-[18px] h-[18px] object-contain" />
                       <h2 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Account Security</h2>
                     </div>
-                    <button className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors">
+                    <button type="button" className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Change your password below">
                       <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                     </button>
                   </div>

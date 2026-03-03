@@ -9,13 +9,8 @@ const LogoDesktop = new URL("../images/LogoDesktop.png", import.meta.url).href;
 // Menu icons - dynamic import helper
 const getIconUrl = (iconName) => {
   try {
-    // Use import.meta.url for dynamic imports in Vite
-    const url = new URL(`../images/icons/${iconName}`, import.meta.url).href;
-    console.log(`🖼️ Loading icon: ${iconName} -> ${url}`);
-    return url;
-  } catch (error) {
-    console.error(`❌ Failed to load icon: ${iconName}`, error);
-    // Fallback to a default icon or empty string
+    return new URL(`../images/icons/${iconName}`, import.meta.url).href;
+  } catch {
     return '';
   }
 };
@@ -23,28 +18,55 @@ const getIconUrl = (iconName) => {
 // Logout icon
 const LogoutIcon = new URL("../images/icons/Log out.png", import.meta.url).href;
 
-const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile = false, onClose, onLogoutClick }) => {
+// تخزين المنيوهات المفتوحة خارج الكومبوننت حتى لا تُفقد عند الانتقال لصفحة أخرى (السايدبار يُعاد تركيبه)
+const persistedExpandedIds = { current: [] };
+
+const Sidebar = ({ userRole, activeMenu, setActiveMenu, isMobile = false, onClose, onLogoutClick }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  // Always use logged-in user's role for menu so Manager stays Manager on every page
-  const effectiveRole = getEffectiveRole(userRole);
+  // دور المستخدم المسجّل من الـ auth (مش من الـ route) عشان المنجر وغيره يشوفوا سايدبارهم
+  const effectiveRole = getEffectiveRole();
   const menu = getMenuByRole(effectiveRole);
-  const [expandedMenus, setExpandedMenus] = useState([]);
 
-  // Close all expanded menus when activeMenu is null (on profile page)
+  const getParentIdFromActiveMenu = () => {
+    if (activeMenu == null) return null;
+    const str = String(activeMenu);
+    if (str.includes("-")) {
+      const id = parseInt(str.split("-")[0], 10);
+      return Number.isNaN(id) ? null : id;
+    }
+    const id = parseInt(str, 10);
+    if (Number.isNaN(id)) return null;
+    const hasAsParent = menu.items.some((it) => it.id === id && it.hasSubmenu);
+    return hasAsParent ? id : null;
+  };
+
+  // عند التركيب: نستخدم المنيوهات المفتوحة المحفوظة + قسم الصفحة الحالية (حتى لا يُغلق منيو آخر)
+  const [expandedMenus, setExpandedMenus] = useState(() => {
+    const parentId = getParentIdFromActiveMenu();
+    const next = new Set(persistedExpandedIds.current);
+    if (parentId != null) next.add(parentId);
+    return Array.from(next);
+  });
+
+  // حفظ المنيوهات المفتوحة عند أي تغيير
+  useEffect(() => {
+    persistedExpandedIds.current = expandedMenus;
+  }, [expandedMenus]);
+
+  // إغلاق كل القوائم فقط في صفحة البروفايل
   useEffect(() => {
     if (activeMenu === null || location.pathname === "/profile") {
       setExpandedMenus([]);
+      persistedExpandedIds.current = [];
     }
   }, [activeMenu, location.pathname]);
 
-  // Auto-expand parent menu when submenu is active
+  // عند تغيير الصفحة: إبقاء قسم الصفحة الحالية مفتوحاً (بدون إغلاق الأقسام الأخرى)
   useEffect(() => {
-    if (activeMenu && typeof activeMenu === 'string' && activeMenu.includes('-')) {
-      const parentId = parseInt(activeMenu.split('-')[0]);
-      if (!expandedMenus.includes(parentId)) {
-        setExpandedMenus([...expandedMenus, parentId]);
-      }
+    const parentId = getParentIdFromActiveMenu();
+    if (parentId != null) {
+      setExpandedMenus((prev) => (prev.includes(parentId) ? prev : [...prev, parentId]));
     }
   }, [activeMenu]);
 
@@ -57,28 +79,14 @@ const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile 
     }
   };
 
-  // Handle menu item click
+  // Handle menu item click: مع سهم = فتح/إغلاق المنيو فقط، بدون انتقال لأول صفحة
   const handleMenuClick = (item) => {
     if (item.hasSubmenu) {
-      // If submenu is not expanded, expand it
-      if (!expandedMenus.includes(item.id)) {
-        toggleSubmenu(item.id);
-      }
-      // Navigate to first submenu item if it exists
-      if (item.subItems && item.subItems.length > 0) {
-        const firstSubItem = item.subItems[0];
-        setActiveMenu(`${item.id}-${firstSubItem.id}`);
-        if (firstSubItem.path) {
-          navigate(firstSubItem.path);
-        }
-      }
+      toggleSubmenu(item.id);
       if (isMobile && onClose) onClose();
     } else {
       setActiveMenu(item.id);
-      // Navigate to the path if it exists
-      if (item.path) {
-        navigate(item.path);
-      }
+      if (item.path) navigate(item.path);
       if (isMobile && onClose) onClose();
     }
   };
@@ -100,8 +108,8 @@ const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile 
 
   return (
     <aside
-      className={`w-[265px] flex flex-col ${isMobile ? 'h-full overflow-y-auto' : 'min-h-screen'}`}
-      style={{ backgroundColor: "#004D40" }}
+      className={`w-[265px] flex flex-col flex-shrink-0 ${isMobile ? "h-full overflow-y-auto" : "min-h-screen"}`}
+      style={{ backgroundColor: "#004D40", contain: "layout" }}
     >
       {/* Close Button - Mobile Only */}
       {isMobile && onClose && (
@@ -134,15 +142,20 @@ const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile 
       {/* Menu Items */}
       <nav className="px-[12px]">
         <ul className="flex flex-col gap-[8px]">
-          {menu.items.map((item) => (
+          {menu.items.map((item) => {
+            const isActiveSection = activeMenu === item.id && !item.hasSubmenu;
+            const isParentOfActive = item.hasSubmenu && activeMenu != null && (String(activeMenu).startsWith(String(item.id) + "-") || activeMenu === item.id);
+            const hasContainer = isActiveSection || isParentOfActive;
+            return (
             <li key={item.id}>
-              {/* Main Menu Item */}
+              {/* Main Menu Item - كونتينر عند الاختيار (صفحة مباشرة أو فرعية) */}
               <button
                 onClick={() => handleMenuClick(item)}
-                className={`w-full h-[41px] flex items-center gap-[10px] px-[12px] rounded-[8px] transition-all duration-200 ${
-                  activeMenu === item.id && !item.hasSubmenu ? "" : "hover:bg-white/10"
+                type="button"
+                className={`w-full h-[41px] flex items-center gap-[10px] px-[12px] rounded-[8px] transition-colors duration-150 ${
+                  hasContainer ? "" : "hover:bg-white/10"
                 }`}
-                style={activeMenu === item.id && !item.hasSubmenu ? { backgroundColor: "#003830" } : {}}
+                style={hasContainer ? { backgroundColor: "#003830" } : {}}
               >
                 <img
                   src={getIconUrl(item.icon)}
@@ -152,17 +165,17 @@ const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile 
                 />
                 <span
                   className={`text-white whitespace-nowrap flex-1 text-left ${
-                    item.hasSubmenu && expandedMenus.includes(item.id) ? 'text-[16px]' : 'text-[14px]'
+                    item.hasSubmenu && expandedMenus.includes(item.id) ? "text-[16px]" : "text-[14px]"
                   }`}
-                  style={{ 
-                    fontWeight: (item.hasSubmenu && expandedMenus.includes(item.id)) || (activeMenu === item.id && !item.hasSubmenu) ? 600 : 400 
+                  style={{
+                    fontWeight: hasContainer || (item.hasSubmenu && expandedMenus.includes(item.id)) ? 600 : 400
                   }}
                 >
                   {item.name}
                 </span>
                 {item.hasSubmenu && (
                   <svg
-                    className={`w-[14px] h-[14px] flex-shrink-0 transition-transform duration-200 ${
+                    className={`w-[14px] h-[14px] flex-shrink-0 transition-transform duration-150 ease-out ${
                       expandedMenus.includes(item.id) ? "rotate-90" : ""
                     }`}
                     viewBox="0 0 24 24"
@@ -174,27 +187,28 @@ const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile 
                 )}
               </button>
 
-              {/* Sub-Menu Items */}
+              {/* Sub-Menu Items - ظهور سريع وخفيف */}
               {item.hasSubmenu && expandedMenus.includes(item.id) && (
                 <ul className="flex flex-col mt-[2px] mb-[4px]">
                   {item.subItems?.map((subItem) => (
                     <li key={subItem.id}>
                       <button
+                        type="button"
                         onClick={() => handleSubMenuClick(subItem, item.id)}
-                        className={`w-full h-[36px] flex items-center px-[12px] rounded-[8px] transition-all duration-200 ${
-                          activeMenu === `${item.id}-${subItem.id}` ? '' : 'hover:bg-white/10'
+                        className={`w-full h-[36px] flex items-center px-[12px] rounded-[8px] transition-colors duration-150 ${
+                          activeMenu === `${item.id}-${subItem.id}` ? "" : "hover:bg-white/10"
                         }`}
-                        style={{ 
+                        style={{
                           paddingLeft: "42px",
                           backgroundColor: activeMenu === `${item.id}-${subItem.id}` ? "#003830" : "transparent"
                         }}
                       >
-                        <span 
+                        <span
                           className={`whitespace-nowrap ${
-                            activeMenu === `${item.id}-${subItem.id}` ? 'text-[14px] text-white' : 'text-[13px] text-white/80'
+                            activeMenu === `${item.id}-${subItem.id}` ? "text-[14px] text-white" : "text-[13px] text-white/80"
                           }`}
-                          style={{ 
-                            fontWeight: activeMenu === `${item.id}-${subItem.id}` ? 500 : 400 
+                          style={{
+                            fontWeight: activeMenu === `${item.id}-${subItem.id}` ? 500 : 400
                           }}
                         >
                           • {subItem.name}
@@ -205,7 +219,8 @@ const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile 
                 </ul>
               )}
             </li>
-          ))}
+          );
+          })}
         </ul>
       </nav>
 
@@ -216,15 +231,17 @@ const Sidebar = ({ userRole = "superAdmin", activeMenu, setActiveMenu, isMobile 
 
       {/* Logout Button */}
       <div className="px-[12px] pb-[16px]">
-        <button 
-          onClick={() => {
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
             if (onLogoutClick) {
               onLogoutClick();
             } else {
               navigate("/login");
             }
           }}
-          className="w-full h-[41px] flex items-center gap-[10px] px-[12px] rounded-[8px] hover:bg-white/10 transition-all duration-200"
+          className="w-full h-[41px] flex items-center gap-[10px] px-[12px] rounded-[8px] hover:bg-white/10 transition-colors duration-150"
         >
           <img
             src={LogoutIcon}

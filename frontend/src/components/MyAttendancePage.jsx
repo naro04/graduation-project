@@ -25,10 +25,37 @@ const DropdownArrow = new URL(
   import.meta.url
 ).href;
 
+/** تحويل إحداثيات GPS إلى عنوان (المكان اللي أنت فيه) — OpenStreetMap مجاني */
+async function reverseGeocode(lat, lon) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
+      {
+        headers: { "Accept-Language": "ar,en", "User-Agent": "GraduationAttendance/1.0" },
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timeoutId);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.display_name) return data.display_name;
+    const a = data?.address;
+    if (a) {
+      const parts = [a.road, a.suburb, a.neighbourhood, a.village, a.town, a.city, a.state, a.country].filter(Boolean);
+      if (parts.length) return parts.slice(0, 4).join(", ");
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const MyAttendancePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
-  const effectiveRole = getEffectiveRole(userRole);
+  const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState("3-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState("All Status");
@@ -206,7 +233,11 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
         const found = (attendanceLocations || []).find((l) => (l.id ?? l.location_id) == locId);
         loc = found?.name ?? found?.location_name ?? (loc || "—");
       }
-      if (!loc || String(loc).toLowerCase().includes("unknown")) loc = loc || "—";
+      // إذا اللوكيشن "Unknown" لكن عندنا إحداثيات GPS من الباكند = التسجيل كان من الموقع الحالي
+      if (!loc || String(loc).toLowerCase().includes("unknown")) {
+        const hasCoords = r.location_latitude != null && r.location_longitude != null;
+        loc = hasCoords ? "موقع مسجّل (GPS)" : (loc || "—");
+      }
       const typ = r.attendance_type ?? r.type ?? r.check_method ?? "—";
       const st = r.status ?? "Present";
       return {
@@ -297,40 +328,49 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
   const confirmCheckIn = () => {
     setCheckInOutLoading(true);
     setAttendanceError(null);
-    const buildPayload = (coords) => {
+    const buildPayload = (coords, addressLabel) => {
       const payload = {};
+      payload.check_in_time = new Date().toISOString();
       if (selectedLocationId != null) {
         payload.location_id = selectedLocationId;
         payload.locationId = selectedLocationId;
       }
       if (coords?.latitude != null && coords?.longitude != null) {
-        payload.latitude = coords.latitude;
-        payload.longitude = coords.longitude;
-        payload.method = "GPS";
+        payload.latitude = Number(coords.latitude);
+        payload.longitude = Number(coords.longitude);
+        payload.check_in_method = "GPS";
+        // العنوان الحقيقي إن وُجد (من عكس الجيوكودينج)، وإلا ن fallback
+        payload.location_address = addressLabel || "موقع مسجّل (GPS)";
       }
       return payload;
     };
     const tryGeolocationThenCheckIn = () => {
       if (!navigator.geolocation) {
+        setAttendanceError("المتصفح لا يدعم الموقع. تم التسجيل بدون موقع.");
         apiCheckIn(buildPayload(null)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
         return;
       }
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
+        async (pos) => {
           const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
           setLastCheckInCoords(coords);
+          setAttendanceError(null);
           try {
             const todayStr = new Date().toISOString().split("T")[0];
             sessionStorage.setItem(STORAGE_KEY_COORDS, JSON.stringify({ date: todayStr, ...coords }));
           } catch (_) {}
-          apiCheckIn(buildPayload(coords)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
+          const address = await reverseGeocode(coords.latitude, coords.longitude);
+          apiCheckIn(buildPayload(coords, address)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
         },
         (err) => {
           setLastCheckInCoords(null);
-          setAttendanceError("لم نتمكن من تحديد موقعك. تأكد من السماح بالموقع للمتصفح وجرب مرة أخرى. تم التسجيل بدون موقع.");
+          const msg = err.code === 1
+            ? "لم يسمح بالموقع. فعّل صلاحية الموقع للموقع ثم جرّب مرة أخرى."
+            : "لم نتمكن من قراءة الموقع من المتصفح. تم التسجيل بدون موقع.";
+          setAttendanceError(msg);
           apiCheckIn(buildPayload(null)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }
       );
     };
     const onCheckInSuccess = () => {
@@ -529,7 +569,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]">
-                        <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                        <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                         Edit Profile
@@ -841,52 +881,17 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
               className="bg-white rounded-[10px] overflow-hidden"
               style={{ boxShadow: "0px 1px 3px rgba(0, 0, 0, 0.1)" }}
             >
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-x-auto min-w-0">
+                <table className="w-full" style={{ tableLayout: "fixed", minWidth: "800px" }}>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
-                      <th
-                        className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]"
-                        style={{ fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Date
-                      </th>
-                      <th
-                        className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]"
-                        style={{ fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Check-in
-                      </th>
-                      <th
-                        className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]"
-                        style={{ fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Check-out
-                      </th>
-                      <th
-                        className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]"
-                        style={{ fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Work hours
-                      </th>
-                      <th
-                        className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]"
-                        style={{ fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Location
-                      </th>
-                      <th
-                        className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]"
-                        style={{ fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Type
-                      </th>
-                      <th
-                        className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280]"
-                        style={{ fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Status
-                      </th>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "10%" }}>Date</th>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "18%" }}>Check-in</th>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "18%" }}>Check-out</th>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "10%" }}>Work hours</th>
+                      <th className="px-[12px] py-[12px] text-left text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, width: "26%" }}>Location</th>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "8%" }}>Type</th>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "10%" }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -906,49 +911,17 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                             {formatDate(item.date)}
                           </span>
                         </td>
-                        <td
-                          className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center"
-                          style={{ whiteSpace: "nowrap" }}
-                        >
-                          <span
-                            className="text-[14px] text-[#333333]"
-                            style={{ fontWeight: 600 }}
-                          >
-                            {item.checkIn}
-                          </span>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center align-middle overflow-hidden">
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }} title={item.checkIn}>{item.checkIn}</span>
                         </td>
-                        <td
-                          className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center"
-                          style={{ whiteSpace: "nowrap" }}
-                        >
-                          <span
-                            className="text-[14px] text-[#333333]"
-                            style={{ fontWeight: 600 }}
-                          >
-                            {item.checkOut}
-                          </span>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center align-middle overflow-hidden">
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }} title={item.checkOut}>{item.checkOut}</span>
                         </td>
-                        <td
-                          className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center"
-                          style={{ whiteSpace: "nowrap" }}
-                        >
-                          <span
-                            className="text-[14px] text-[#333333]"
-                            style={{ fontWeight: 600 }}
-                          >
-                            {item.workHours}
-                          </span>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center align-middle overflow-hidden">
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }} title={item.workHours}>{item.workHours}</span>
                         </td>
-                        <td
-                          className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center"
-                          style={{ whiteSpace: "nowrap" }}
-                        >
-                          <span
-                            className="text-[14px] text-[#333333]"
-                            style={{ fontWeight: 600 }}
-                          >
-                            {item.location}
-                          </span>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left align-top overflow-hidden" style={{ wordBreak: "break-word", overflowWrap: "break-word" }}>
+                          <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600 }}>{item.location}</span>
                         </td>
                         <td
                           className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center"
@@ -1115,7 +1088,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]">
-                    <p className="text-[12px] text-[#6B7280]">elijlafiras@gmail.com</p>
+                    <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
                     Edit Profile
