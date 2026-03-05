@@ -1,6 +1,6 @@
 import axios from "axios";
 
-// الباكند المرفوع على Railway
+// الباكند المرفوع على Railway – يُستخدم لوكل ودومين
 const baseURL = "https://graduation-project-production-b02b.up.railway.app/api/v1";
 export const apiClient = axios.create({
   baseURL,

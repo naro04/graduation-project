@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import HeaderIcons from "./HeaderIcons";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { createLeave } from "../services/leaves";
@@ -223,13 +224,7 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
               </div>
               
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
                 <div className="flex items-center gap-[12px] cursor-pointer">
                   <img 
                     src={UserAvatar}

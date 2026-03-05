@@ -1,7 +1,4 @@
-// API Service Layer
-// Base configuration for all API requests
-
-// الباكند المرفوع على Railway
+// API Service Layer – الباكند على Railway (لوكل ودومين)
 const BASE_URL = "https://graduation-project-production-b02b.up.railway.app/api/v1";
 
 console.log('🌐 API Base URL:', BASE_URL);

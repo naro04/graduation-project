@@ -8,6 +8,7 @@ import { getPositions } from "../services/positions.js";
 import { getRoles } from "../services/rbac.js";
 import { getCurrentUser, getEffectiveRole, logout, getMe } from "../services/auth.js";
 import AddEditEmployeeModal from "./AddEditEmployeeModal.jsx";
+import HeaderIcons from "./HeaderIcons.jsx";
 import { BASE_URL } from "../services/api.js";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
@@ -24,7 +25,6 @@ const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.j
 
 // Header icons
 const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4c365858f.png", import.meta.url).href;
-const NotificationIcon = new URL("../images/ebf8a1610effc5cf80410fb898c4452b8d535684.png", import.meta.url).href;
 const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href;
 
 // Team Members page icons (as provided)
@@ -130,44 +130,68 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
         const id = user?.employee_id ?? user?.employee?.id ?? null;
         setMyEmployeeId(id);
       })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    Promise.all([getDepartments(), getPositions(), getRoles()]).then(([depts, positions, roles]) => {
-      setDepartmentsList(Array.isArray(depts) ? depts : []);
-      setPositionsList(Array.isArray(positions) ? positions : []);
-      setRolesList(Array.isArray(roles) ? roles : []);
-    }).catch((err) => console.error("Failed to load depts/positions/roles:", err));
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
     const fetchTeam = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const list = await getTeamMembers();
-        const arr = Array.isArray(list) ? list : [];
-        const transformed = arr.map((emp) => ({
-          id: emp.id,
-          name: emp.full_name || [emp.first_name, emp.last_name].filter(Boolean).join(" ") || "—",
-          employeeId: emp.employee_code || emp.employee_id || "—",
-          department: emp.department_name || "—",
-          position: emp.position_title || "—",
-          role: emp.role_name || "—",
-          status: emp.status === "active" ? "Active" : emp.status === "under_review" ? "Under Review" : "Inactive",
-          photo: toAbsoluteAvatarUrl(emp.avatar_url) || null,
-          onLeaveToday: !!emp.on_leave_today,
-          originalData: emp,
-        }));
-        setTeamMembers(transformed);
-      } catch (err) {
-        console.error("Failed to load team members:", err);
-        setError(err.message || "Failed to load team members");
-        setTeamMembers([]);
-      } finally {
-        setIsLoading(false);
+      setIsLoading(true);
+      setError(null);
+      // جلب أعضاء الفريق أولاً – لو فشل واحد من الباقي ما نمسح القائمة
+      const [teamResult, deptsResult, positionsResult, rolesResult] = await Promise.allSettled([
+        getTeamMembers(),
+        getDepartments(),
+        getPositions(),
+        getRoles(),
+      ]);
+      const list = teamResult.status === "fulfilled" ? teamResult.value : [];
+      const depts = deptsResult.status === "fulfilled" ? deptsResult.value : [];
+      const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
+      const roles = rolesResult.status === "fulfilled" ? rolesResult.value : [];
+      const departmentsList = Array.isArray(depts) ? depts : [];
+      const positionsList = Array.isArray(positions) ? positions : [];
+      const rolesList = Array.isArray(roles) ? roles : [];
+      const arr = Array.isArray(list) ? list : list?.data ?? list?.items ?? list?.records ?? [];
+      const getDeptName = (id) => {
+        if (!id) return null;
+        const d = departmentsList.find((x) => x.id === id);
+        return d?.name ?? null;
+      };
+      const getPositionTitle = (id) => {
+        if (!id) return null;
+        const p = positionsList.find((x) => x.id === id);
+        return p?.title ?? p?.name ?? null;
+      };
+      const getRoleName = (id) => {
+        if (!id) return null;
+        const sid = String(id);
+        const r = rolesList.find((x) => x && (String(x.id) === sid || x.id === id));
+        return r?.name ?? null;
+      };
+      const transformed = arr.map((emp) => ({
+        id: emp.id,
+        name: emp.full_name || [emp.first_name, emp.last_name].filter(Boolean).join(" ") || "—",
+        employeeId: emp.employee_code || emp.employee_id || "—",
+        department:
+          emp.department_name ?? emp.departmentName ?? emp.department ?? getDeptName(emp.department_id) ?? "—",
+        position:
+          emp.position_title ?? emp.positionTitle ?? emp.position ?? getPositionTitle(emp.position_id) ?? "—",
+        role: emp.role_name ?? emp.roleName ?? emp.role ?? getRoleName(emp.role_id) ?? "—",
+        status: emp.status === "active" ? "Active" : emp.status === "under_review" ? "Under Review" : "Inactive",
+        photo: toAbsoluteAvatarUrl(emp.avatar_url) || null,
+        onLeaveToday: !!emp.on_leave_today,
+        originalData: emp,
+      }));
+      setTeamMembers(transformed);
+      setDepartmentsList(departmentsList);
+      setPositionsList(positionsList);
+      setRolesList(rolesList);
+      if (teamResult.status === "rejected") {
+        const err = teamResult.reason;
+        const is403 = err?.response?.status === 403;
+        if (!is403) setError(err?.response?.data?.message || err?.message || "Failed to load team members");
       }
+      setIsLoading(false);
     };
     fetchTeam();
   }, [refreshKey]);
@@ -258,13 +282,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
               </div>
 
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full" />
-                </button>
+                <HeaderIcons />
                 <div className="relative" ref={userDropdownRef}>
                   <div
                     className="flex items-center gap-[12px] cursor-pointer"
@@ -376,7 +394,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
             </div>
 
             {error && (
-              <div className="mb-[20px] p-[16px] rounded-[8px] bg-red-50 border border-red-200">
+              <div className="mb-[20px] p-[16px] rounded-[8px] bg-red-50 border border-red-200" role="alert">
                 <p className="text-[14px] text-red-600">{error}</p>
               </div>
             )}
@@ -557,13 +575,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
             </svg>
           </button>
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full" />
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
             <div className="relative" ref={userDropdownRef}>
               <div className="flex items-center gap-[8px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
                 <img src={UserAvatar} alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
@@ -574,7 +586,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                   <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || getCurrentUser()?.email || ""}</p></div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]" />
-                  <button type="button" onClick={() => { setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
+                  <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                 </div>
               )}
             </div>
@@ -713,7 +725,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
             <p className="text-center text-[#000000] text-[16px] px-5 mb-1" style={{ fontFamily: "Inter, sans-serif" }}>Are you sure you want to delete {memberToDelete.name} from the team?</p>
             <p className="text-center text-[#4E4E4E] text-[10px] px-5 pb-10" style={{ fontFamily: "Inter, sans-serif" }}>This action can&apos;t be undone</p>
             <div className="flex items-center justify-center gap-5 px-5 pb-6">
-              <button type="button" onClick={async () => { try { await deleteEmployee(memberToDelete.id); setRefreshKey((k) => k + 1); } catch (_) {} setShowDeleteModal(false); setMemberToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#A20000] hover:bg-[#8a0000]" style={{ fontFamily: "Inter, sans-serif" }}>Delete</button>
+              <button type="button" onClick={async () => { try { await deleteEmployee(memberToDelete.id); setRefreshKey((k) => k + 1); } catch (_) { } setShowDeleteModal(false); setMemberToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#A20000] hover:bg-[#8a0000]" style={{ fontFamily: "Inter, sans-serif" }}>Delete</button>
               <button type="button" onClick={() => { setShowDeleteModal(false); setMemberToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#7A7A7A] hover:bg-[#666]" style={{ fontFamily: "Inter, sans-serif" }}>Cancel</button>
             </div>
           </div>
@@ -723,9 +735,9 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setIsLogoutModalOpen(false);
-          logout();
+          await logout();
           window.location.href = "/login";
         }}
       />

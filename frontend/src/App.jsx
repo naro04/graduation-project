@@ -84,6 +84,7 @@ function App() {
         <Route path="/attendance/details" element={<AttendanceDetailsPage userRole="superAdmin" />} />
         <Route path="/attendance/gps-location" element={<GPSLocationDetailsPage userRole="superAdmin" />} />
         <Route path="/attendance/my" element={<MyAttendancePage userRole="superAdmin" />} />
+        <Route path="/attendance/my-attendance" element={<MyAttendancePage userRole="superAdmin" />} />
         
         {/* Activities: لا صفحة مستقلة لبعض الأدوار — إعادة توجيه لأول فرعي */}
         <Route path="/activities" element={<ActivitiesOrRedirect />} />
@@ -110,6 +111,7 @@ function App() {
         <Route path="/leave/requests" element={<LeaveManagementPage userRole="superAdmin" />} />
         <Route path="/leave/request" element={<RequestLeavePage userRole="superAdmin" />} />
         <Route path="/leave/my" element={<MyLeavePage userRole="superAdmin" />} />
+        <Route path="/leaves/my-leaves" element={<MyLeavePage userRole="superAdmin" />} />
         
         {/* Reports routes */}
         <Route path="/reports/attendance" element={<AttendanceReportPage userRole="superAdmin" />} />

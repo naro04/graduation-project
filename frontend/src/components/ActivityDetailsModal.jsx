@@ -1,14 +1,104 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { getLocationActivityById } from "../services/locationActivities";
+import { apiClient } from "../services/apiClient";
 
 // Icons
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
 
-// Activity images
-const ActivityImage1 = new URL("../images/p3.jpg", import.meta.url).href;
-const ActivityImage2 = new URL("../images/p1.jpg", import.meta.url).href;
-const ActivityImage3 = new URL("../images/p2 (2).jpg", import.meta.url).href;
+// Fallback placeholder images (only when API returns no images)
+const PlaceholderImage = new URL("../images/p3.jpg", import.meta.url).href;
+
+function getUploadsBaseUrl() {
+    const b = apiClient.defaults.baseURL || "";
+    return b.replace(/\/api\/v1\/?$/, "") || window.location.origin;
+}
+
+/** Build full image URLs from API (activity_image_urls, activity_images, image_urls) or parse paths from description */
+function getActivityImageUrls(api) {
+    if (!api) return [];
+    const base = getUploadsBaseUrl();
+    const raw = api.activity_image_urls ?? api.activity_images ?? api.image_urls ?? api.images;
+    let urls = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
+    urls = urls.map((u) => {
+        if (typeof u !== "string" || !u.trim()) return null;
+        if (/^https?:\/\//i.test(u)) return u;
+        const path = u.startsWith("/") ? u : `/${u}`;
+        return `${base}${path}`;
+    }).filter(Boolean);
+    const desc = api.description || "";
+    const pathRegex = /(?:^|[\s\n])((?:\.?\.?\/)?(?:v\/)?uploads\/[^\s\n]+?\.(?:jpe?g|png|gif|webp))/gi;
+    let match;
+    while ((match = pathRegex.exec(desc)) !== null) {
+        const path = match[1].replace(/^\.\//, "").replace(/^v\//, "/");
+        const full = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? path : "/" + path}`;
+        if (!urls.includes(full)) urls.push(full);
+    }
+    return urls;
+}
+
+// Normalize API response: same field names as backend may use latitude/longitude, assigned_*, location_*, etc.
+function getCoordsFromApi(a) {
+    const lat = a?.coordinates?.lat ?? a?.latitude ?? a?.location_latitude ?? a?.assigned_latitude ?? a?.location?.latitude ?? "";
+    const lng = a?.coordinates?.lng ?? a?.longitude ?? a?.location_longitude ?? a?.assigned_longitude ?? a?.location?.longitude ?? "";
+    const latStr = lat != null && String(lat).trim() !== "" ? String(lat) : "—";
+    const lngStr = lng != null && String(lng).trim() !== "" ? String(lng) : "—";
+    return { lat: latStr, lng: lngStr };
+}
+
+function buildDetailsFromApi(api) {
+    if (!api) return null;
+    const coords = getCoordsFromApi(api);
+    const startDate = api.start_date ?? api.startDate ?? api.date;
+    const durRaw = api.duration ?? api.duration_hours ?? api.duration_hours_count;
+    const duration = durRaw != null && String(durRaw).trim() !== "" ? (typeof durRaw === "number" ? `${durRaw} hr` : String(durRaw)) : "—";
+    const team = Array.isArray(api.team) ? api.team.join(", ") : (typeof api.team === "string" ? api.team : (api.team_members ?? "—"));
+    const respName = api.responsible_employee ?? api.responsibleEmployee ?? api.responsible_employee_name ?? api.employee_name ?? (api.responsible_employee_id ? "—" : "—");
+    const respFromObj = api.responsible_employee_obj ?? api.responsibleEmployeeObj;
+    const responsibleEmployee = typeof respFromObj === "object" && respFromObj?.name != null ? respFromObj.name : (respName || "—");
+    return {
+        location: api.location_name ?? api.location ?? "—",
+        coordinates: coords,
+        date: startDate,
+        duration,
+        responsibleEmployee,
+        team,
+        status: api.status ?? "—",
+        description: api.description ?? "—",
+    };
+}
 
 const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
+    const [detailsFromApi, setDetailsFromApi] = useState(null);
+    const [rawApiData, setRawApiData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (!activity?.id) {
+            setDetailsFromApi(null);
+            setRawApiData(null);
+            setLoading(false);
+            return;
+        }
+        let cancelled = false;
+        setLoading(true);
+        setError(null);
+        getLocationActivityById(activity.id)
+            .then((data) => {
+                if (!cancelled) {
+                    setRawApiData(data);
+                    setDetailsFromApi(buildDetailsFromApi(data));
+                }
+            })
+            .catch((err) => {
+                if (!cancelled) setError(err?.message ?? "Failed to load activity details.");
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, [activity?.id]);
+
     if (!activity) return null;
 
     // Format date
@@ -22,16 +112,25 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
         return `${day} ${month} ${year}`;
     };
 
-    const activityDetails = {
-        location: activity.location || "Hattin School",
-        coordinates: activity.coordinates || { lat: "31.50090", lng: "34.46710" },
+    const fallback = {
+        location: activity.location || "—",
+        coordinates: (() => {
+            const c = activity.coordinates || {};
+            const lat = c.lat != null && String(c.lat).trim() !== "" ? c.lat : "—";
+            const lng = c.lng != null && String(c.lng).trim() !== "" ? c.lng : "—";
+            return { lat, lng };
+        })(),
         date: activity.date,
-        duration: activity.duration || "2 hr",
-        responsibleEmployee: activity.responsibleEmployee || "Ameer Jamal",
-        team: activity.team || "Hasan Jaber, Rania Abed",
-        status: activity.status || "Implemented",
-        description: activity.description || "A planned workshop was implemented at Hattin School, targeting students through interactive and participatory methods. The activity was conducted as scheduled and achieved its intended objectives, with active engagement from participants."
+        duration: activity.duration || "—",
+        responsibleEmployee: activity.responsibleEmployee || "—",
+        team: activity.team || "—",
+        status: activity.status || "—",
+        description: activity.description || "—",
     };
+    const activityDetails = detailsFromApi ?? fallback;
+    const imageUrls = getActivityImageUrls(rawApiData ?? activity);
+    const showPlaceholders = imageUrls.length === 0;
+    const descriptionText = (activityDetails.description || "").replace(/(?:^|[\s\n])((?:\.?\.?\/)?(?:v\/)?uploads\/[^\s\n]+?\.(?:jpe?g|png|gif|webp)\s*)/gim, "").trim() || "—";
 
     return (
         <div
@@ -67,23 +166,37 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
 
                 {/* Content */}
                 <div className="p-[24px]">
-                    {/* Images */}
+                    {loading && (
+                        <div className="flex items-center justify-center py-12 text-[#6B7280] text-[14px]">
+                            Loading activity details…
+                        </div>
+                    )}
+                    {error && !loading && (
+                        <div className="mb-4 p-3 rounded bg-red-50 text-red-700 text-[14px]">
+                            {error}
+                        </div>
+                    )}
+                    {!loading && (
+                        <>
+                    {/* Images: show uploaded/API images; only show placeholder when none */}
                     <div className="flex gap-[12px] mb-[24px] overflow-x-auto">
-                        <img
-                            src={ActivityImage1}
-                            alt="Activity 1"
-                            className="min-w-[150px] h-[150px] object-cover rounded-[4px]"
-                        />
-                        <img
-                            src={ActivityImage2}
-                            alt="Activity 2"
-                            className="min-w-[150px] h-[150px] object-cover rounded-[4px]"
-                        />
-                        <img
-                            src={ActivityImage3}
-                            alt="Activity 3"
-                            className="min-w-[150px] h-[150px] object-cover rounded-[4px]"
-                        />
+                        {imageUrls.length > 0 ? (
+                            imageUrls.map((src, i) => (
+                                <img
+                                    key={i}
+                                    src={src}
+                                    alt={`Activity ${i + 1}`}
+                                    className="min-w-[150px] h-[150px] object-cover rounded-[4px]"
+                                    onError={(e) => { e.target.style.display = "none"; }}
+                                />
+                            ))
+                        ) : showPlaceholders ? (
+                            <img
+                                src={PlaceholderImage}
+                                alt="Activity"
+                                className="min-w-[150px] h-[150px] object-cover rounded-[4px] opacity-60"
+                            />
+                        ) : null}
                     </div>
 
                     {/* Details Grid */}
@@ -116,7 +229,7 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
                         <p className="text-[14px] font-medium text-[#374151] mb-[8px]">Description :</p>
                         <div className="p-[12px] border border-[#E0E0E0] rounded-[4px] bg-white" style={{ minHeight: '143px' }}>
                             <p className="text-[14px] text-[#6B7280] leading-relaxed">
-                                {activityDetails.description}
+                                {descriptionText}
                             </p>
                         </div>
                     </div>
@@ -157,6 +270,8 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
                             Cancel
                         </button>
                     </div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderIcons from "./HeaderIcons";
 import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import AddAssignLocationModal from "./AddAssignLocationModal";
 import ViewActivitiesModal from "./ViewActivitiesModal";
@@ -11,7 +12,7 @@ import { getLocationAssignments, createLocationAssignment, deleteLocationAssignm
 import { getLocationActivities, getLocationActivityById, createLocationActivity } from "../services/locationActivities";
 import { getLocations } from "../services/locations";
 import { getLocationEmployees } from "../services/locations";
-import { getEmployees } from "../services/employees";
+import { getEmployees, getTeamMembers } from "../services/employees";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -65,6 +66,9 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const [employeesAtLocationLoading, setEmployeesAtLocationLoading] = useState(false);
   const [activityEmployeesForModal, setActivityEmployeesForModal] = useState([]);
   const [activityEmployeesLoading, setActivityEmployeesLoading] = useState(false);
+  const [selectedResponsibleManagerId, setSelectedResponsibleManagerId] = useState("");
+  const [assignableTeamFromApi, setAssignableTeamFromApi] = useState([]);
+  const [assignableTeamLoading, setAssignableTeamLoading] = useState(false);
   const typeDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
   const locationDropdownRef = useRef(null);
@@ -89,11 +93,11 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
       getLocationAssignments().catch(() => []),
       getLocations().catch(() => []),
       getEmployees()
-      .then((r) => {
-        const d = r?.data;
-        return Array.isArray(d) ? d : (d?.items ?? d?.employees ?? d?.records ?? []);
-      })
-      .catch(() => [])
+        .then((r) => {
+          const d = r?.data;
+          return Array.isArray(d) ? d : (d?.items ?? d?.employees ?? d?.records ?? []);
+        })
+        .catch(() => [])
     ])
       .then(([assignments, locations, employees]) => {
         if (cancelled) return;
@@ -158,14 +162,43 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
       .catch(() => setAssignmentsRaw([]));
   };
 
-  // Employees for modal (id, name, role)
+  // Employees for modal (id, name, role display, systemRole for filtering)
   const employeesData = React.useMemo(() => {
-    return (employeesList || []).map((e) => ({
-      id: e.id ?? e.employee_id,
-      name: e.name ?? e.employee_name ?? e.full_name ?? "",
-      role: [e.department, e.position].filter(Boolean).join(" • ") || (e.role ?? "")
-    }));
+    return (employeesList || []).map((e) => {
+      const systemRole = (e.role ?? e.role_name ?? e.user_role ?? "").toString().trim().toLowerCase();
+      return {
+        id: e.id ?? e.employee_id,
+        name: e.name ?? e.employee_name ?? e.full_name ?? "",
+        role: [e.department, e.position].filter(Boolean).join(" • ") || (e.role ?? ""),
+        systemRole
+      };
+    });
   }, [employeesList]);
+
+  // For "Add Assign Location": only show employees with Manager role (backend requires responsible = Manager)
+  const employeesDataManagersOnly = React.useMemo(() => {
+    return (employeesData || []).filter((e) => (e.systemRole ?? "") === "manager");
+  }, [employeesData]);
+
+  // Fallback: assignable from employeesList by supervisor_id (when API doesn't return team by manager_id)
+  const assignableBySupervisorFilter = React.useMemo(() => {
+    if (!selectedResponsibleManagerId) return [];
+    const id = selectedResponsibleManagerId;
+    return (employeesList || [])
+      .filter((e) => {
+        const sup = e.supervisor_id ?? e.manager_id ?? e.reports_to ?? e.supervisor;
+        const supId = sup && typeof sup === "object" ? sup.id ?? sup.value : sup;
+        return String(supId || "") === String(id);
+      })
+      .map((e) => ({
+        id: e.id ?? e.employee_id,
+        name: e.name ?? e.employee_name ?? e.full_name ?? "",
+        role: [e.department, e.position].filter(Boolean).join(" • ") || (e.role ?? ""),
+      }));
+  }, [employeesList, selectedResponsibleManagerId]);
+
+  // Prefer team from API (same source as Team Members page); fallback to supervisor filter
+  const assignableEmployeesForModal = assignableTeamFromApi.length > 0 ? assignableTeamFromApi : assignableBySupervisorFilter;
 
   // Locations for dropdown (id, name)
   const locationsForDropdown = React.useMemo(() => {
@@ -271,7 +304,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
       .then(() => getLocationEmployees(locationId))
       .then((list) => setEmployeesAtLocation(Array.isArray(list) ? list : []))
       .then(refreshAssignments)
-      .catch(() => {});
+      .catch(() => { });
   };
 
   const handleAddAssignmentSave = (locationId, employeeIds, extra = {}) => {
@@ -286,14 +319,14 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
     const hasActivity = activityName && dates.length > 0;
     const activityPromise = hasActivity
       ? createLocationActivity({
-          name: activityName,
-          location_id: String(locationId),
-          employee_ids: employeeIds.map(String),
-          activity_days: extra.numberOfDays || dates.length,
-          dates,
-          responsible_employee_id: extra.responsibleEmployeeId || null,
-          description: [extra.projectName?.trim(), ...(extra.activityImageUrls || [])].filter(Boolean).join("\n"),
-        })
+        name: activityName,
+        location_id: String(locationId),
+        employee_ids: employeeIds.map(String),
+        activity_days: extra.numberOfDays || dates.length,
+        dates,
+        responsible_employee_id: extra.responsibleEmployeeId || null,
+        description: [extra.projectName?.trim(), ...(extra.activityImageUrls || [])].filter(Boolean).join("\n"),
+      })
       : Promise.resolve();
 
     return Promise.all([assignmentsPromise, activityPromise])
@@ -336,7 +369,52 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
+  // Reset selected responsible manager and team list when Add Assign modal opens
+  useEffect(() => {
+    if (showAddAssignmentPage) {
+      setSelectedResponsibleManagerId("");
+      setAssignableTeamFromApi([]);
+    }
+  }, [showAddAssignmentPage]);
 
+  // Fetch team members for selected manager: try team/members?manager_id= then fallback to employees?supervisor_id=
+  const mapToAssignable = (list) =>
+    (Array.isArray(list) ? list : []).map((e) => ({
+      id: e.id ?? e.employee_id,
+      name: e.name ?? e.employee_name ?? e.full_name ?? "",
+      role: [e.department, e.position].filter(Boolean).join(" • ") || (e.role ?? e.role_name ?? ""),
+    }));
+
+  useEffect(() => {
+    if (!selectedResponsibleManagerId) {
+      setAssignableTeamFromApi([]);
+      return;
+    }
+    let cancelled = false;
+    setAssignableTeamLoading(true);
+    setAssignableTeamFromApi([]);
+    const id = selectedResponsibleManagerId;
+    const applyFallback = () =>
+      getEmployees({ supervisor_id: id })
+        .then((r) => {
+          if (cancelled) return;
+          const raw = r?.data;
+          const data = Array.isArray(raw) ? raw : raw?.items ?? raw?.employees ?? raw?.records ?? [];
+          setAssignableTeamFromApi(mapToAssignable(data));
+        })
+        .catch(() => { if (!cancelled) setAssignableTeamFromApi([]); });
+
+    getTeamMembers({ manager_id: id })
+      .then((list) => {
+        if (cancelled) return;
+        const arr = mapToAssignable(list);
+        if (arr.length > 0) setAssignableTeamFromApi(arr);
+        else return applyFallback();
+      })
+      .catch(() => applyFallback())
+      .finally(() => { if (!cancelled) setAssignableTeamLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedResponsibleManagerId]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -396,13 +474,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
                 <div className="relative" ref={userDropdownRef}>
                   <div
                     className="flex items-center gap-[12px] cursor-pointer"
@@ -438,10 +510,10 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onMouseDown={async (e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          logout();
+                          await logout();
                           navigate("/login");
                         }}
                         className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
@@ -699,101 +771,101 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
               {loading ? (
                 <div className="p-12 text-center text-[#6B7280]">Loading assignments...</div>
               ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[#E0E0E0]">
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedAssignments.length === paginatedData.length && paginatedData.length > 0}
-                          onChange={handleSelectAll}
-                          className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
-                        />
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Location name
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Employee count
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Type
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Status
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedData.map((assignment) => (
-                      <tr key={assignment.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[#E0E0E0]">
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                           <input
                             type="checkbox"
-                            checked={selectedAssignments.includes(assignment.id)}
-                            onChange={() => handleCheckboxChange(assignment.id)}
+                            checked={selectedAssignments.length === paginatedData.length && paginatedData.length > 0}
+                            onChange={handleSelectAll}
                             className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                           />
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {assignment.locationName}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {assignment.employeeCount}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {assignment.type}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span
-                            className="text-[13px] inline-block px-[12px] py-[4px] rounded-[5px]"
-                            style={{
-                              fontWeight: 500,
-                              fontSize: '13px',
-                              lineHeight: '100%',
-                              whiteSpace: 'nowrap',
-                              color: assignment.status === 'Active' ? '#00564F' : '#4A4A4A',
-                              backgroundColor: assignment.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
-                              textAlign: 'center'
-                            }}
-                          >
-                            {assignment.status}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <div className="flex items-center justify-center gap-[8px]">
-                            <button
-                              onClick={() => handleViewActivities(assignment.locationName, assignment.location_id)}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="View"
-                            >
-                              <img src={ViewIcon} alt="View" className="w-full h-full object-contain" />
-                            </button>
-                            <div className="w-[1px] h-[22px] bg-[#E0E0E0]"></div>
-                            <button
-                              onClick={() => handleViewLocationEmployees(assignment.locationName, assignment.location_id)}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="View Employees"
-                            >
-                              <img src={AssignIcon} alt="View Employees" className="w-full h-full object-contain" />
-                            </button>
-                          </div>
-                        </td>
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Location name
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Employee count
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Type
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Status
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Action
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {paginatedData.map((assignment) => (
+                        <tr key={assignment.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedAssignments.includes(assignment.id)}
+                              onChange={() => handleCheckboxChange(assignment.id)}
+                              className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
+                            />
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {assignment.locationName}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {assignment.employeeCount}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {assignment.type}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span
+                              className="text-[13px] inline-block px-[12px] py-[4px] rounded-[5px]"
+                              style={{
+                                fontWeight: 500,
+                                fontSize: '13px',
+                                lineHeight: '100%',
+                                whiteSpace: 'nowrap',
+                                color: assignment.status === 'Active' ? '#00564F' : '#4A4A4A',
+                                backgroundColor: assignment.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
+                                textAlign: 'center'
+                              }}
+                            >
+                              {assignment.status}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <div className="flex items-center justify-center gap-[8px]">
+                              <button
+                                onClick={() => handleViewActivities(assignment.locationName, assignment.location_id)}
+                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                                title="View"
+                              >
+                                <img src={ViewIcon} alt="View" className="w-full h-full object-contain" />
+                              </button>
+                              <div className="w-[1px] h-[22px] bg-[#E0E0E0]"></div>
+                              <button
+                                onClick={() => handleViewLocationEmployees(assignment.locationName, assignment.location_id)}
+                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                                title="View Employees"
+                              >
+                                <img src={AssignIcon} alt="View Employees" className="w-full h-full object-contain" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
@@ -864,14 +936,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
           </div>
 
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
 
             <div className="relative" ref={userDropdownRef}>
               <div
@@ -902,10 +967,10 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onMouseDown={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      logout();
+                      await logout();
                       navigate("/login");
                     }}
                     className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
@@ -1130,7 +1195,10 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
       <AddAssignLocationModal
         isOpen={showAddAssignmentPage}
         onClose={() => setShowAddAssignmentPage(false)}
-        employees={employeesData}
+        employees={employeesDataManagersOnly}
+        assignableEmployees={assignableEmployeesForModal}
+        assignableLoading={assignableTeamLoading}
+        onResponsibleChange={(id) => setSelectedResponsibleManagerId(id || "")}
         locations={locationsForDropdown}
         onSave={handleAddAssignmentSave}
       />
