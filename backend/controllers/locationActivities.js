@@ -160,59 +160,66 @@ exports.createLocationActivity = async (req, res) => {
             if (respEmpResult.rows.length === 0 || respEmpResult.rows[0].role_name !== 'Manager') {
                 return res.status(400).json({ status: 'fail', message: 'Responsible employee must have the Manager role' });
             }
-
-            // 2. Validate all assigned employees are supervised by this Manager
-            const supervisorCheckResult = await pool.query(`
-                SELECT id 
-                FROM employees 
-                WHERE id = ANY($1::UUID[]) AND (supervisor_id != $2 OR supervisor_id IS NULL)
-            `, [employee_ids, responsible_employee_id]);
-
-            if (supervisorCheckResult.rows.length > 0) {
-                return res.status(400).json({
-                    status: 'fail',
-                    message: 'All assigned employees must be supervised by the responsible manager'
-                });
-            }
         }
 
-        const activityResult = await pool.query(activityQueries.createLocationActivityQuery, [
-            name,
-            activity_type || 'Workshop',
-            responsible_employee_id || null,
-            location_id,
-            start_date,
-            end_date,
-            activity_days || dates.length,
-            'Active',
-            description || null,
-            final_project_id || null,
-            images || []
-        ]);
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
 
-        const activity = activityResult.rows[0];
-
-        // Assign employees to activity
-        for (const employee_id of employee_ids) {
-            await pool.query(activityQueries.assignEmployeesToActivityQuery, [
-                activity.id,
-                employee_id
+            const activityResult = await client.query(activityQueries.createLocationActivityQuery, [
+                name,
+                activity_type || 'Workshop',
+                responsible_employee_id || null,
+                location_id,
+                start_date,
+                end_date,
+                activity_days || dates.length,
+                'Active',
+                description || null,
+                final_project_id || null,
+                images || []
             ]);
-        }
 
-        // Get location name for response
-        const locationResult = await pool.query('SELECT name FROM locations WHERE id = $1', [location_id]);
-        const location_name = locationResult.rows[0]?.name || null;
+            const activity = activityResult.rows[0];
 
-        res.status(201).json({
-            status: 'success',
-            data: {
-                ...activity,
-                location_name,
-                employee_count: employee_ids.length
+            // Assign employees to activity
+            for (const employee_id of employee_ids) {
+                await client.query(activityQueries.assignEmployeesToActivityQuery, [
+                    activity.id,
+                    employee_id
+                ]);
+
+                // Automatically update supervisor_id if responsible_employee_id is provided
+                if (responsible_employee_id) {
+                    await client.query(
+                        'UPDATE employees SET supervisor_id = $1 WHERE id = $2',
+                        [responsible_employee_id, employee_id]
+                    );
+                }
             }
-        });
+
+            await client.query('COMMIT');
+
+            // Get location name for response
+            const locationResult = await pool.query('SELECT name FROM locations WHERE id = $1', [location_id]);
+            const location_name = locationResult.rows[0]?.name || null;
+
+            res.status(201).json({
+                status: 'success',
+                data: {
+                    ...activity,
+                    location_name,
+                    employee_count: employee_ids.length
+                }
+            });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
     } catch (err) {
+        console.error('Error creating location activity:', err);
         res.status(500).json({ message: 'Error creating location activity', error: err.message });
     }
 };
@@ -286,71 +293,66 @@ exports.updateLocationActivity = async (req, res) => {
             }
         }
 
-        // Validate assigned employees if changed
-        if (employee_ids && Array.isArray(employee_ids)) {
-            const managerToValidate = responsible_employee_id || existingActivity.employee_id;
-            if (managerToValidate) {
-                const supervisorCheckResult = await pool.query(`
-                    SELECT id 
-                    FROM employees 
-                    WHERE id = ANY($1::UUID[]) AND (supervisor_id != $2 OR supervisor_id IS NULL)
-                `, [employee_ids, managerToValidate]);
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
 
-                if (supervisorCheckResult.rows.length > 0) {
-                    return res.status(400).json({
-                        status: 'fail',
-                        message: 'All assigned employees must be supervised by the responsible manager'
-                    });
+            const updateResult = await client.query(activityQueries.updateLocationActivityQuery, [
+                name || existingActivity.name,
+                activity_type || existingActivity.activity_type || 'Workshop',
+                responsible_employee_id || existingActivity.employee_id || null,
+                location_id || existingActivity.location_id,
+                start_date,
+                end_date,
+                final_activity_days,
+                description !== undefined ? description : existingActivity.description,
+                final_project_id || existingActivity.project_id || null,
+                images || existingActivity.images || [],
+                activity_id
+            ]);
+
+            if (updateResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ message: 'Activity not found' });
+            }
+
+            // Update employee assignments if provided
+            if (employee_ids && Array.isArray(employee_ids)) {
+                // Remove existing assignments
+                await client.query(activityQueries.removeEmployeesFromActivityQuery, [activity_id]);
+
+                // Add new assignments and update supervisor_id
+                const managerToAssign = responsible_employee_id || existingActivity.employee_id;
+
+                for (const employee_id of employee_ids) {
+                    await client.query(activityQueries.assignEmployeesToActivityQuery, [
+                        activity_id,
+                        employee_id
+                    ]);
+
+                    // Automatically update supervisor_id if a manager is responsible
+                    if (managerToAssign) {
+                        await client.query(
+                            'UPDATE employees SET supervisor_id = $1 WHERE id = $2',
+                            [managerToAssign, employee_id]
+                        );
+                    }
                 }
             }
+
+            await client.query('COMMIT');
+            res.status(200).json({
+                status: 'success',
+                data: updateResult.rows[0]
+            });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
         }
-
-        const updateResult = await pool.query(activityQueries.updateLocationActivityQuery, [
-            name || existingActivity.name,
-            activity_type || existingActivity.activity_type || 'Workshop',
-            responsible_employee_id || existingActivity.employee_id || null,
-            location_id || existingActivity.location_id,
-            start_date,
-            end_date,
-            final_activity_days,
-            description !== undefined ? description : existingActivity.description,
-            final_project_id || existingActivity.project_id || null,
-            images || existingActivity.images || [],
-            activity_id
-        ]);
-
-        if (updateResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Activity not found' });
-        }
-
-        // Update employee assignments if provided
-        if (employee_ids && Array.isArray(employee_ids)) {
-            console.log('Updating employee assignments for activity:', activity_id);
-            console.log('Employee IDs to assign:', employee_ids);
-
-            // Remove existing assignments
-            const deleteResult = await pool.query(activityQueries.removeEmployeesFromActivityQuery, [activity_id]);
-            console.log('Removed existing assignments:', deleteResult.rowCount);
-
-            // Add new assignments
-            for (const employee_id of employee_ids) {
-                console.log('Assigning employee:', employee_id);
-                const insertResult = await pool.query(activityQueries.assignEmployeesToActivityQuery, [
-                    activity_id,
-                    employee_id
-                ]);
-                console.log('Assignment result:', insertResult.rowCount);
-            }
-            console.log('Employee assignments updated successfully');
-        } else {
-            console.log('No employee_ids provided or not an array:', employee_ids);
-        }
-
-        res.status(200).json({
-            status: 'success',
-            data: updateResult.rows[0]
-        });
     } catch (err) {
+        console.error('Error updating location activity:', err);
         res.status(500).json({ message: 'Error updating location activity', error: err.message });
     }
 };
