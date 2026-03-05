@@ -196,6 +196,7 @@ exports.updateEmployee = async (req, res) => {
                 status,
                 finalAvatarUrl,
                 role_id || null,
+                req.body.supervisor_id || employee.supervisor_id || null,
                 id
             ]);
 
