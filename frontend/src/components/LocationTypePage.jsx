@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import { getLocationTypes, createLocationType, updateLocationType, deleteLocationType } from "../services/locationTypes";
+import HeaderIcons from "./HeaderIcons";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -169,8 +170,8 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
 
 
   return (
-    <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', overflowX: 'hidden' }}>
-      <div className="hidden lg:flex min-h-screen" style={{ overflowX: 'hidden' }}>
+    <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif' }}>
+      <div className="hidden lg:flex min-h-screen">
         {/* Sidebar Component */}
         <Sidebar
           userRole={effectiveRole}
@@ -179,9 +180,9 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
         />
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col bg-[#F5F7FA]" style={{ minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}>
+        <main className="flex-1 flex flex-col bg-[#F5F7FA]" style={{ minWidth: 0, maxWidth: '100%' }}>
           {/* Header */}
-          <header className="bg-white px-[40px] py-[24px]" style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
+          <header className="bg-white px-[40px] py-[24px]" style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
             <div className="flex items-center justify-between mb-[16px]" style={{ minWidth: 0, maxWidth: '100%' }}>
               <div className="relative flex-shrink-0">
                 <svg className="absolute left-[16px] top-1/2 -translate-y-1/2 w-[20px] h-[20px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -198,13 +199,7 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
               </div>
 
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
                 {/* User Profile with Dropdown */}
                 <div className="relative" ref={userDropdownRef}>
                   <div
@@ -241,10 +236,11 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                       <div className="h-[1px] bg-[#CDC0C0] my-[4px]"></div>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onMouseDown={async (e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          navigate("/login");
+                          await logout();
+                          window.location.href = "/login";
                         }}
                         className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] font-medium hover:bg-red-50 transition-colors"
                       >
@@ -267,7 +263,7 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
           </header>
 
           {/* Page Content */}
-          <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ overflowX: 'hidden', maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
+          <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
             {/* Page Header */}
             <div className="mb-[20px]">
               <h1 className="text-[28px] font-semibold text-[#000000] mb-[8px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>
@@ -466,69 +462,69 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                         </td>
                       </tr>
                     ) : (
-                    paginatedData.map((type) => (
-                      <tr key={type.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedTypes.includes(type.id)}
-                            onChange={() => handleCheckboxChange(type.id)}
-                            className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
-                          />
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {type.name}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {type.description}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span
-                            className="text-[13px] inline-block px-[12px] py-[4px] rounded-[5px]"
-                            style={{
-                              fontWeight: 500,
-                              fontSize: '13px',
-                              lineHeight: '100%',
-                              whiteSpace: 'nowrap',
-                              color: type.status === 'Active' ? '#00564F' : '#4A4A4A',
-                              backgroundColor: type.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
-                              textAlign: 'center'
-                            }}
-                          >
-                            {type.status}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <div className="flex items-center justify-center gap-0">
-                            <button
-                              onClick={() => {
-                                setEditingType(type);
-                                setShowEditLocationTypePage(true);
+                      paginatedData.map((type) => (
+                        <tr key={type.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedTypes.includes(type.id)}
+                              onChange={() => handleCheckboxChange(type.id)}
+                              className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
+                            />
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {type.name}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {type.description}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span
+                              className="text-[13px] inline-block px-[12px] py-[4px] rounded-[5px]"
+                              style={{
+                                fontWeight: 500,
+                                fontSize: '13px',
+                                lineHeight: '100%',
+                                whiteSpace: 'nowrap',
+                                color: type.status === 'Active' ? '#00564F' : '#4A4A4A',
+                                backgroundColor: type.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
+                                textAlign: 'center'
                               }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="Edit"
                             >
-                              <img src={EditIcon} alt="Edit" className="w-full h-full object-contain" />
-                            </button>
-                            <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
-                            <button
-                              onClick={() => {
-                                setTypeToDelete(type);
-                                setShowWarningModal(true);
-                              }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="Delete"
-                            >
-                              <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                              {type.status}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <div className="flex items-center justify-center gap-0">
+                              <button
+                                onClick={() => {
+                                  setEditingType(type);
+                                  setShowEditLocationTypePage(true);
+                                }}
+                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                                title="Edit"
+                              >
+                                <img src={EditIcon} alt="Edit" className="w-full h-full object-contain" />
+                              </button>
+                              <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
+                              <button
+                                onClick={() => {
+                                  setTypeToDelete(type);
+                                  setShowWarningModal(true);
+                                }}
+                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                                title="Delete"
+                              >
+                                <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
                     )
                     }
                   </tbody>
@@ -603,14 +599,7 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
           </div>
 
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
 
             {/* User Avatar with Dropdown */}
             <div className="relative" ref={userDropdownRef}>
@@ -641,10 +630,11 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                   <button
-                    onClick={(e) => {
+                    onMouseDown={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      navigate("/login");
+                      await logout();
+                      window.location.href = "/login";
                     }}
                     className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
                   >

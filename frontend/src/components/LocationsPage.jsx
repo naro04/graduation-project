@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import { getLocations, createLocation, updateLocation, deleteLocation, getLocationEmployees, getLocationActivities } from "../services/locations";
 import { getLocationTypes } from "../services/locationTypes";
+import HeaderIcons from "./HeaderIcons";
+import LocationMapPicker from "./LocationMapPicker";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -115,8 +117,15 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
     }
   };
 
-  // Type options
-  const typeOptions = ["All Type", "Office", "Field"];
+  // Type options: from API (location-types) so dropdown shows same types; fallback if API not loaded
+  const typeOptions = React.useMemo(() => {
+    const names = (locationTypesList || [])
+      .map((t) => t.name ?? t.type_name ?? t.type)
+      .filter(Boolean);
+    const unique = [...new Set(names)].sort((a, b) => String(a).localeCompare(String(b)));
+    return ["All Type", ...unique];
+  }, [locationTypesList]);
+  const typeOptionsWithFallback = typeOptions.length > 1 ? typeOptions : ["All Type", "Office", "Field"];
   const statusOptions = ["All Status", "Active", "Inactive"];
 
   // Map type_id -> name for display when API returns only type_id (support number and string keys)
@@ -134,12 +143,14 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
     return map;
   }, [locationTypesList]);
 
-  // Normalize location for display (API may use type, type_name, location_type.name, type_id, or location_type_id)
+  // Normalize location for display (API may use type, type_name, location_type, type_id, or location_type_id)
   const normalizeLocation = (loc) => {
     const typeId = loc.type_id ?? loc.location_type_id;
     const typeFromId = typeNamesById[typeId] ?? typeNamesById[String(typeId)];
-    const rawType = loc.type ?? loc.type_name ?? (typeof loc.location_type === "object" ? loc.location_type?.name : loc.location_type) ?? typeFromId ?? "";
-    const typeStr = typeof rawType === "string" ? rawType.replace(/^\w/, (c) => c.toUpperCase()) : String(rawType || "");
+    const locationTypeVal = typeof loc.location_type === "object" ? loc.location_type?.name : loc.location_type;
+    const rawType = loc.type ?? loc.type_name ?? loc.locationType ?? loc.location_type_name ?? locationTypeVal ?? typeFromId ?? "";
+    const trimmed = typeof rawType === "string" ? rawType.trim() : String(rawType || "").trim();
+    const typeStr = trimmed ? trimmed.replace(/^\w/, (c) => c.toUpperCase()) : "";
     return {
       id: loc.id,
       name: loc.name ?? loc.location_name ?? "",
@@ -222,7 +233,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
   const refreshLocations = () => {
     getLocations()
       .then((list) => setLocationsData(Array.isArray(list) ? list : []))
-      .catch(() => {});
+      .catch(() => { });
   };
 
   // Validate latitude/longitude: empty ok, otherwise must be valid number in range
@@ -394,13 +405,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
                 {/* User Profile with Dropdown */}
                 <div className="relative" ref={userDropdownRef}>
                   <div
@@ -437,10 +442,11 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onMouseDown={async (e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          navigate("/login");
+                          await logout();
+                          window.location.href = "/login";
                         }}
                         className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] font-medium hover:bg-red-50 transition-colors"
                       >
@@ -463,7 +469,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
           </header>
 
           {/* Page Content */}
-          <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ overflowX: 'hidden', maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
+          <div className="flex-1 p-[36px] bg-[#F5F7FA]" style={{ maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
             {/* Page Header */}
             <div className="mb-[20px]">
               <h1 className="text-[28px] font-semibold text-[#000000] mb-[8px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>
@@ -514,7 +520,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 </button>
                 {isTypeDropdownOpen && (
                   <div className="absolute top-full left-0 mt-[8px] bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg min-w-[240px] z-[100]">
-                    {typeOptions.map((type) => (
+                    {typeOptionsWithFallback.map((type) => (
                       <button
                         key={type}
                         type="button"
@@ -664,123 +670,123 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
               ) : filteredData.length === 0 ? (
                 <div className="p-12 text-center text-[#6B7280]">No locations found.</div>
               ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[#E0E0E0]">
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedLocations.length === paginatedData.length && paginatedData.length > 0}
-                          onChange={handleSelectAll}
-                          className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
-                        />
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Location name
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Type
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Latitude
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Longitude
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Status
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedData.map((location) => (
-                      <tr key={location.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[#E0E0E0]">
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                           <input
                             type="checkbox"
-                            checked={selectedLocations.includes(location.id)}
-                            onChange={() => handleCheckboxChange(location.id)}
+                            checked={selectedLocations.length === paginatedData.length && paginatedData.length > 0}
+                            onChange={handleSelectAll}
                             className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                           />
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {location.name}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {location.type || "—"}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {location.latitude}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                            {location.longitude}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <span
-                            className="inline-block px-[12px] py-[4px] rounded-[5px]"
-                            style={{
-                              fontWeight: 500,
-                              fontSize: '13px',
-                              lineHeight: '100%',
-                              whiteSpace: 'nowrap',
-                              color: location.status === 'Active' ? '#00564F' : '#4A4A4A',
-                              backgroundColor: location.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
-                              textAlign: 'center'
-                            }}
-                          >
-                            {location.status}
-                          </span>
-                        </td>
-                        <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <div className="flex items-center justify-center gap-0">
-                            <button
-                              onClick={() => openLocationDetails(location)}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="View employees & activities"
-                            >
-                              <img src={ViewIcon} alt="View" className="w-full h-full object-contain" />
-                            </button>
-                            <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
-                            <button
-                              onClick={() => {
-                                setEditingLocation(location);
-                                setShowEditLocationPage(true);
-                              }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="Edit"
-                            >
-                              <img src={EditIcon} alt="Edit" className="w-full h-full object-contain" />
-                            </button>
-                            <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
-                            <button
-                              onClick={() => {
-                                setLocationToDelete(location);
-                                setShowWarningModal(true);
-                              }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="Delete"
-                            >
-                              <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
-                            </button>
-                          </div>
-                        </td>
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Location name
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Type
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Latitude
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Longitude
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Status
+                        </th>
+                        <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
+                          Action
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {paginatedData.map((location) => (
+                        <tr key={location.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedLocations.includes(location.id)}
+                              onChange={() => handleCheckboxChange(location.id)}
+                              className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
+                            />
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {location.name}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {location.type || "—"}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {location.latitude}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
+                              {location.longitude}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <span
+                              className="inline-block px-[12px] py-[4px] rounded-[5px]"
+                              style={{
+                                fontWeight: 500,
+                                fontSize: '13px',
+                                lineHeight: '100%',
+                                whiteSpace: 'nowrap',
+                                color: location.status === 'Active' ? '#00564F' : '#4A4A4A',
+                                backgroundColor: location.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
+                                textAlign: 'center'
+                              }}
+                            >
+                              {location.status}
+                            </span>
+                          </td>
+                          <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
+                            <div className="flex items-center justify-center gap-0">
+                              <button
+                                onClick={() => openLocationDetails(location)}
+                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                                title="View employees & activities"
+                              >
+                                <img src={ViewIcon} alt="View" className="w-full h-full object-contain" />
+                              </button>
+                              <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
+                              <button
+                                onClick={() => {
+                                  setEditingLocation(location);
+                                  setShowEditLocationPage(true);
+                                }}
+                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                                title="Edit"
+                              >
+                                <img src={EditIcon} alt="Edit" className="w-full h-full object-contain" />
+                              </button>
+                              <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
+                              <button
+                                onClick={() => {
+                                  setLocationToDelete(location);
+                                  setShowWarningModal(true);
+                                }}
+                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
+                                title="Delete"
+                              >
+                                <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
@@ -851,14 +857,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
           </div>
 
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
 
             {/* User Avatar with Dropdown */}
             <div className="relative" ref={userDropdownRef}>
@@ -961,10 +960,11 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 <svg className={`w-[16px] h-[16px] text-[#6B7280] transition-transform ${isTypeDropdownOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9L12 15L18 9" /></svg>
               </button>
               {isTypeDropdownOpen && (
-                <div className="absolute top-full left-0 mt-1 w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-20">
-                  {typeOptions.map((type) => (
+                <div className="absolute top-full left-0 mt-1 w-full bg-white border border-[#E0E0E0] rounded-[10px] shadow-lg z-[100] overflow-visible">
+                  {typeOptionsWithFallback.map((type) => (
                     <button
                       key={type}
+                      type="button"
                       onClick={() => { setSelectedType(type); setIsTypeDropdownOpen(false); }}
                       className={`w-full px-[16px] py-[12px] text-left text-[14px] ${selectedType === type ? 'bg-[#F3F4F6] font-semibold' : 'hover:bg-[#F9FAFB]'}`}
                     >
@@ -1208,8 +1208,8 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
       {/* Add Location Modal */}
       {showAddLocationPage && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-          <div className="bg-white w-full max-w-[480px] rounded-[12px] overflow-hidden shadow-2xl animate-in zoom-in duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+          <div className="bg-white w-full max-w-[520px] rounded-[12px] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0] flex-shrink-0">
               <h2 className="text-[20px] font-bold text-[#003934]" style={{ fontFamily: 'Inter, sans-serif' }}>Add New Location</h2>
               <button
                 onClick={() => setShowAddLocationPage(false)}
@@ -1220,71 +1220,101 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
               </button>
             </div>
 
-            <form className="p-6 space-y-5">
-              <div className="space-y-1.5">
-                <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Location Name</label>
-                <input
-                  type="text"
-                  placeholder="Enter Location Name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] focus:ring-1 focus:ring-[#003934] outline-none text-[14px] transition-all"
-                  style={{ fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[16px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Location Type</label>
-                <div className="relative">
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full h-[50px] px-4 rounded-[10px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[15px] appearance-none cursor-pointer bg-white"
+            <form className="p-6 flex flex-col min-h-0 flex-1 overflow-y-auto">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Location Name</label>
+                  <input
+                    type="text"
+                    placeholder="Enter Location Name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] focus:ring-1 focus:ring-[#003934] outline-none text-[14px]"
                     style={{ fontFamily: 'Inter, sans-serif' }}
-                  >
-                    <option value="Office">Office</option>
-                    <option value="Field">Field</option>
-                  </select>
-                  <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M19 9l-7 7-7-7" /></svg>
+                  />
                 </div>
-              </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Latitude</label>
-                <input
-                  type="text"
-                  placeholder="Enter Latitude (e.g. 31.5009)"
-                  value={formData.latitude}
-                  onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
-                  className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] transition-all"
-                  style={{ fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Longitude</label>
-                <input
-                  type="text"
-                  placeholder="Enter Longitude (e.g. 34.4671)"
-                  value={formData.longitude}
-                  onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
-                  className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] transition-all"
-                  style={{ fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-
-              {formError && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                  {formError}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Location Type</label>
+                    <div className="relative">
+                      <select
+                        value={formData.type}
+                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                        className="w-full h-[42px] pl-3 pr-9 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] appearance-none cursor-pointer bg-white"
+                        style={{ fontFamily: 'Inter, sans-serif' }}
+                      >
+                        <option value="Office">Office</option>
+                        <option value="Field">Field</option>
+                      </select>
+                      <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Status</label>
+                    <div className="relative">
+                      <select
+                        value={formData.status}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                        className="w-full h-[42px] pl-3 pr-9 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] appearance-none cursor-pointer bg-white"
+                        style={{ fontFamily: 'Inter, sans-serif' }}
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                      <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              <div className="pt-5 flex gap-3">
+                <div>
+                  <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Pick location on map (click to set coordinates)</label>
+                  <LocationMapPicker
+                    latitude={formData.latitude}
+                    longitude={formData.longitude}
+                    onSelect={(lat, lng) => setFormData(prev => ({ ...prev, latitude: String(lat), longitude: String(lng) }))}
+                    height={220}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Latitude</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 31.5009"
+                      value={formData.latitude}
+                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                      className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
+                      style={{ fontFamily: 'Inter, sans-serif' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Longitude</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 34.4671"
+                      value={formData.longitude}
+                      onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                      className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
+                      style={{ fontFamily: 'Inter, sans-serif' }}
+                    />
+                  </div>
+                </div>
+
+                {formError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                    {formError}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-5 flex gap-3 flex-shrink-0 mt-4">
                 <button
                   type="button"
                   onClick={() => setShowAddLocationPage(false)}
                   className="flex-1 h-[44px] rounded-[8px] border border-[#E0E0E0] text-[#6B7280] font-semibold text-[15px] hover:bg-[#F5F7FA] transition-colors"
-                  style={{ fontFamily: 'Inter, sans-serif', boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)' }}
+                  style={{ fontFamily: 'Inter, sans-serif' }}
                 >
                   Cancel
                 </button>
@@ -1292,7 +1322,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                   type="submit"
                   onClick={handleAddLocation}
                   disabled={submitLoading}
-                  className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-all shadow-md active:scale-[0.98] disabled:opacity-60"
+                  className="flex-1 h-[44px] rounded-[8px] bg-[#003934] text-white font-semibold text-[15px] hover:bg-[#002b27] transition-colors disabled:opacity-60"
                   style={{ fontFamily: 'Inter, sans-serif' }}
                 >
                   {submitLoading ? "Saving..." : "Save"}
@@ -1306,8 +1336,8 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
       {/* Edit Location Modal */}
       {showEditLocationPage && editingLocation && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-          <div className="bg-white w-full max-w-[480px] rounded-[12px] overflow-hidden shadow-2xl animate-in zoom-in duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+          <div className="bg-white w-full max-w-[520px] rounded-[12px] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0] flex-shrink-0">
               <h2 className="text-[20px] font-bold text-[#003934]" style={{ fontFamily: 'Inter, sans-serif' }}>Edit Location</h2>
               <button
                 onClick={() => setShowEditLocationPage(false)}
@@ -1318,65 +1348,95 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
               </button>
             </div>
 
-            <form className="p-6 space-y-5">
-              <div className="space-y-1.5">
-                <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Location Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
-                  style={{ fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[16px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Location Type</label>
-                <div className="relative">
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full h-[50px] px-4 rounded-[10px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[15px] appearance-none cursor-pointer bg-white"
+            <form className="p-6 flex flex-col min-h-0 flex-1 overflow-y-auto">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Location Name</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
                     style={{ fontFamily: 'Inter, sans-serif' }}
-                  >
-                    <option value="Office">Office</option>
-                    <option value="Field">Field</option>
-                  </select>
-                  <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M19 9l-7 7-7-7" /></svg>
+                  />
                 </div>
-              </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Latitude</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 31.5009"
-                  value={formData.latitude}
-                  onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
-                  className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
-                  style={{ fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[14px] font-semibold text-[#181818]" style={{ fontFamily: 'Inter, sans-serif' }}>Longitude</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 34.4671"
-                  value={formData.longitude}
-                  onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
-                  className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
-                  style={{ fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-
-              {formError && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                  {formError}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Location Type</label>
+                    <div className="relative">
+                      <select
+                        value={formData.type}
+                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                        className="w-full h-[42px] pl-3 pr-9 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] appearance-none cursor-pointer bg-white"
+                        style={{ fontFamily: 'Inter, sans-serif' }}
+                      >
+                        <option value="Office">Office</option>
+                        <option value="Field">Field</option>
+                      </select>
+                      <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Status</label>
+                    <div className="relative">
+                      <select
+                        value={formData.status}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                        className="w-full h-[42px] pl-3 pr-9 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] appearance-none cursor-pointer bg-white"
+                        style={{ fontFamily: 'Inter, sans-serif' }}
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                      <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              <div className="pt-5 flex items-center gap-3">
+                <div>
+                  <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Pick location on map (click to set coordinates)</label>
+                  <LocationMapPicker
+                    latitude={formData.latitude}
+                    longitude={formData.longitude}
+                    onSelect={(lat, lng) => setFormData(prev => ({ ...prev, latitude: String(lat), longitude: String(lng) }))}
+                    height={220}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Latitude</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 31.5009"
+                      value={formData.latitude}
+                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                      className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
+                      style={{ fontFamily: 'Inter, sans-serif' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[14px] font-semibold text-[#181818] mb-1.5" style={{ fontFamily: 'Inter, sans-serif' }}>Longitude</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 34.4671"
+                      value={formData.longitude}
+                      onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                      className="w-full h-[42px] px-3 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px]"
+                      style={{ fontFamily: 'Inter, sans-serif' }}
+                    />
+                  </div>
+                </div>
+
+                {formError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                    {formError}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-5 flex items-center gap-3 flex-shrink-0 mt-4">
                 <button
                   type="button"
                   onClick={() => {

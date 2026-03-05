@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import HeaderIcons from "./HeaderIcons";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -204,16 +205,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                {/* Message Icon */}
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-
-                {/* Notification Bell */}
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
 
                 {/* User Profile */}
                 <div className="relative" ref={desktopDropdownRef}>
@@ -1062,16 +1054,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Message Icon */}
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center">
-              <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-            </button>
-
-            {/* Notification Bell */}
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center">
-              <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[20px] h-[20px]" />
 
             {/* User Profile Dropdown */}
             <div className="relative" ref={userDropdownRef}>

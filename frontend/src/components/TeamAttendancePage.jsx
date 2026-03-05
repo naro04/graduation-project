@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
+import HeaderIcons from "./HeaderIcons";
 import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import { getTeamAttendance, getAttendanceLocations, deleteAttendance } from "../services/attendance";
 import { getTeamMembers } from "../services/employees.js";
@@ -119,7 +120,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
 
   const refreshAttendance = () => {
     if (!dateParam) return;
-    getTeamAttendance({ date: dateParam }).then((list) => setAttendanceFromApi(Array.isArray(list) ? list : [])).catch(() => {});
+    getTeamAttendance({ date: dateParam }).then((list) => setAttendanceFromApi(Array.isArray(list) ? list : [])).catch(() => { });
   };
 
   const teamIds = useMemo(() => (teamMembers || []).map((m) => m.id), [teamMembers]);
@@ -209,13 +210,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
                 />
               </div>
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full" />
-                </button>
+                <HeaderIcons />
                 <div className="relative" ref={userDropdownRef}>
                   <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
                     <img src={UserAvatar} alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
@@ -232,7 +227,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
                       <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => navigate("/profile")}>Edit Profile</button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]" />
-                      <button type="button" onClick={() => { setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA]">Log Out</button>
+                      <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                     </div>
                   )}
                 </div>
@@ -416,13 +411,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
             <svg className="w-[24px] h-[24px] text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full" />
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
             <div className="relative" ref={userDropdownRef}>
               <div className="flex items-center gap-[8px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
                 <img src={UserAvatar} alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
@@ -433,7 +422,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
                   <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]" />
-                  <button type="button" onClick={() => { setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA]">Log Out</button>
+                  <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                 </div>
               )}
             </div>
@@ -582,7 +571,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
             <p className="text-center text-[#000000] text-[16px] px-5 mb-1" style={{ fontFamily: "Inter, sans-serif" }}>Are you sure you want to delete this attendance record?</p>
             <p className="text-center text-[#4E4E4E] text-[10px] px-5 pb-10" style={{ fontFamily: "Inter, sans-serif" }}>This action can&apos;t be undone</p>
             <div className="flex items-center justify-center gap-5 px-5 pb-6">
-              <button type="button" onClick={async () => { try { await deleteAttendance(employeeToDelete.id); refreshAttendance(); } catch (_) {} setShowWarningModal(false); setEmployeeToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#A20000] hover:bg-[#8a0000]" style={{ fontFamily: "Inter, sans-serif" }}>Delete</button>
+              <button type="button" onClick={async () => { try { await deleteAttendance(employeeToDelete.id); refreshAttendance(); } catch (_) { } setShowWarningModal(false); setEmployeeToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#A20000] hover:bg-[#8a0000]" style={{ fontFamily: "Inter, sans-serif" }}>Delete</button>
               <button type="button" onClick={() => { setShowWarningModal(false); setEmployeeToDelete(null); }} className="px-6 py-2 text-white text-[16px] font-semibold rounded bg-[#7A7A7A] hover:bg-[#666]" style={{ fontFamily: "Inter, sans-serif" }}>Cancel</button>
             </div>
           </div>
@@ -592,9 +581,9 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setIsLogoutModalOpen(false);
-          logout();
+          await logout();
           window.location.href = "/login";
         }}
       />

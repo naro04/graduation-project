@@ -16,6 +16,7 @@ import {
 import { getDepartments } from "../services/departments.js";
 import { getPositions } from "../services/positions.js";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import HeaderIcons from "./HeaderIcons";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -697,16 +698,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
 
           {/* Right Side - Icons and User */}
           <div className="flex items-center gap-[16px]">
-            {/* Message Icon */}
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-            </button>
-
-            {/* Notification Bell */}
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons />
 
             {/* User Profile */}
             <div className="relative" ref={dropdownRef}>
@@ -837,35 +829,37 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
             {!isLoading && !error && userData && (
             <div className="flex pt-[20px]">
               {/* Left Side - Contact Info (Below green header, aligned with avatar) */}
-              <div className="min-w-[200px] w-[240px] max-w-[280px] pl-[16px] pr-[24px] pb-[20px] flex-shrink-0">
+              <div className="min-w-[240px] w-[300px] max-w-[320px] pl-[16px] pr-[20px] pb-[20px] flex-shrink-0">
                 {/* Contact Info */}
-                <div className="flex flex-col gap-[14px] mt-[20px]">
+                <div className="flex flex-col gap-[14px] mt-[20px] min-w-0">
                   {/* Employee ID */}
-                  <div className="flex items-center gap-[10px]">
+                  <div className="flex items-center gap-[10px] min-w-0">
                     <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0">
                       <img src={EmployeeIcon} alt="Employee" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <span className="text-[13px] text-[#666666] whitespace-nowrap">#{userData?.employeeCode || userData?.employeeId || "N/A"}</span>
+                    <span className="text-[13px] text-[#666666] whitespace-nowrap truncate min-w-0">#{userData?.employeeCode || userData?.employeeId || "N/A"}</span>
                   </div>
 
                   {/* Phone */}
-                  <div className="flex items-center gap-[10px]">
+                  <div className="flex items-center gap-[10px] min-w-0">
                     <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0">
                       <img src={PhoneIcon} alt="Phone" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <span className="text-[13px] text-[#666666] whitespace-nowrap">{userData?.phone || "N/A"}</span>
+                    <span className="text-[13px] text-[#666666] whitespace-nowrap truncate min-w-0">{userData?.phone || "N/A"}</span>
                   </div>
 
-                  {/* Email - allow full text to show (wrap if needed) */}
-                  <div className="flex items-start gap-[10px]">
+                  {/* Email - full address visible; scroll horizontally if very long */}
+                  <div className="flex items-start gap-[10px] min-w-0">
                     <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 mt-[1px]">
                       <img src={EmailIcon} alt="Email" className="w-[14px] h-[14px] object-contain" />
                     </div>
-                    <span className="text-[13px] text-[#666666] break-all min-w-0">{userData?.email || "N/A"}</span>
+                    <div className="min-w-0 overflow-x-auto overflow-y-hidden" style={{ scrollbarWidth: 'thin' }}>
+                      <span className="text-[13px] text-[#666666] whitespace-nowrap" title={userData?.email || "N/A"}>{userData?.email || "N/A"}</span>
+                    </div>
                   </div>
 
                   {/* Location - allow wrap for long text */}
-                  <div className="flex items-start gap-[10px]">
+                  <div className="flex items-start gap-[10px] min-w-0">
                     <div className="w-[24px] h-[24px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 mt-[1px]">
                       <img src={LocationIcon} alt="Location" className="w-[14px] h-[14px] object-contain" />
                     </div>
@@ -890,8 +884,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
-              {/* Right Side - Form Content (White background). Extra right padding on Schedule so edit icon is never cut off. */}
-              <div className={`flex-1 pl-[24px] pb-[24px] pt-0 bg-white ${activeTab === "schedule" ? "pr-[120px]" : "pr-[24px]"}`}>
+              {/* Right Side - Form Content (White background). min-w-0 so schedule table can scroll horizontally when needed. */}
+              <div className={`flex-1 min-w-0 pl-[24px] pb-[24px] pt-0 bg-white ${activeTab === "schedule" ? "pr-[24px]" : "pr-[24px]"}`}>
                 {activeTab === "personal" && (
                   <div>
                     {/* Personal Section Header */}
@@ -904,7 +898,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         type="button"
                         onClick={handleEditClick}
                         disabled={isEditMode}
-                        className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors disabled:opacity-50 disabled:cursor-not-allowed mr-[24px]"
                         title={effectiveRole === "superAdmin" ? "Edit (Super Admin: all fields)" : "Edit Personal (ID and Status are read-only)"}
                       >
                         <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
@@ -1126,7 +1120,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Job</h2>
                       </div>
                       {canEditProfileJob && (
-                        <button type="button" onClick={handleJobEditClick} disabled={isJobEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Job">
+                        <button type="button" onClick={handleJobEditClick} disabled={isJobEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors mr-[24px]" title="Edit Job">
                           <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                         </button>
                       )}
@@ -1279,7 +1273,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Locations</h2>
                       </div>
                       {canEditProfileLocations && (
-                        <button type="button" onClick={handleLocationsEditClick} disabled={isLocationsEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Locations">
+                        <button type="button" onClick={handleLocationsEditClick} disabled={isLocationsEditMode} className="w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors mr-[24px]" title="Edit Locations">
                           <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                         </button>
                       )}
@@ -1400,7 +1394,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <h2 className="text-[21px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Schedule</h2>
                       </div>
                       {canEditProfileSchedule && (
-                        <button type="button" onClick={() => setIsScheduleInfoOpen((v) => !v)} className="flex-shrink-0 w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors" title="Edit Schedule">
+                        <button type="button" onClick={() => setIsScheduleInfoOpen((v) => !v)} className="flex-shrink-0 w-[28px] h-[28px] rounded-[6px] border border-[#E0E0E0] flex items-center justify-center hover:bg-[#F5F5F5] transition-colors mr-[24px]" title="Edit Schedule">
                           <img src={EditIcon} alt="Edit" className="w-[20px] h-[20px] object-contain" />
                         </button>
                       )}
@@ -1445,17 +1439,17 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         </button>
                       </div>
 
-                      {/* Schedule Table */}
-                      <div className="overflow-hidden border border-[#E0E0E0]">
-                        <table className="w-full border-collapse">
+                      {/* Schedule Table - fits without scroll; time blocks wrap if needed */}
+                      <div className="border border-[#E0E0E0]">
+                        <table className="w-full border-collapse table-fixed" style={{ tableLayout: 'fixed' }}>
                           <thead>
                             <tr>
-                              <th className="text-left text-[14px] font-medium text-[#666666] pb-[12px] pr-[16px] bg-white" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}></th>
+                              <th className="text-left text-[14px] font-medium text-[#666666] pb-[12px] pr-[12px] bg-white w-[72px]" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}></th>
                               {getWeekDays(currentWeekStart).map((day, index) => (
-                                <th key={index} className="text-center pt-[16px] pb-[8px] px-[8px] bg-white" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0', width: '20%' }}>
+                                <th key={index} className="text-center pt-[16px] pb-[8px] px-[4px] bg-white" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}>
                                   <div className="flex flex-col items-center" style={{ fontFamily: 'Inter, sans-serif' }}>
-                                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#716F6F' }}>{day.name}</span>
-                                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#000000' }}>{day.date}</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#716F6F' }}>{day.name}</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#000000' }}>{day.date}</span>
                                   </div>
                                 </th>
                               ))}
@@ -1464,31 +1458,31 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           <tbody>
                             {/* Time Row */}
                             <tr>
-                              <td className="text-center text-[14px] font-medium text-[#666666] py-[20px] px-[24px] bg-white" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}>Time</td>
+                              <td className="text-center text-[14px] font-medium text-[#666666] py-[16px] px-[12px] bg-white align-middle" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}>Time</td>
                               {getWeekDays(currentWeekStart).map((day, index) => (
-                                <td key={index} className="text-center py-[16px] px-[8px] bg-white" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0', width: '20%' }}>
+                                <td key={index} className="text-center py-[12px] px-[4px] bg-white align-middle break-words" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}>
                                   {index === 0 && (
-                                    <div className="inline-block px-[8px] py-[10px] whitespace-nowrap" style={{ backgroundColor: '#FFD5DD', color: '#000000', borderLeft: '2px solid #E24564', fontFamily: 'Inter, sans-serif', fontSize: '10px', fontWeight: 400, lineHeight: '100%', letterSpacing: '0%' }}>
+                                    <div className="inline-block max-w-full px-[6px] py-[8px] text-[9px] leading-tight break-words" style={{ backgroundColor: '#FFD5DD', color: '#000000', borderLeft: '2px solid #E24564', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>
                                       9:00 Am - 2:00 Pm
                                     </div>
                                   )}
                                   {index === 1 && (
-                                    <div className="inline-block px-[8px] py-[10px] whitespace-nowrap" style={{ backgroundColor: '#D5E1FF', color: '#000000', borderLeft: '2px solid #1976D2', fontFamily: 'Inter, sans-serif', fontSize: '10px', fontWeight: 400, lineHeight: '100%', letterSpacing: '0%' }}>
+                                    <div className="inline-block max-w-full px-[6px] py-[8px] text-[9px] leading-tight break-words" style={{ backgroundColor: '#D5E1FF', color: '#000000', borderLeft: '2px solid #1976D2', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>
                                       10:00 Am - 4:00 Pm
                                     </div>
                                   )}
                                   {index === 2 && (
-                                    <div className="inline-block px-[8px] py-[10px] whitespace-nowrap" style={{ backgroundColor: '#F1D1AC', color: '#000000', borderLeft: '2px solid #F57C00', fontFamily: 'Inter, sans-serif', fontSize: '10px', fontWeight: 400, lineHeight: '100%', letterSpacing: '0%' }}>
+                                    <div className="inline-block max-w-full px-[6px] py-[8px] text-[9px] leading-tight break-words" style={{ backgroundColor: '#F1D1AC', color: '#000000', borderLeft: '2px solid #F57C00', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>
                                       9:00 Am - 2:00 Pm
                                     </div>
                                   )}
                                   {index === 3 && (
-                                    <div className="inline-block px-[8px] py-[10px] whitespace-nowrap" style={{ backgroundColor: '#DAFFD5', color: '#000000', borderLeft: '2px solid #388E3C', fontFamily: 'Inter, sans-serif', fontSize: '10px', fontWeight: 400, lineHeight: '100%', letterSpacing: '0%' }}>
+                                    <div className="inline-block max-w-full px-[6px] py-[8px] text-[9px] leading-tight break-words" style={{ backgroundColor: '#DAFFD5', color: '#000000', borderLeft: '2px solid #388E3C', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>
                                       8:00 Am - 2:00 Pm
                                     </div>
                                   )}
                                   {index === 4 && (
-                                    <div className="inline-block px-[8px] py-[10px] whitespace-nowrap" style={{ backgroundColor: '#FFB5FE', color: '#000000', borderLeft: '2px solid #7B1FA2', fontFamily: 'Inter, sans-serif', fontSize: '10px', fontWeight: 400, lineHeight: '100%', letterSpacing: '0%' }}>
+                                    <div className="inline-block max-w-full px-[6px] py-[8px] text-[9px] leading-tight break-words" style={{ backgroundColor: '#FFB5FE', color: '#000000', borderLeft: '2px solid #7B1FA2', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>
                                       10:00 Am - 3:00 Pm
                                     </div>
                                   )}
@@ -1497,18 +1491,18 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                             </tr>
                             {/* Shift Type Row */}
                             <tr>
-                              <td className="text-center text-[14px] font-medium text-[#666666] py-[20px] px-[24px] bg-white whitespace-nowrap" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}>Shift Type</td>
+                              <td className="text-center text-[14px] font-medium text-[#666666] py-[16px] px-[12px] bg-white" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}>Shift Type</td>
                               {getWeekDays(currentWeekStart).map((day, index) => (
-                                <td key={index} className="text-center text-[14px] text-[#000000] py-[16px] px-[8px] bg-white" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0', width: '20%' }}>
+                                <td key={index} className="text-center text-[13px] text-[#000000] py-[12px] px-[4px] bg-white break-words" style={{ borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0' }}>
                                   Office
                                 </td>
                               ))}
                             </tr>
                             {/* Location Row */}
                             <tr>
-                              <td className="text-center text-[14px] font-medium text-[#666666] py-[20px] px-[24px] bg-white" style={{ borderRight: '1px solid #E0E0E0' }}>Location</td>
+                              <td className="text-center text-[14px] font-medium text-[#666666] py-[16px] px-[12px] bg-white" style={{ borderRight: '1px solid #E0E0E0' }}>Location</td>
                               {getWeekDays(currentWeekStart).map((day, index) => (
-                                <td key={index} className="text-center text-[14px] text-[#000000] py-[16px] px-[8px] bg-white" style={{ borderRight: '1px solid #E0E0E0', width: '20%' }}>
+                                <td key={index} className="text-center text-[13px] text-[#000000] py-[12px] px-[4px] bg-white break-words" style={{ borderRight: '1px solid #E0E0E0' }}>
                                   Head Office
                                 </td>
                               ))}
@@ -1885,12 +1879,12 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
         </div>
       </div>
 
-      {/* Mobile Layout */}
-      <div className="lg:hidden min-h-screen bg-[#F5F7FA]">
-        {/* Mobile Content */}
-        <div className="p-[16px]">
+      {/* Mobile Layout - full width like other pages */}
+      <div className="lg:hidden min-h-screen bg-[#F5F7FA] w-full max-w-[100vw] overflow-x-hidden">
+        {/* Mobile Content - container takes full width */}
+        <div className="w-full max-w-[100vw] py-[16px] px-0 box-border">
           {/* Breadcrumb */}
-          <div className="mb-[12px]">
+          <div className="mb-[12px] px-[12px]">
             <span className="text-[12px]">
               <span className="text-[#666666]">More</span>
               <span className="text-[#666666] mx-[4px]">&gt;</span>
@@ -1898,12 +1892,12 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
             </span>
           </div>
 
-          {/* Profile Card - Mobile */}
+          {/* Profile Card - Mobile - full width, no scroll on card; only tab content scrolls inside */}
           {!isLoading && !error && userData && (
-          <div className="bg-white rounded-[12px] shadow-sm overflow-hidden mb-[16px]">
-            {/* Green Header */}
+          <div className="w-full max-w-[100vw] bg-white rounded-[12px] shadow-sm flex flex-col mb-[16px] max-h-[calc(100vh-100px)] min-h-0 box-border">
+            {/* Green Header - fixed height, no scroll */}
             <div
-              className="px-[16px] pt-[16px] pb-[12px] relative rounded-t-[12px] flex flex-col"
+              className="flex-shrink-0 px-[16px] pt-[16px] pb-[12px] relative rounded-t-[12px] flex flex-col"
               style={{ backgroundColor: '#004D40' }}
             >
               {/* Avatar and Name Row */}
@@ -1922,13 +1916,13 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                 </div>
               </div>
 
-              {/* Tabs - Two Rows */}
-              <div className="grid grid-cols-2 gap-[6px] pb-[4px]">
+              {/* Tabs - wrap to next line, no horizontal scroll */}
+              <div className="flex flex-wrap gap-[8px]">
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`px-[8px] py-[6px] text-[10px] font-medium transition-all rounded-[6px] ${activeTab === tab.id
+                    className={`px-[14px] py-[8px] text-[12px] font-medium transition-all rounded-[8px] ${activeTab === tab.id
                       ? 'bg-white text-[#004D40]'
                       : 'text-white/80 hover:text-white hover:bg-white/10'
                       }`}
@@ -1939,8 +1933,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
-            {/* Tab Content - Mobile */}
-            <div className="p-[16px] bg-white">
+            {/* Tab Content - Mobile - only this area scrolls */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-[16px] bg-white rounded-b-[12px]">
               {activeTab === "personal" && (
                 <div>
                   {/* Personal Section Header */}
@@ -2471,8 +2465,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
 
               {activeTab === "schedule" && (
                 <div className="pr-[72px]">
-                  {/* Schedule Section Header - same as other tabs (edit on the right, large padding so icon visible) */}
-                  <div className="flex items-center justify-between mb-[16px] pl-[8px] mt-[4px] min-w-0">
+                  {/* Schedule Section Header - same layout as Locations */}
+                  <div className="flex items-center justify-between mb-[16px]">
                     <div className="flex items-center gap-[8px] min-w-0">
                       <img src={ScheduleIcon} alt="Schedule" className="w-[18px] h-[18px] object-contain flex-shrink-0" />
                       <h2 className="text-[18px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Schedule</h2>
@@ -2491,14 +2485,12 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                     </div>
                   )}
 
-                  {/* Work Schedule Section */}
+                  {/* Work Schedule Section (Mobile) - same full-width layout as Assigned Locations */}
                   <div className="bg-[#F5F7FA] rounded-[8px] p-[16px]">
                     <div className="flex items-center gap-[8px] mb-[12px]">
                       <img src={ScheduleIcon} alt="Work Schedule" className="w-[16px] h-[16px] object-contain" />
                       <h3 className="text-[16px] font-semibold" style={{ fontFamily: 'Libre Caslon Text, serif', color: '#00564F', lineHeight: '100%' }}>Work Schedule</h3>
                     </div>
-
-                    {/* Week Navigation */}
                     <div className="flex items-center justify-center gap-[12px] mb-[16px]">
                       <button
                         onClick={() => navigateWeek('prev')}
@@ -2518,9 +2510,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         </svg>
                       </button>
                     </div>
-
-                    {/* Schedule Cards (Mobile) */}
-                    <div className="space-y-[12px]">
+                    <div className="space-y-[10px]">
                       {getWeekDays(currentWeekStart).map((day, index) => {
                         const timeData = [
                           { time: '9:00 Am - 2:00 Pm', bg: '#FFD5DD', border: '#E24564' },
@@ -2532,43 +2522,28 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         const currentTime = timeData[index] || timeData[0];
 
                         return (
-                          <div key={index} className="bg-white border border-[#E0E0E0] rounded-[8px] p-[14px]">
-                            {/* Day Header */}
-                            <div className="mb-[12px]">
-                              <div className="flex items-center gap-[8px] mb-[10px]">
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#716F6F', fontFamily: 'Inter, sans-serif' }}>{day.name}</span>
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#000000', fontFamily: 'Inter, sans-serif' }}>{day.date}</span>
+                          <div key={index} className="w-full bg-[#FAFAFA] border border-[#E5E7EB] rounded-[10px] p-[14px]">
+                            <div className="flex items-center justify-between mb-[8px]">
+                              <span className="text-[15px] font-semibold text-[#374151]" style={{ fontFamily: 'Inter, sans-serif' }}>{day.name} {day.date}</span>
+                            </div>
+                            <div className="flex flex-col gap-[6px]">
+                              <div className="flex items-center justify-between text-[13px]">
+                                <span className="text-[#6B7280]">Time</span>
+                                <span
+                                  className="px-[8px] py-[5px] rounded-[6px] text-[12px] font-medium"
+                                  style={{ backgroundColor: currentTime.bg, color: '#000', borderLeft: `3px solid ${currentTime.border}` }}
+                                >
+                                  {currentTime.time}
+                                </span>
                               </div>
-                            </div>
-
-                            {/* Time */}
-                            <div className="mb-[10px]">
-                              <div className="text-[11px] font-medium text-[#666666] mb-[6px]" style={{ fontFamily: 'Inter, sans-serif' }}>Time</div>
-                              <div
-                                className="inline-block px-[8px] py-[8px] rounded-[4px]"
-                                style={{
-                                  backgroundColor: currentTime.bg,
-                                  color: '#000000',
-                                  borderLeft: `2px solid ${currentTime.border}`,
-                                  fontFamily: 'Inter, sans-serif',
-                                  fontSize: '11px',
-                                  fontWeight: 400
-                                }}
-                              >
-                                {currentTime.time}
+                              <div className="flex items-center justify-between text-[13px]">
+                                <span className="text-[#6B7280]">Shift</span>
+                                <span className="text-[#111827] font-medium">Office</span>
                               </div>
-                            </div>
-
-                            {/* Shift Type */}
-                            <div className="mb-[10px]">
-                              <div className="text-[11px] font-medium text-[#666666] mb-[6px]" style={{ fontFamily: 'Inter, sans-serif' }}>Shift Type</div>
-                              <div className="text-[12px] text-[#000000]" style={{ fontFamily: 'Inter, sans-serif' }}>Office</div>
-                            </div>
-
-                            {/* Location */}
-                            <div>
-                              <div className="text-[11px] font-medium text-[#666666] mb-[6px]" style={{ fontFamily: 'Inter, sans-serif' }}>Location</div>
-                              <div className="text-[12px] text-[#000000]" style={{ fontFamily: 'Inter, sans-serif' }}>Head Office</div>
+                              <div className="flex items-center justify-between text-[13px]">
+                                <span className="text-[#6B7280]">Location</span>
+                                <span className="text-[#111827] font-medium">Head Office</span>
+                              </div>
                             </div>
                           </div>
                         );

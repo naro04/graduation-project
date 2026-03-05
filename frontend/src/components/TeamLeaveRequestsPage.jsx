@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
+import HeaderIcons from "./HeaderIcons";
 import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import { getLeaves, updateLeaveStatus } from "../services/leaves";
 import { getTeamMembers } from "../services/employees.js";
@@ -187,13 +188,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                 />
               </div>
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full" />
-                </button>
+                <HeaderIcons />
                 <div className="relative" ref={userDropdownRef}>
                   <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
                     <img src={UserAvatar} alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
@@ -210,7 +205,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                       <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
                       <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => navigate("/profile")}>Edit Profile</button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]" />
-                      <button type="button" onClick={() => { setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA]">Log Out</button>
+                      <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                     </div>
                   )}
                 </div>
@@ -339,11 +334,11 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                                   <img src={ViewIcon} alt="View" className="w-full h-full object-contain pointer-events-none" />
                                 </button>
                                 <div className="w-[1px] h-[22px] bg-[#E0E0E0]" />
-                                <button type="button" disabled={request.status === "Approved" || request.status === "Rejected"} className={`w-[22px] h-[22px] flex items-center justify-center transition-opacity ${request.status === "Approved" || request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70 cursor-pointer"}`} title="Approve" onClick={async (e) => { e.stopPropagation(); if (request.status !== "Approved" && request.status !== "Rejected") try { await updateLeaveStatus(request.id, "approved"); fetchData(); } catch (_) {} }}>
+                                <button type="button" disabled={request.status === "Approved" || request.status === "Rejected"} className={`w-[22px] h-[22px] flex items-center justify-center transition-opacity ${request.status === "Approved" || request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70 cursor-pointer"}`} title="Approve" onClick={async (e) => { e.stopPropagation(); if (request.status !== "Approved" && request.status !== "Rejected") try { await updateLeaveStatus(request.id, "approved"); fetchData(); } catch (_) { } }}>
                                   <img src={ApproveIcon} alt="Approve" className="w-full h-full object-contain pointer-events-none" />
                                 </button>
                                 <div className="w-[1px] h-[22px] bg-[#E0E0E0]" />
-                                <button type="button" disabled={request.status === "Rejected"} className={`w-[22px] h-[22px] flex items-center justify-center transition-opacity ${request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70 cursor-pointer"}`} title="Reject" onClick={async (e) => { e.stopPropagation(); if (request.status !== "Rejected") try { await updateLeaveStatus(request.id, "rejected", "Rejected by manager"); fetchData(); } catch (_) {} }}>
+                                <button type="button" disabled={request.status === "Rejected"} className={`w-[22px] h-[22px] flex items-center justify-center transition-opacity ${request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70 cursor-pointer"}`} title="Reject" onClick={async (e) => { e.stopPropagation(); if (request.status !== "Rejected") try { await updateLeaveStatus(request.id, "rejected", "Rejected by manager"); fetchData(); } catch (_) { } }}>
                                   <img src={RejectActionIcon} alt="Reject" className="w-full h-full object-contain pointer-events-none" />
                                 </button>
                               </div>
@@ -376,13 +371,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
             <svg className="w-[24px] h-[24px] text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full" />
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
             <div className="relative" ref={userDropdownRef}>
               <div className="flex items-center gap-[8px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
                 <img src={UserAvatar} alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
@@ -393,7 +382,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                   <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
                   <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]" />
-                  <button type="button" onClick={() => { setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA]">Log Out</button>
+                  <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                 </div>
               )}
             </div>
@@ -475,9 +464,9 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                     <div className="flex items-center justify-center gap-[8px]">
                       <button type="button" onClick={() => { setSelectedRequest(request); setShowDetailsModal(true); }} className="w-[32px] h-[32px] flex items-center justify-center hover:opacity-70 transition-opacity" title="View"><img src={ViewIcon} alt="View" className="w-[22px] h-[22px] object-contain" /></button>
                       <div className="w-[1px] h-[22px] bg-[#E0E0E0]" />
-                      <button type="button" disabled={request.status === "Approved" || request.status === "Rejected"} onClick={async () => { if (request.status !== "Approved" && request.status !== "Rejected") try { await updateLeaveStatus(request.id, "approved"); fetchData(); } catch (_) {} }} className={`w-[32px] h-[32px] flex items-center justify-center transition-opacity ${request.status === "Approved" || request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70"}`} title="Approve"><img src={ApproveIcon} alt="Approve" className="w-[22px] h-[22px] object-contain" /></button>
+                      <button type="button" disabled={request.status === "Approved" || request.status === "Rejected"} onClick={async () => { if (request.status !== "Approved" && request.status !== "Rejected") try { await updateLeaveStatus(request.id, "approved"); fetchData(); } catch (_) { } }} className={`w-[32px] h-[32px] flex items-center justify-center transition-opacity ${request.status === "Approved" || request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70"}`} title="Approve"><img src={ApproveIcon} alt="Approve" className="w-[22px] h-[22px] object-contain" /></button>
                       <div className="w-[1px] h-[22px] bg-[#E0E0E0]" />
-                      <button type="button" disabled={request.status === "Rejected"} onClick={async () => { if (request.status !== "Rejected") try { await updateLeaveStatus(request.id, "rejected", "Rejected by manager"); fetchData(); } catch (_) {} }} className={`w-[32px] h-[32px] flex items-center justify-center transition-opacity ${request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70"}`} title="Reject"><img src={RejectActionIcon} alt="Reject" className="w-[22px] h-[22px] object-contain" /></button>
+                      <button type="button" disabled={request.status === "Rejected"} onClick={async () => { if (request.status !== "Rejected") try { await updateLeaveStatus(request.id, "rejected", "Rejected by manager"); fetchData(); } catch (_) { } }} className={`w-[32px] h-[32px] flex items-center justify-center transition-opacity ${request.status === "Rejected" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70"}`} title="Reject"><img src={RejectActionIcon} alt="Reject" className="w-[22px] h-[22px] object-contain" /></button>
                     </div>
                   </div>
                 ))}
@@ -526,9 +515,9 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setIsLogoutModalOpen(false);
-          logout();
+          await logout();
           window.location.href = "/login";
         }}
       />

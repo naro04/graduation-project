@@ -4,7 +4,7 @@ import { uploadImages } from "../services/uploads";
 
 const UploadIcon = new URL("../images/icons/upload.png", import.meta.url).href;
 
-const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [], onSave }) => {
+const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [], assignableEmployees = null, assignableLoading = false, onResponsibleChange, onSave }) => {
     const navigate = useNavigate();
 
     // Form state
@@ -20,6 +20,9 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
     const [activityDates, setActivityDates] = useState([""]);
     const [saving, setSaving] = useState(false);
     const [validationError, setValidationError] = useState("");
+
+    // List for "Assign Employee" checkboxes: use assignableEmployees (team of selected manager) when provided, else fallback to employees
+    const listForAssign = assignableEmployees !== null && Array.isArray(assignableEmployees) ? assignableEmployees : (Array.isArray(employees) ? employees : []);
 
     // Reset form when opening
     useEffect(() => {
@@ -37,6 +40,14 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
             setValidationError("");
         }
     }, [isOpen]);
+
+    // When responsible person changes, notify parent and clear selection (assignable list will change)
+    const handleResponsibleChange = (e) => {
+        const id = e.target.value || "";
+        setResponsibleEmployeeId(id);
+        setSelectedEmployees([]);
+        if (typeof onResponsibleChange === "function") onResponsibleChange(id);
+    };
 
     // Update activity dates when number of days changes
     useEffect(() => {
@@ -239,7 +250,7 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
                                 <div className="relative">
                                     <select
                                         value={responsibleEmployeeId}
-                                        onChange={(e) => setResponsibleEmployeeId(e.target.value)}
+                                        onChange={handleResponsibleChange}
                                         className="focus:outline-none bg-white appearance-none cursor-pointer w-full"
                                         style={{
                                             height: '36px',
@@ -256,6 +267,11 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
                                             <option key={emp.id} value={emp.id} style={{ color: '#727272' }}>{emp.name}</option>
                                         ))}
                                     </select>
+                                    {Array.isArray(employees) && employees.length === 0 && (
+                                        <p className="text-[13px] text-[#6B7280] mt-1">
+                                            No managers in the system. Go to <strong>User Management → Employees</strong>, add or edit a user and set <strong>Role</strong> to <strong>Manager</strong>.
+                                        </p>
+                                    )}
                                     <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
@@ -323,7 +339,7 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
                                 </div>
                             </div>
 
-                            {/* Assign Employee */}
+                            {/* Assign Employee — only team members of selected responsible manager (backend: must be supervised by responsible) */}
                             <div className="flex flex-col">
                                 <label className="text-[16px] font-medium text-[#181818] mb-[8px]">
                                     Assign Employee
@@ -337,7 +353,16 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
                                     }}
                                 >
                                     <div className="p-[12px] space-y-[12px]">
-                                        {employees.map((employee) => (
+                                        {!responsibleEmployeeId && (
+                                            <p className="text-[14px] text-[#6B7280]">Select responsible person first, then choose employees from their team.</p>
+                                        )}
+                                        {responsibleEmployeeId && assignableLoading && (
+                                            <p className="text-[14px] text-[#6B7280]">Loading team members…</p>
+                                        )}
+                                        {responsibleEmployeeId && !assignableLoading && listForAssign.length === 0 && (
+                                            <p className="text-[14px] text-[#6B7280]">No team members for this manager.</p>
+                                        )}
+                                        {listForAssign.map((employee) => (
                                             <div key={employee.id} className="flex items-center gap-[12px]">
                                                 <input
                                                     type="checkbox"
