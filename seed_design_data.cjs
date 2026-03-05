@@ -28,7 +28,9 @@ const seedDesignData = async () => {
             { role: 'Manager', dept: 'Project Management', titles: ['Project Manager', 'Team Leader', 'Field Supervisor'] },
             { role: 'Field Worker', dept: 'Field Operations', titles: ['Activity Facilitator', 'Trainer', 'Social Worker'] },
             { role: 'Office Staff', dept: 'Office', titles: ['Administrative Assistant', 'Data Entry', 'Office Coordinator'] },
-            { role: 'Super Admin', dept: 'IT', titles: ['System Administration'] }
+            { role: 'Super Admin', dept: 'IT', titles: ['System Administration'] },
+            { role: 'Manager', dept: 'Finance', titles: ['Finance Manager'] },
+            { role: 'Office Staff', dept: 'Finance', titles: ['Accountant', 'Financial Analyst'] }
         ];
 
         for (const m of mapping) {

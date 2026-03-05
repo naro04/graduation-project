@@ -7,7 +7,7 @@ exports.getAllLocations = async (req, res) => {
 
         // Use stats query if withStats is true
         const query = withStats === 'true' ? locationQueries.getLocationsWithStatsQuery : locationQueries.getLocationsQuery;
-        
+
         const result = await pool.query(query, [
             status || null,
             type || null,
@@ -25,19 +25,24 @@ exports.getAllLocations = async (req, res) => {
 
 exports.createLocation = async (req, res) => {
     try {
-        const { name, address, latitude, longitude, location_type, status } = req.body;
+        const { name, address, latitude, longitude, location_type, type, status } = req.body;
 
         if (!name) {
             return res.status(400).json({ message: 'Name is required' });
         }
+
+        // Handle both location_type and type (from frontend)
+        const finalType = location_type || type || null;
+        // Normalize status to lowercase
+        const finalStatus = (status || 'active').toLowerCase();
 
         const result = await pool.query(locationQueries.createLocationQuery, [
             name,
             address || null,
             latitude || null,
             longitude || null,
-            location_type || null,
-            status || 'active'
+            finalType,
+            finalStatus
         ]);
 
         res.status(201).json({
@@ -52,15 +57,20 @@ exports.createLocation = async (req, res) => {
 exports.updateLocation = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, address, latitude, longitude, location_type, status } = req.body;
+        const { name, address, latitude, longitude, location_type, type, status } = req.body;
+
+        // Handle both location_type and type (from frontend)
+        const finalType = location_type || type || null;
+        // Normalize status to lowercase
+        const finalStatus = (status || 'active').toLowerCase();
 
         const result = await pool.query(locationQueries.updateLocationQuery, [
             name,
             address || null,
             latitude || null,
             longitude || null,
-            location_type || null,
-            status || 'active',
+            finalType,
+            finalStatus,
             id
         ]);
 
