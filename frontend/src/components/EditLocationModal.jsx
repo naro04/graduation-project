@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
-
-// Image
-const MapImage = new URL("../images/e5ac96eeb7643360c0c0b37452c907b359c45a58.png", import.meta.url).href;
+import LocationMapPicker from "./LocationMapPicker";
 
 const EditLocationModal = ({ location, onClose, onUpdate, onDelete }) => {
     const [formData, setFormData] = useState({
@@ -18,18 +16,17 @@ const EditLocationModal = ({ location, onClose, onUpdate, onDelete }) => {
                 name: location.name || "",
                 type: location.type || "Office",
                 status: location.status || "Active",
-                latitude: location.latitude || "",
-                longitude: location.longitude || ""
+                latitude: location.latitude ?? "",
+                longitude: location.longitude ?? ""
             });
         }
     }, [location]);
 
-    const handleMapClick = () => {
-        // Simulating auto-fill of coordinates on map click
+    const handleMapSelect = (lat, lng) => {
         setFormData(prev => ({
             ...prev,
-            latitude: "31.5009",
-            longitude: "34.4671"
+            latitude: String(lat),
+            longitude: String(lng)
         }));
     };
 
@@ -130,14 +127,14 @@ const EditLocationModal = ({ location, onClose, onUpdate, onDelete }) => {
                         />
                     </div>
 
-                    {/* Map Image */}
+                    {/* Map: click to set latitude & longitude */}
                     <div className="mt-[8px]">
-                        <img
-                            src={MapImage}
-                            alt="Location Map"
-                            className="w-full h-[120px] object-cover rounded-[8px] cursor-pointer hover:opacity-95 transition-opacity border border-[#E0E0E0]"
-                            onClick={handleMapClick}
-                            title="Click to set coordinates"
+                        <label className="block text-[14px] font-medium text-[#181818] mb-[8px]">اختر الموقع على الخريطة (انقر لتحديد خط العرض والطول)</label>
+                        <LocationMapPicker
+                            latitude={formData.latitude}
+                            longitude={formData.longitude}
+                            onSelect={handleMapSelect}
+                            height={220}
                         />
                     </div>
 

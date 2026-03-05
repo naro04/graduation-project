@@ -7,6 +7,7 @@ import { uploadImage } from "../services/uploads.js";
 import { getDepartments } from "../services/departments.js";
 import { getPositions } from "../services/positions.js";
 import { getRoles } from "../services/rbac.js";
+import HeaderIcons from "./HeaderIcons.jsx";
 import { BASE_URL } from "../services/api.js";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
@@ -208,7 +209,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
       setIsLoadingEmployees(true);
       setEmployeesError(null);
       const response = await getEmployees();
-      
+
       if (response && response.data) {
         // Transform API data to component format
         const transformedEmployees = response.data.map(emp => ({
@@ -225,7 +226,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
           photo: toAbsoluteAvatarUrl(emp.avatar_url) || EmployeeIcon,
           originalData: emp
         }));
-        
+
         setEmployeesData(transformedEmployees);
       }
     } catch (err) {
@@ -255,7 +256,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
   // Handle form submission for adding/editing employee
   const handleAddEmployeeSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Validation
     if (!formData.firstName || !formData.lastName) {
       setSaveEmployeeError('First name and last name are required');
@@ -584,16 +585,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               <div className="flex items-center gap-[16px]">
-                {/* Message Icon */}
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-
-                {/* Notification Bell */}
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
 
                 {/* User Profile with Dropdown */}
                 <div className="relative" ref={userDropdownRef}>
@@ -631,11 +623,11 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onMouseDown={async (e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           setIsUserDropdownOpen(false);
-                          logout();
+                          await logout();
                           window.location.href = "/login";
                         }}
                         className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
@@ -1100,14 +1092,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
           </button>
 
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
 
             {/* User Avatar with Dropdown */}
             <div className="relative" ref={userDropdownRef}>
@@ -1139,11 +1124,11 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onMouseDown={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setIsUserDropdownOpen(false);
-                      logout();
+                      await logout();
                       window.location.href = "/login";
                     }}
                     className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors"
@@ -1274,14 +1259,13 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                     {employee.role}
                   </span>
                   <span
-                    className={`inline-block px-[12px] py-[4px] rounded-[6px] text-[12px] font-medium ${
-                      employee.status === 'Active' ? 'bg-[#D1FAE5] text-[#065F46]' : employee.status === 'Under Review' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#991B1B]'
-                    }`}
+                    className={`inline-block px-[12px] py-[4px] rounded-[6px] text-[12px] font-medium ${employee.status === 'Active' ? 'bg-[#D1FAE5] text-[#065F46]' : employee.status === 'Under Review' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#991B1B]'
+                      }`}
                     style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}
                   >
                     {employee.status}
                   </span>
-                  </div>
+                </div>
                 <div className="space-y-[4px]">
                   <p className="text-[12px] text-[#6B7280]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>
                     <span className="font-medium text-[#374151]">Department:</span> {employee.department}
@@ -2078,9 +2062,9 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setIsLogoutModalOpen(false);
-          logout();
+          await logout();
           window.location.href = "/login";
         }}
       />

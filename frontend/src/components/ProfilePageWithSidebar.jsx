@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import ProfilePage from "./ProfilePage";
+import HeaderIcons from "./HeaderIcons";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // Header icons
@@ -53,8 +54,8 @@ const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
         </main>
       </div>
 
-      {/* Mobile Layout */}
-      <div className="lg:hidden min-h-screen bg-[#F5F7FA]">
+      {/* Mobile Layout - full width */}
+      <div className="lg:hidden min-h-screen bg-[#F5F7FA] w-full max-w-[100vw] overflow-x-hidden">
         {/* Mobile Header */}
         <header className="h-[70px] bg-white flex items-center justify-between px-[16px] sticky top-0 z-30 border-b border-[#E0E0E0]">
           {/* Menu Button */}
@@ -69,16 +70,7 @@ const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
 
           {/* Right Side - Icons and User */}
           <div className="flex items-center gap-[12px]">
-            {/* Message Icon */}
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-
-            {/* Notification Bell */}
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
 
             {/* User Avatar with Dropdown */}
             <div className="relative" ref={dropdownRef}>
@@ -143,8 +135,10 @@ const ProfilePageWithSidebar = ({ userRole = "superAdmin" }) => {
           />
         </div>
 
-        {/* Mobile Content */}
-        <ProfilePage userRole={effectiveRole} />
+        {/* Mobile Content - same wrapper as Dashboard (p-[16px]) so width matches other pages */}
+        <div className="p-[16px] w-full box-border">
+          <ProfilePage userRole={effectiveRole} />
+        </div>
       </div>
     </div>
   );

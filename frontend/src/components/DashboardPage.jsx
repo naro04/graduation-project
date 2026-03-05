@@ -32,6 +32,7 @@ const LocationsIcon = new URL("../images/icons/Locations.png", import.meta.url).
 const ActivitiesIcon = new URL("../images/icons/Activities1 (1).png", import.meta.url).href;
 
 import LogoutModal from "./LogoutModal";
+import HeaderIcons from "./HeaderIcons";
 
 // Map API role (e.g. "Manager", "manager") to app role key for menu/display
 const normalizeRoleKey = (role) => {
@@ -68,7 +69,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
     const fetchDashboardData = async () => {
       try {
         setIsLoading(true);
-        
+
         // Get current user data (and refresh from API if no role so Manager shows correctly)
         let user = getCurrentUser();
         if (user && (user.role == null && !user.roles?.length)) {
@@ -76,10 +77,10 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
             const meRes = await getMe();
             const meUser = meRes?.data?.user ?? meRes?.user ?? meRes?.data;
             if (meUser) user = meUser;
-          } catch (_) {}
+          } catch (_) { }
         }
         if (user) setCurrentUser(user);
-        
+
         // Fetch dashboard stats
         const stats = await getDashboardStats();
         console.log('✅ Dashboard data loaded successfully:', stats);
@@ -310,12 +311,12 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
         { x: 500, y: 0 }
       ];
     }
-    
+
     const attendanceData = dashboardData.charts.attendance;
     const points = [];
     const values = attendanceData.map(d => parseInt(d.present_count || 0));
     const maxValue = Math.max(...values, 1);
-    
+
     attendanceData.forEach((day, index) => {
       const value = parseInt(day.present_count || 0);
       // Convert value to percentage (0-100%)
@@ -326,7 +327,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
       const x = attendanceData.length > 1 ? (index / (attendanceData.length - 1)) * 500 : 0;
       points.push({ x, y });
     });
-    
+
     return points;
   };
 
@@ -344,7 +345,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
         [0, 0]    // Sat
       ];
     }
-    
+
     const activitiesData = dashboardData.charts.activities;
     return activitiesData.map(day => [
       parseInt(day.implemented_count || 0),
@@ -473,16 +474,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               <div className="flex items-center gap-[16px]">
-                {/* Message Icon */}
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={MessageIcon} alt="Messages" className="w-[20px] h-[20px] object-contain" />
-                </button>
-
-                {/* Notification Bell */}
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img src={NotificationIcon} alt="Notifications" className="w-[20px] h-[20px] object-contain" />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
 
                 {/* User Profile with Dropdown */}
                 <div className="relative" ref={userDropdownRef}>
@@ -523,8 +515,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                       <button
-                        type="button"
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           window.location.href = "/login";
@@ -665,8 +656,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                                 onClick={(e) => handleMonthChange(index, e)}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 className={`px-[8px] py-[4px] text-[12px] rounded-[4px] transition-colors ${currentDate.getMonth() === index
-                                    ? 'bg-[#027066] text-white'
-                                    : 'text-[#000000] hover:bg-[#F5F7FA]'
+                                  ? 'bg-[#027066] text-white'
+                                  : 'text-[#000000] hover:bg-[#F5F7FA]'
                                   }`}
                                 style={{ fontFamily: 'Inter, sans-serif' }}
                               >
@@ -683,8 +674,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                                   onClick={(e) => handleYearChange(year, e)}
                                   onMouseDown={(e) => e.stopPropagation()}
                                   className={`px-[8px] py-[4px] text-[12px] rounded-[4px] transition-colors ${currentDate.getFullYear() === year
-                                      ? 'bg-[#027066] text-white'
-                                      : 'text-[#000000] hover:bg-[#F5F7FA]'
+                                    ? 'bg-[#027066] text-white'
+                                    : 'text-[#000000] hover:bg-[#F5F7FA]'
                                     }`}
                                   style={{ fontFamily: 'Inter, sans-serif' }}
                                 >
@@ -727,10 +718,10 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                         <button
                           onClick={() => handleDateClick(day)}
                           className={`rounded-full flex items-center justify-center text-[14px] font-medium transition-colors ${day.isSelected
-                              ? ''
-                              : day.isCurrentMonth
-                                ? 'text-[#000000] hover:bg-[#F5F7FA]'
-                                : 'text-[#9CA3AF]'
+                            ? ''
+                            : day.isCurrentMonth
+                              ? 'text-[#000000] hover:bg-[#F5F7FA]'
+                              : 'text-[#9CA3AF]'
                             }`}
                           style={{
                             fontFamily: 'Inter, sans-serif',
@@ -1045,124 +1036,124 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
 
               {/* User Metrics + البطاقات الثلاث — جمب Activity Statistics */}
               <div className="flex gap-[12px] flex-shrink-0 min-w-0">
-              {/* User Metrics Section */}
-              <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden flex-shrink-0" style={{ width: '260px', height: '195px' }}>
-                <div className="p-[18px] h-full flex flex-col box-border">
-                  {/* Section Title */}
-                  <h3 className="text-[16px] font-semibold text-[#000000] mb-[18px] text-left flex-shrink-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
-                    User Metrics
-                  </h3>
+                {/* User Metrics Section */}
+                <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] overflow-hidden flex-shrink-0" style={{ width: '260px', height: '195px' }}>
+                  <div className="p-[18px] h-full flex flex-col box-border">
+                    {/* Section Title */}
+                    <h3 className="text-[16px] font-semibold text-[#000000] mb-[18px] text-left flex-shrink-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
+                      User Metrics
+                    </h3>
 
-                  {/* Metrics Cards */}
-                  <div className="flex gap-[12px] flex-1">
-                    {/* Active User Card */}
-                    <div
-                      className="rounded-[5px] flex flex-col items-center flex-shrink-0"
-                      style={{
-                        width: '70px',
-                        height: '107px',
-                        backgroundColor: 'rgba(194, 222, 220, 0.5)', // #C2DEDC with 50% opacity
-                        paddingTop: '20px'
-                      }}
-                    >
-                      <img
-                        src={ProfileGreenIcon}
-                        alt="Active User"
-                        className="w-[22px] h-[22px] object-contain mb-[8px]"
-                      />
-                      <p className="text-[16px] font-semibold text-[#000000] mb-[4px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
-                        {dashboardData?.userMetrics?.active_users || '25'}
-                      </p>
-                      <p className="text-[10px] font-medium text-[#3F3E3E] text-center" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
-                        Active User
-                      </p>
-                    </div>
-
-                    {/* Inactive User Card */}
-                    <div
-                      className="rounded-[5px] flex flex-col items-center flex-shrink-0"
-                      style={{
-                        width: '70px',
-                        height: '107px',
-                        backgroundColor: 'rgba(194, 222, 220, 0.5)', // #C2DEDC with 50% opacity
-                        paddingTop: '20px'
-                      }}
-                    >
-                      <img
-                        src={ProfileIcon}
-                        alt="Inactive User"
-                        className="w-[22px] h-[22px] object-contain mb-[8px]"
-                      />
-                      <p className="text-[16px] font-semibold text-[#000000] mb-[4px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
-                        {dashboardData?.userMetrics?.inactive_users || '3'}
-                      </p>
-                      <p className="text-[10px] font-medium text-[#3F3E3E] text-center" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
-                        Inactive User
-                      </p>
-                    </div>
-
-                    {/* New User Card */}
-                    <div
-                      className="rounded-[5px] flex flex-col items-center flex-shrink-0"
-                      style={{
-                        width: '60px',
-                        height: '107px',
-                        backgroundColor: 'rgba(194, 222, 220, 0.5)', // #C2DEDC with 50% opacity
-                        paddingTop: '20px'
-                      }}
-                    >
+                    {/* Metrics Cards */}
+                    <div className="flex gap-[12px] flex-1">
+                      {/* Active User Card */}
                       <div
-                        className="w-[22px] h-[22px] rounded-full flex items-center justify-center mb-[8px]"
-                        style={{ backgroundColor: '#43964D' }}
+                        className="rounded-[5px] flex flex-col items-center flex-shrink-0"
+                        style={{
+                          width: '70px',
+                          height: '107px',
+                          backgroundColor: 'rgba(194, 222, 220, 0.5)', // #C2DEDC with 50% opacity
+                          paddingTop: '20px'
+                        }}
                       >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M6 2V10M2 6H10" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-                        </svg>
+                        <img
+                          src={ProfileGreenIcon}
+                          alt="Active User"
+                          className="w-[22px] h-[22px] object-contain mb-[8px]"
+                        />
+                        <p className="text-[16px] font-semibold text-[#000000] mb-[4px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
+                          {dashboardData?.userMetrics?.active_users || '25'}
+                        </p>
+                        <p className="text-[10px] font-medium text-[#3F3E3E] text-center" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
+                          Active User
+                        </p>
                       </div>
-                      <p className="text-[16px] font-semibold text-[#000000] mb-[4px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
-                        {dashboardData?.userMetrics?.new_users_30d || '2'}
-                      </p>
-                      <p className="text-[10px] font-medium text-[#3F3E3E] text-center mb-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
-                        New User
-                      </p>
-                      <p className="text-[10px] font-medium text-[#3F3E3E] text-center mt-[2px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, lineHeight: '100%' }}>
-                        30 Days
-                      </p>
+
+                      {/* Inactive User Card */}
+                      <div
+                        className="rounded-[5px] flex flex-col items-center flex-shrink-0"
+                        style={{
+                          width: '70px',
+                          height: '107px',
+                          backgroundColor: 'rgba(194, 222, 220, 0.5)', // #C2DEDC with 50% opacity
+                          paddingTop: '20px'
+                        }}
+                      >
+                        <img
+                          src={ProfileIcon}
+                          alt="Inactive User"
+                          className="w-[22px] h-[22px] object-contain mb-[8px]"
+                        />
+                        <p className="text-[16px] font-semibold text-[#000000] mb-[4px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
+                          {dashboardData?.userMetrics?.inactive_users || '3'}
+                        </p>
+                        <p className="text-[10px] font-medium text-[#3F3E3E] text-center" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
+                          Inactive User
+                        </p>
+                      </div>
+
+                      {/* New User Card */}
+                      <div
+                        className="rounded-[5px] flex flex-col items-center flex-shrink-0"
+                        style={{
+                          width: '60px',
+                          height: '107px',
+                          backgroundColor: 'rgba(194, 222, 220, 0.5)', // #C2DEDC with 50% opacity
+                          paddingTop: '20px'
+                        }}
+                      >
+                        <div
+                          className="w-[22px] h-[22px] rounded-full flex items-center justify-center mb-[8px]"
+                          style={{ backgroundColor: '#43964D' }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M6 2V10M2 6H10" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+                          </svg>
+                        </div>
+                        <p className="text-[16px] font-semibold text-[#000000] mb-[4px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
+                          {dashboardData?.userMetrics?.new_users_30d || '2'}
+                        </p>
+                        <p className="text-[10px] font-medium text-[#3F3E3E] text-center mb-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
+                          New User
+                        </p>
+                        <p className="text-[10px] font-medium text-[#3F3E3E] text-center mt-[2px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, lineHeight: '100%' }}>
+                          30 Days
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* البطاقات الثلاث — Employees، Locations، Activities */}
-              <div className="flex flex-col gap-[8px] flex-shrink-0" style={{ width: '340px' }}>
-                <button
-                  onClick={() => navigate("/user-management/employees")}
-                  className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
-                >
-                  <img src={EmployeesIcon} alt="Employees" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
-                  <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Employees</p>
-                </button>
-                <button
-                  onClick={() => navigate("/locations/all")}
-                  className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
-                >
-                  <img src={LocationsIcon} alt="Locations" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
-                  <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Locations</p>
-                </button>
-                <button
-                  onClick={() => {
-                    const role = normalizeRoleKey(userRole);
-                    if (role === "manager") navigate("/approvals/activities");
-                    else if (role === "fieldEmployee") navigate("/activities/log");
-                    else if (role === "officer") navigate("/dashboard");
-                    else navigate("/activities");
-                  }}
-                  className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
-                >
-                  <img src={ActivitiesIcon} alt="Activities" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
-                  <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Activities</p>
-                </button>
-              </div>
+                {/* البطاقات الثلاث — Employees، Locations، Activities */}
+                <div className="flex flex-col gap-[8px] flex-shrink-0" style={{ width: '340px' }}>
+                  <button
+                    onClick={() => navigate("/user-management/employees")}
+                    className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
+                  >
+                    <img src={EmployeesIcon} alt="Employees" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
+                    <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Employees</p>
+                  </button>
+                  <button
+                    onClick={() => navigate("/locations/all")}
+                    className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
+                  >
+                    <img src={LocationsIcon} alt="Locations" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
+                    <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Locations</p>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const role = normalizeRoleKey(userRole);
+                      if (role === "manager") navigate("/approvals/activities");
+                      else if (role === "fieldEmployee") navigate("/activities/log");
+                      else if (role === "officer") navigate("/dashboard");
+                      else navigate("/activities");
+                    }}
+                    className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0"
+                  >
+                    <img src={ActivitiesIcon} alt="Activities" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
+                    <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>Activities</p>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1183,14 +1174,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
           </button>
 
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
 
             {/* User Avatar with Dropdown */}
             <div className="relative" ref={userDropdownRef}>
@@ -1221,7 +1205,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
                   <button
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       window.location.href = "/login";
@@ -1376,8 +1360,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                             onClick={(e) => handleMonthChange(index, e)}
                             onMouseDown={(e) => e.stopPropagation()}
                             className={`px-[8px] py-[4px] text-[12px] rounded-[4px] transition-colors ${currentDate.getMonth() === index
-                                ? 'bg-[#027066] text-white'
-                                : 'text-[#000000] hover:bg-[#F5F7FA]'
+                              ? 'bg-[#027066] text-white'
+                              : 'text-[#000000] hover:bg-[#F5F7FA]'
                               }`}
                             style={{ fontFamily: 'Inter, sans-serif' }}
                           >
@@ -1394,8 +1378,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                               onClick={(e) => handleYearChange(year, e)}
                               onMouseDown={(e) => e.stopPropagation()}
                               className={`px-[8px] py-[4px] text-[12px] rounded-[4px] transition-colors ${currentDate.getFullYear() === year
-                                  ? 'bg-[#027066] text-white'
-                                  : 'text-[#000000] hover:bg-[#F5F7FA]'
+                                ? 'bg-[#027066] text-white'
+                                : 'text-[#000000] hover:bg-[#F5F7FA]'
                                 }`}
                               style={{ fontFamily: 'Inter, sans-serif' }}
                             >
@@ -1435,10 +1419,10 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                     key={index}
                     onClick={() => handleDateClick(day)}
                     className={`w-full h-[32px] rounded-full flex items-center justify-center text-[12px] font-medium transition-colors ${day.isSelected
-                        ? ''
-                        : day.isCurrentMonth
-                          ? 'text-[#000000] hover:bg-[#F5F7FA]'
-                          : 'text-[#9CA3AF]'
+                      ? ''
+                      : day.isCurrentMonth
+                        ? 'text-[#000000] hover:bg-[#F5F7FA]'
+                        : 'text-[#9CA3AF]'
                       }`}
                     style={{
                       fontFamily: 'Inter, sans-serif',
@@ -1811,9 +1795,9 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
       <LogoutModal
         isOpen={isLogoutModalOpen}
         onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setIsLogoutModalOpen(false);
-          logout();
+          await logout();
           window.location.href = "/login";
         }}
       />

@@ -4,6 +4,7 @@ import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LocationErrorModal from "./LocationErrorModal";
 import { checkIn as apiCheckIn, checkOut as apiCheckOut, getMyAttendance, getAttendanceLocations } from "../services/attendance";
+import HeaderIcons from "./HeaderIcons";
 
 // User Avatar
 const UserAvatar = new URL(
@@ -526,21 +527,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
               </div>
 
               <div className="flex items-center gap-[16px] flex-shrink-0">
-                <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img
-                    src={MessageIcon}
-                    alt="Messages"
-                    className="w-[20px] h-[20px] object-contain"
-                  />
-                </button>
-                <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-                  <img
-                    src={NotificationIcon}
-                    alt="Notifications"
-                    className="w-[20px] h-[20px] object-contain"
-                  />
-                  <span className="absolute top-[4px] right-[4px] w-[8px] h-[8px] bg-red-500 rounded-full"></span>
-                </button>
+                <HeaderIcons />
                 {/* User Profile with Dropdown */}
                 <div className="relative" ref={userDropdownDesktopRef}>
                   <div
@@ -1057,14 +1044,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
           </div>
 
           <div className="flex items-center gap-[12px]">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={MessageIcon} alt="Messages" className="w-[18px] h-[18px] object-contain" />
-            </button>
-
-            <button className="relative w-[36px] h-[36px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors">
-              <img src={NotificationIcon} alt="Notifications" className="w-[18px] h-[18px] object-contain" />
-              <span className="absolute top-[4px] right-[4px] w-[6px] h-[6px] bg-red-500 rounded-full"></span>
-            </button>
+            <HeaderIcons iconSize="w-[18px] h-[18px]" />
 
             {/* User Avatar with Dropdown */}
             <div className="relative" ref={userDropdownMobileRef}>

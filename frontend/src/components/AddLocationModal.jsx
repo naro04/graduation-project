@@ -1,7 +1,5 @@
 import React, { useState } from "react";
-
-// Image
-const MapImage = new URL("../images/bbf1cf76f80864eff2ed472fba9c341651a1964e.png", import.meta.url).href;
+import LocationMapPicker from "./LocationMapPicker";
 
 const AddLocationModal = ({ onClose, onSave }) => {
     const [formData, setFormData] = useState({
@@ -12,13 +10,11 @@ const AddLocationModal = ({ onClose, onSave }) => {
         longitude: ""
     });
 
-    const handleMapClick = () => {
-        // Simulating auto-fill of coordinates on map click
-        // In a real app, this would get coordinates from the click event relative to the map projection
+    const handleMapSelect = (lat, lng) => {
         setFormData(prev => ({
             ...prev,
-            latitude: "31.5009",
-            longitude: "34.4671"
+            latitude: String(lat),
+            longitude: String(lng)
         }));
     };
 
@@ -120,14 +116,14 @@ const AddLocationModal = ({ onClose, onSave }) => {
                         />
                     </div>
 
-                    {/* Map Image */}
+                    {/* Map: click to set latitude & longitude */}
                     <div className="mt-[8px]">
-                        <img
-                            src={MapImage}
-                            alt="Location Map"
-                            className="w-full h-[120px] object-cover rounded-[8px] cursor-pointer hover:opacity-95 transition-opacity border border-[#E0E0E0]"
-                            onClick={handleMapClick}
-                            title="Click to set coordinates"
+                        <label className="block text-[14px] font-medium text-[#181818] mb-[8px]">اختر الموقع على الخريطة (انقر لتحديد خط العرض والطول)</label>
+                        <LocationMapPicker
+                            latitude={formData.latitude}
+                            longitude={formData.longitude}
+                            onSelect={handleMapSelect}
+                            height={220}
                         />
                     </div>
 
