@@ -72,7 +72,7 @@ exports.createEmployee = async (req, res) => {
             department_id, position_id, status, role_id, avatar_url, avatarUrl
         } = req.body;
 
-        const finalAvatarUrl = req.file ? `/uploads/${req.file.filename}` : (avatar_url || avatarUrl || null);
+        const finalAvatarUrl = req.file ? req.file.path : (avatar_url || avatarUrl || null);
 
 
         // 1. Validation

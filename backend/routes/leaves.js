@@ -8,26 +8,8 @@ router.use(auth.protect);
 const path = require('path');
 const multer = require('multer');
 
-// Scoped upload configuration for leave documents
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, path.join(__dirname, '..', 'uploads')),
-    filename: (req, file, cb) => {
-        const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'leave-' + unique + path.extname(file.originalname));
-    }
-});
-const leaveUpload = multer({
-    storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB for documents
-    fileFilter: (req, file, cb) => {
-        const allowed = /jpeg|jpg|png|gif|webp|pdf|doc|docx|txt|rtf/;
-        if (allowed.test(path.extname(file.originalname).toLowerCase()) || allowed.test(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new Error('File type not allowed! Support: images, PDF, Word, TXT.'));
-        }
-    }
-});
+const upload = require('../middleware/upload');
+const leaveUpload = upload; // Use the centralized Cloudinary upload
 
 // GET /api/v1/leaves - Get all leaves with stats and filters
 router.get('/', leaveController.getLeaves);
