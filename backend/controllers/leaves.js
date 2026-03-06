@@ -73,7 +73,7 @@ exports.createLeave = async (req, res) => {
 
         // If a file was uploaded, override document_url
         if (req.file) {
-            document_url = `/uploads/${req.file.filename}`;
+            document_url = req.file.path;
         }
 
         if (!employee_id || !leave_type || !start_date || !end_date) {
