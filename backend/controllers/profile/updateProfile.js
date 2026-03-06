@@ -80,7 +80,7 @@ exports.updateProfile = async (req, res) => {
             gender || null,
             marital_status || maritalStatus_camel || null,
             phone || null,
-            req.file ? `/uploads/${req.file.filename}` : (req.body.avatarUrl || req.body.avatar_url || null)
+            req.file ? req.file.path : (req.body.avatarUrl || req.body.avatar_url || null)
         ]);
 
         // 3b. Update Job Info (if provided)
