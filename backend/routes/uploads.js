@@ -14,7 +14,7 @@ router.post('/upload-images', upload.array('images', 10), (req, res) => {
 
         // Generate URLs for uploaded files
         const imageUrls = req.files.map(file => {
-            return `/uploads/${file.filename}`;
+            return file.path;
         });
 
         res.status(200).json({
@@ -30,7 +30,7 @@ router.post('/upload-images', upload.array('images', 10), (req, res) => {
 router.delete('/delete-image', (req, res) => {
     try {
         const { imageUrl } = req.body;
-        
+
         if (!imageUrl) {
             return res.status(400).json({ message: 'Image URL is required' });
         }
@@ -42,9 +42,9 @@ router.delete('/delete-image', (req, res) => {
         // Check if file exists
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
-            res.status(200).json({ 
-                status: 'success', 
-                message: 'Image deleted successfully' 
+            res.status(200).json({
+                status: 'success',
+                message: 'Image deleted successfully'
             });
         } else {
             res.status(404).json({ message: 'Image not found' });
