@@ -837,11 +837,13 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                             <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
                             <button
                               onClick={() => {
+                                if (activity.approval === "Pending") return;
                                 setActivityToDelete(activity);
                                 setShowWarningModal(true);
                               }}
-                              className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                              title="Delete"
+                              disabled={activity.approval === "Pending"}
+                              className={`w-[22px] h-[22px] flex items-center justify-center transition-opacity ${activity.approval === "Pending" ? "opacity-50 cursor-not-allowed" : "hover:opacity-70"}`}
+                              title={activity.approval === "Pending" ? "Cannot delete activity pending approval" : "Delete"}
                             >
                               <img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" />
                             </button>
@@ -1135,10 +1137,13 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                     </button>
                     <button
                       onClick={() => {
+                        if (activity.approval === "Pending") return;
                         setActivityToDelete(activity);
                         setShowWarningModal(true);
                       }}
-                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors"
+                      disabled={activity.approval === "Pending"}
+                      className={`w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center transition-colors ${activity.approval === "Pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-[#E5E7EB]"}`}
+                      title={activity.approval === "Pending" ? "Cannot delete activity pending approval" : "Delete"}
                     >
                       <img src={DeleteIcon} alt="Delete" className="w-[16px] h-[16px] object-contain" />
                     </button>

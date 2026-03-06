@@ -233,7 +233,34 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
     if (id) {
       setActivitiesForViewLoading(true);
       getLocationActivities({ location_id: id })
-        .then((list) => setActivitiesForView(Array.isArray(list) ? list : []))
+        .then((list) => {
+          const arr = Array.isArray(list) ? list : [];
+          if (arr.length === 0) {
+            setActivitiesForView([]);
+            return Promise.resolve();
+          }
+          return Promise.all(arr.map((a) => (a.id ? getLocationActivityById(a.id).catch(() => null) : Promise.resolve(null))))
+            .then((details) => {
+              const enriched = arr.map((a, i) => {
+                const d = details[i];
+                const countFromDetail = d != null ? (() => {
+                  const n = d.employee_count ?? d.employeeCount ?? d.employees_count ?? d.assignee_count ?? d.participant_count;
+                  if (typeof n === "number" && !Number.isNaN(n)) return n;
+                  if (Array.isArray(d.employees)) return d.employees.length;
+                  if (Array.isArray(d.employee_ids)) return d.employee_ids.length;
+                  if (Array.isArray(d.employeeIds)) return d.employeeIds.length;
+                  if (Array.isArray(d.assignments)) return d.assignments.length;
+                  if (Array.isArray(d.assignees)) return d.assignees.length;
+                  if (Array.isArray(d.participants)) return d.participants.length;
+                  if (Array.isArray(d.participant_ids)) return d.participant_ids.length;
+                  return 0;
+                })() : 0;
+                const count = countFromDetail || (a.employee_count ?? a.employeeCount ?? 0);
+                return { ...a, ...(d || {}), employee_count: count, employeeCount: count };
+              });
+              setActivitiesForView(enriched);
+            });
+        })
         .catch(() => setActivitiesForView([]))
         .finally(() => setActivitiesForViewLoading(false));
     }

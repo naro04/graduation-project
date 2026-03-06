@@ -46,7 +46,18 @@ const ViewActivitiesModal = ({ isOpen, onClose, locationName, activities = [], a
                         ) : (
                             activities.map((activity) => {
                                 const name = activity.name ?? activity.activity_name ?? "";
-                                const employeeCount = activity.employee_count ?? activity.employeeCount ?? 0;
+                                const employeeCount = (() => {
+                                    const n = activity.employee_count ?? activity.employeeCount ?? activity.employees_count ?? activity.assignee_count ?? activity.participant_count;
+                                    if (typeof n === "number" && !Number.isNaN(n)) return n;
+                                    if (Array.isArray(activity.employees)) return activity.employees.length;
+                                    if (Array.isArray(activity.employee_ids)) return activity.employee_ids.length;
+                                    if (Array.isArray(activity.employeeIds)) return activity.employeeIds.length;
+                                    if (Array.isArray(activity.assignments)) return activity.assignments.length;
+                                    if (Array.isArray(activity.assignees)) return activity.assignees.length;
+                                    if (Array.isArray(activity.participants)) return activity.participants.length;
+                                    if (Array.isArray(activity.participant_ids)) return activity.participant_ids.length;
+                                    return 0;
+                                })();
                                 const startDate = activity.start_date ?? activity.startDate ?? "";
                                 const endDate = activity.end_date ?? activity.endDate ?? "";
                                 const status = activity.status ?? "Active";

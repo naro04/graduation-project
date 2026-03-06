@@ -3,9 +3,9 @@ import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LogoutModal from "./LogoutModal";
-import { getAttendanceReports, getAttendanceLocations } from "../services/attendance";
+import { getAttendanceReports, getAttendanceLocations, getTeamAttendance } from "../services/attendance";
 import { getTeamMembers } from "../services/employees";
-import { getLocationActivities } from "../services/locationActivities";
+import { getLocationActivities, getLocationActivityReports } from "../services/locationActivities";
 import { getTeamReports } from "../services/reports";
 import { exportToExcel, exportToPdf } from "../utils/exportReport";
 import HeaderIcons from "./HeaderIcons";
@@ -66,8 +66,16 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const [teamActivities, setTeamActivities] = useState([]);
   const [teamReportApi, setTeamReportApi] = useState(null);
   const [teamMetricsLoading, setTeamMetricsLoading] = useState(false);
+  const [teamAttendanceFromApi, setTeamAttendanceFromApi] = useState([]);
+  const [teamSelectedTypes, setTeamSelectedTypes] = useState([]); // multi-select for Type (checkboxes)
+  const [teamSelectedStatus, setTeamSelectedStatus] = useState("All Status");
+  const [isTeamTypeDropdownOpen, setIsTeamTypeDropdownOpen] = useState(false);
+  const [isTeamStatusDropdownOpen, setIsTeamStatusDropdownOpen] = useState(false);
+  const [teamActivityReports, setTeamActivityReports] = useState({ records: [], stats: { completionTrend: [], participantsByType: [] } });
   const locationDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
+  const teamTypeDropdownRef = useRef(null);
+  const teamStatusDropdownRef = useRef(null);
   const exportAllDropdownRef = useRef(null);
   const exportSelectedDropdownRef = useRef(null);
   const bulkActionsDropdownRef = useRef(null);
@@ -107,38 +115,51 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     let cancelled = false;
     setTeamMetricsLoading(true);
     setTeamReportApi(null);
+    setTeamAttendanceFromApi([]);
     Promise.all([
       getTeamReports({ from: fromDate, to: toDate }).catch(() => null),
       getTeamMembers().catch(() => []),
       getLocationActivities({}).catch(() => []),
-    ]).then(([report, members, activities]) => {
+      getTeamAttendance({ from: fromDate, to: toDate }).catch(() => []),
+      getLocationActivityReports({ from: fromDate, to: toDate }).catch(() => ({ records: [], stats: { completionTrend: [], participantsByType: [] } })),
+    ]).then(([report, members, activities, teamAtt, activityReports]) => {
       if (cancelled) return;
       setTeamReportApi(report && typeof report === "object" ? report : null);
       setTeamMembers(Array.isArray(members) ? members : []);
       setTeamActivities(Array.isArray(activities) ? activities : []);
+      setTeamAttendanceFromApi(Array.isArray(teamAtt) ? teamAtt : []);
+      setTeamActivityReports(activityReports && activityReports.records ? activityReports : { records: [], stats: { completionTrend: [], participantsByType: [] } });
     }).finally(() => {
       if (!cancelled) setTeamMetricsLoading(false);
     });
     return () => { cancelled = true; };
   }, [isTeamReportPage, fromDate, toDate]);
 
+  const normalizeAttendanceRow = (r) => ({
+    id: r.id ?? r.attendance_id,
+    employeeName: r.employee_name ?? r.employeeName ?? "—",
+    employeePhoto: r.photo ?? r.avatar_url ?? MohamedAliPhoto,
+    employeeId: String(r.employee_id ?? r.employeeId ?? "—"),
+    checkIn: r.check_in ?? r.check_in_time ?? r.checkIn ?? "—",
+    checkOut: r.check_out ?? r.check_out_time ?? r.checkOut ?? "—",
+    attendanceType: r.attendance_type ?? r.check_method ?? r.type ?? "—",
+    location: r.location_name ?? r.location ?? "—",
+    status: r.status ?? "—",
+  });
+
   const attendanceData = React.useMemo(() => {
-    return (reportsFromApi || []).map((r) => ({
-      id: r.id ?? r.attendance_id,
-      employeeName: r.employee_name ?? r.employeeName ?? "—",
-      employeePhoto: r.photo ?? r.avatar_url ?? MohamedAliPhoto,
-      employeeId: String(r.employee_id ?? r.employeeId ?? "—"),
-      checkIn: r.check_in ?? r.check_in_time ?? r.checkIn ?? "—",
-      checkOut: r.check_out ?? r.check_out_time ?? r.checkOut ?? "—",
-      attendanceType: r.attendance_type ?? r.check_method ?? r.type ?? "—",
-      location: r.location_name ?? r.location ?? "—",
-      status: r.status ?? "—",
-    }));
-  }, [reportsFromApi]);
+    const raw = isTeamReportPage
+      ? (teamAttendanceFromApi.length > 0 ? teamAttendanceFromApi : (Array.isArray(teamReportApi?.attendance) && teamReportApi.attendance.length > 0 ? teamReportApi.attendance : reportsFromApi || []))
+      : (reportsFromApi || []);
+    return raw.map(normalizeAttendanceRow);
+  }, [isTeamReportPage, teamAttendanceFromApi, teamReportApi, reportsFromApi]);
 
   const dailyAttendanceData = React.useMemo(() => {
+    const raw = isTeamReportPage
+      ? (teamAttendanceFromApi.length > 0 ? teamAttendanceFromApi : (Array.isArray(teamReportApi?.attendance) && teamReportApi.attendance.length > 0 ? teamReportApi.attendance : reportsFromApi || []))
+      : (reportsFromApi || []);
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const byDay = reportsFromApi.reduce((acc, r) => {
+    const byDay = raw.reduce((acc, r) => {
       const d = r.date ?? r.check_in_date ?? r.checkInDate;
       if (!d) return acc;
       const day = new Date(d).getDay();
@@ -156,7 +177,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       late: byDay[day]?.late ?? 0,
       absent: byDay[day]?.absent ?? 0,
     }));
-  }, [reportsFromApi]);
+  }, [isTeamReportPage, teamAttendanceFromApi, teamReportApi, reportsFromApi]);
 
   const attendanceDistribution = React.useMemo(() => {
     const list = attendanceData;
@@ -193,8 +214,9 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       const notCompleted = (String(a.implementation_status || "").toLowerCase()) !== "implemented";
       return end < today && notCompleted;
     }).length;
-    const totalRecords = (reportsFromApi || []).length;
-    const committedRecords = (reportsFromApi || []).filter(
+    const teamRaw = teamAttendanceFromApi.length > 0 ? teamAttendanceFromApi : (teamReportApi?.attendance || reportsFromApi || []);
+    const totalRecords = Array.isArray(teamRaw) ? teamRaw.length : 0;
+    const committedRecords = (teamRaw || []).filter(
       (r) => ((r.status || "").toLowerCase() === "present" || (r.status || "").toLowerCase() === "late")
     ).length;
     const attendanceCommitmentRate = totalRecords > 0 ? Math.round((committedRecords / totalRecords) * 100) : 0;
@@ -205,7 +227,61 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       overdueTasks,
       attendanceCommitmentRate,
     };
-  }, [isTeamReportPage, teamReportApi, teamMembers, teamActivities, reportsFromApi]);
+  }, [isTeamReportPage, teamReportApi, teamMembers, teamActivities, teamAttendanceFromApi, reportsFromApi]);
+
+  // Team Reports: Field Activity–style data (same shape as FieldActivityReportsPage)
+  const MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const teamActivityTableData = React.useMemo(() => {
+    const fmt = (d) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+    const records = teamActivityReports?.records ?? [];
+    return records.map((r) => ({
+      id: r.id ?? r.report_id,
+      activity: r.name ?? r.activity ?? r.activity_name ?? "",
+      type: r.type ?? r.activity_type ?? "",
+      location: r.location ?? r.location_name ?? "",
+      responsibleEmployee: r.responsible_employee ?? r.responsibleEmployee ?? r.employee_name ?? "",
+      plannedDate: r.start_date ? (r.end_date ? `${fmt(r.start_date)} - ${fmt(r.end_date)}` : fmt(r.start_date)) : (r.planned_date ?? r.plannedDate ?? ""),
+      actualDate: r.actual_date ? fmt(r.actual_date) : (r.actual_date ?? "-"),
+      attendees: r.attendees ?? r.attendees_count ?? r.attendee_count ?? "",
+      status: r.status ?? r.implementation_status ?? "",
+    }));
+  }, [teamActivityReports]);
+  const teamMonthlyTrendData = React.useMemo(() => {
+    const byMonth = {};
+    (teamActivityReports?.stats?.completionTrend || []).forEach((r) => {
+      const m = (r.month || "").trim().slice(0, 3);
+      if (m) byMonth[m] = { month: m, implemented: Number(r.implemented) || 0, planned: Number(r.planned) || 0 };
+    });
+    return MONTH_ORDER.map((m) => byMonth[m] || { month: m, implemented: 0, planned: 0 });
+  }, [teamActivityReports?.stats?.completionTrend]);
+  const teamMonthlyParticipantsData = React.useMemo(() => {
+    const byMonth = {};
+    MONTH_ORDER.forEach((m) => { byMonth[m] = { month: m, workshop: 0, groupSession: 0 }; });
+    (teamActivityReports?.records || []).forEach((r) => {
+      const d = r.start_date ? new Date(r.start_date) : null;
+      const monthKey = d ? MONTH_ORDER[d.getMonth()] : null;
+      if (!monthKey || !byMonth[monthKey]) return;
+      const type = (r.type || "").toLowerCase().replace(/\s+/g, "");
+      const attendees = Number(r.attendees ?? r.attendees_count ?? r.attendee_count) || 0;
+      if (type.includes("workshop")) byMonth[monthKey].workshop += attendees;
+      else if (type.includes("group") || type.includes("session")) byMonth[monthKey].groupSession += attendees;
+    });
+    return MONTH_ORDER.map((m) => byMonth[m] || { month: m, workshop: 0, groupSession: 0 });
+  }, [teamActivityReports?.records]);
+  const teamActivityTypes = ["All Type", "Workshop", "Group Session"];
+  const teamActivityTypeOptions = ["Workshop", "Group Session"]; // options for Type checkboxes (multi-select)
+  const teamActivityStatusOptions = ["All Status", "Completed", "In Progress", "Pending"];
+  const teamFilteredData = React.useMemo(() => {
+    return teamActivityTableData.filter((row) => {
+      const matchesType = teamSelectedTypes.length === 0 || (row.type && teamSelectedTypes.includes(row.type));
+      const matchesStatus = teamSelectedStatus === "All Status" || (row.status || "").toLowerCase() === (teamSelectedStatus || "").toLowerCase().replace(/\s+/g, "");
+      const matchesSearch = !searchQuery.trim() || (row.activity || "").toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesType && matchesStatus && matchesSearch;
+    });
+  }, [teamActivityTableData, teamSelectedTypes, teamSelectedStatus, searchQuery]);
+  const teamItemsPerPage = 10;
+  const teamTotalPages = Math.max(1, Math.ceil(teamFilteredData.length / teamItemsPerPage));
+  const teamPaginatedData = teamFilteredData.slice((currentPage - 1) * teamItemsPerPage, currentPage * teamItemsPerPage);
 
   const locations = ["All Locations", ...(reportLocations || []).map((l) => l.name ?? l.location_name ?? "").filter(Boolean)];
 
@@ -241,6 +317,12 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
         setIsStatusDropdownOpen(false);
       }
+      if (teamTypeDropdownRef.current && !teamTypeDropdownRef.current.contains(event.target)) {
+        setIsTeamTypeDropdownOpen(false);
+      }
+      if (teamStatusDropdownRef.current && !teamStatusDropdownRef.current.contains(event.target)) {
+        setIsTeamStatusDropdownOpen(false);
+      }
       if (isExportAllDropdownOpen && exportAllDropdownRef.current && !exportAllDropdownRef.current.contains(event.target)) {
         setIsExportAllDropdownOpen(false);
       }
@@ -275,6 +357,21 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     { key: "location", label: "Location" },
     { key: "status", label: "Status" },
   ];
+
+  const FIELD_ACTIVITY_EXPORT_COLUMNS = [
+    { key: "activity", label: "Activity" },
+    { key: "type", label: "Type" },
+    { key: "location", label: "Location" },
+    { key: "responsibleEmployee", label: "Responsible Employee" },
+    { key: "plannedDate", label: "Planned Date" },
+    { key: "actualDate", label: "Actual Date" },
+    { key: "attendees", label: "Attendees" },
+  ];
+
+  const valueToY = (value, maxValue = 80, chartHeight = 200) =>
+    chartHeight - (value / maxValue) * chartHeight;
+  const valueToHeightBar = (value, maxValue = 80) =>
+    value === 0 ? 0 : 100 - (value / maxValue) * 100;
 
   const filteredData = attendanceData.filter((record) => {
     const name = (record.employeeName || "").toLowerCase();
@@ -512,7 +609,11 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       </div>
                       <button
                         onClick={() => {
-                          exportToExcel(filteredData, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports.xlsx");
+                          if (isTeamReportPage) {
+                            exportToExcel(teamFilteredData, FIELD_ACTIVITY_EXPORT_COLUMNS, "team-reports.xlsx");
+                          } else {
+                            exportToExcel(filteredData, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports.xlsx");
+                          }
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA]"
@@ -522,7 +623,11 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       </button>
                       <button
                         onClick={() => {
-                          exportToPdf(filteredData, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports.pdf");
+                          if (isTeamReportPage) {
+                            exportToPdf(teamFilteredData, FIELD_ACTIVITY_EXPORT_COLUMNS, "team-reports.pdf");
+                          } else {
+                            exportToPdf(filteredData, ATTENDANCE_REPORT_EXPORT_COLUMNS, "attendance-reports.pdf");
+                          }
                           setIsExportAllDropdownOpen(false);
                         }}
                         className="w-full px-[16px] py-[12px] text-left text-[14px] text-[#000000] hover:bg-[#F5F7FA] rounded-b-[8px]"
@@ -575,13 +680,171 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
 
-            {!isTeamReportPage && (reportsLoading ? (
+            {(reportsLoading ? (
               <div className="bg-white rounded-[10px] p-[40px] text-center" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)' }}>
-                <p className="text-[14px] text-[#6B7280]">Loading attendance reports...</p>
+                <p className="text-[14px] text-[#6B7280]">{isTeamReportPage ? "Loading team reports..." : "Loading attendance reports..."}</p>
               </div>
             ) : (
             <>
-            {/* Charts Section - Attendance Report only */}
+            {isTeamReportPage ? (
+            <>
+            {/* Team Reports: Activity Completion Trend + Participants by Activity Type */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-[20px] mb-[32px]">
+              {/* Activity Completion Trend */}
+              <div className="bg-white rounded-[10px] p-[20px] flex-1" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #888888' }}>
+                <h3 className="text-[16px] font-semibold mb-[20px] text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#000000' }}>Activity Completion Trend</h3>
+                <div className="relative" style={{ height: '250px' }}>
+                  <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
+                    {[80, 60, 40, 20, 0].map((v) => <div key={v} className="text-right pr-[8px]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#727272' }}>{v}</div>)}
+                  </div>
+                  <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
+                    <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
+                      {[0, 25, 50, 75, 100].map((_, i) => <line key={i} x1="0" y1={`${i * 25}%`} x2="100%" y2={`${i * 25}%`} stroke="#E0E0E0" strokeWidth="1" />)}
+                    </svg>
+                    <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} viewBox="0 0 1000 200" preserveAspectRatio="none">
+                      <defs>
+                        <marker id="team-arrow-implemented" markerWidth="16" markerHeight="16" refX="14" refY="8" orient="auto"><path d="M 0 0 L 16 8 L 0 16 Z" fill="#00564F" /></marker>
+                        <marker id="team-arrow-planned" markerWidth="16" markerHeight="16" refX="14" refY="8" orient="auto"><path d="M 0 0 L 16 8 L 0 16 Z" fill="#9CA3AF" /></marker>
+                      </defs>
+                      <polyline points={teamMonthlyTrendData.map((d, i) => `${(i / 11) * 1000},${valueToY(d.implemented, 80, 200)}`).join(' ')} fill="none" stroke="#00564F" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#team-arrow-implemented)" />
+                      <polyline points={teamMonthlyTrendData.map((d, i) => `${(i / 11) * 1000},${valueToY(d.planned, 80, 200)}`).join(' ')} fill="none" stroke="#9CA3AF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#team-arrow-planned)" />
+                    </svg>
+                    <div className="absolute bottom-0 left-0 right-0 flex justify-between" style={{ height: '30px' }}>
+                      {teamMonthlyTrendData.map((d) => <div key={d.month} className="text-center" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#827F7F', width: `${100/12}%` }}>{d.month}</div>)}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-center gap-[32px] mt-[16px]">
+                  <div className="flex items-center gap-[12px]"><div className="rounded-full w-[14px] h-[14px] bg-[#00564F]" /><span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#333333' }}>Implemented</span></div>
+                  <div className="flex items-center gap-[12px]"><div className="rounded-full w-[14px] h-[14px] bg-[#9CA3AF]" /><span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#333333' }}>Planned</span></div>
+                </div>
+              </div>
+              {/* Participants by Activity Type */}
+              <div className="bg-white rounded-[10px] p-[20px] flex-1" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #888888' }}>
+                <h3 className="text-[16px] font-semibold mb-[20px] text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#000000' }}>Participants by Activity Type</h3>
+                <div className="relative" style={{ height: '250px' }}>
+                  <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
+                    {[80, 60, 40, 20, 0].map((v) => <div key={v} className="text-right pr-[8px]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#727272' }}>{v}</div>)}
+                  </div>
+                  <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
+                    <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
+                      {[0, 25, 50, 75, 100].map((_, i) => <line key={i} x1="0" y1={`${i * 25}%`} x2="100%" y2={`${i * 25}%`} stroke="#E0E0E0" strokeWidth="1" />)}
+                    </svg>
+                    <div className="absolute inset-0 flex items-end justify-start" style={{ height: 'calc(100% - 30px)', paddingLeft: '4px', paddingRight: '4px', gap: '4px' }}>
+                      {teamMonthlyParticipantsData.map((data, mi) => (
+                        <div key={mi} className="flex items-end justify-center gap-[2px]" style={{ width: `calc((100% - 44px) / 12)`, height: '100%', flexShrink: 0 }}>
+                          {data.workshop > 0 && <div style={{ width: 'calc(45% - 1px)', height: `${valueToHeightBar(data.workshop, 80)}%`, backgroundColor: '#00564F', borderRadius: '2px 2px 0 0', minHeight: '2px' }} />}
+                          {data.groupSession > 0 && <div style={{ width: 'calc(45% - 1px)', height: `${valueToHeightBar(data.groupSession, 80)}%`, backgroundColor: '#53A7A0', borderRadius: '2px 2px 0 0', minHeight: '2px' }} />}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 flex justify-between" style={{ height: '30px' }}>
+                      {teamMonthlyParticipantsData.map((d) => <div key={d.month} className="text-center" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#827F7F', width: `${100/12}%` }}>{d.month}</div>)}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-center gap-[32px] mt-[16px]">
+                  <div className="flex items-center gap-[12px]"><div className="rounded-full w-[14px] h-[14px] bg-[#00564F]" /><span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#333333' }}>Workshop</span></div>
+                  <div className="flex items-center gap-[12px]"><div className="rounded-full w-[14px] h-[14px] bg-[#53A7A0]" /><span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#333333' }}>Group Session</span></div>
+                </div>
+              </div>
+            </div>
+            {/* Filters - Team: From, To, All Type, All Status, Search by activity name */}
+            <div className="flex items-center gap-[16px] mb-[24px] flex-wrap">
+              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white focus:outline-none focus:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', minWidth: '160px' }} />
+              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} min={fromDate} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white focus:outline-none focus:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', minWidth: '160px' }} />
+              <div className="relative" ref={teamTypeDropdownRef}>
+                <button onClick={() => setIsTeamTypeDropdownOpen(!isTeamTypeDropdownOpen)} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}>
+                  <span>{teamSelectedTypes.length === 0 ? "All Type" : teamSelectedTypes.join(", ")}</span>
+                  <svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                {isTeamTypeDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[180px] py-[8px]">
+                    {teamActivityTypeOptions.map((type) => (
+                      <label key={type} className="flex items-center gap-[10px] px-[16px] py-[10px] hover:bg-[#F5F7FA] cursor-pointer" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#000000' }}>
+                        <input
+                          type="checkbox"
+                          checked={teamSelectedTypes.includes(type)}
+                          onChange={() => {
+                            setTeamSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+                            setCurrentPage(1);
+                          }}
+                          className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
+                        />
+                        <span>{type}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="relative" ref={teamStatusDropdownRef}>
+                <button onClick={() => setIsTeamStatusDropdownOpen(!isTeamStatusDropdownOpen)} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}>
+                  <span>{teamSelectedStatus}</span>
+                  <svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                {isTeamStatusDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[140px]">
+                    {teamActivityStatusOptions.map((status) => (
+                      <button key={status} onClick={() => { setTeamSelectedStatus(status); setIsTeamStatusDropdownOpen(false); setCurrentPage(1); }} className={`w-full px-[16px] py-[10px] text-left text-[14px] ${teamSelectedStatus === status ? 'bg-[#E5E7EB]' : 'hover:bg-[#F5F7FA]'}`} style={{ fontFamily: 'Inter, sans-serif' }}>{status}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="relative flex-1 min-w-[200px]">
+                <svg className="absolute left-[12px] top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none"><path d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <input type="text" placeholder="Search by activity name" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} className="w-full h-[40px] pl-[36px] pr-[16px] rounded-[5px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40]" style={{ fontWeight: 400 }} />
+              </div>
+            </div>
+            {/* Table - Team: Activity, Type, Location, Responsible Employee, Planned Date, Actual Date, Attendees */}
+            <div className="bg-white rounded-[10px] overflow-hidden mb-[24px]" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #B5B1B1' }}>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#E0E0E0]">
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Activity</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Type</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Location</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Responsible Employee</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Planned Date</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Actual Date</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Attendees</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamPaginatedData.length > 0 ? teamPaginatedData.map((row) => (
+                      <tr key={row.id} className="border-b border-[#E0E0E0] hover:bg-[#F9FAFB]">
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{row.activity || "—"}</td>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{row.type || "—"}</td>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{row.location || "—"}</td>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{row.responsibleEmployee || "—"}</td>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{row.plannedDate || "—"}</td>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{row.actualDate || "—"}</td>
+                        <td className="px-[12px] py-[12px] text-center text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{row.attendees ?? "—"}</td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan="7" className="px-[12px] py-[40px] text-center text-[14px] text-[#6B7280]">No activity records found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {teamFilteredData.length > 0 && (
+              <div className="flex items-center justify-center gap-[8px] mt-[24px]">
+                <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} className="w-[32px] h-[32px] rounded-full flex items-center justify-center bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] disabled:opacity-50" disabled={currentPage === 1}>
+                  <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none"><path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+                {Array.from({ length: teamTotalPages }, (_, i) => i + 1).slice(0, 5).map((page) => (
+                  <button key={page} onClick={() => setCurrentPage(page)} className="w-[32px] h-[32px] rounded-full flex items-center justify-center bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: currentPage === page ? 600 : 400, color: currentPage === page ? '#474747' : '#827F7F', fontSize: '14px' }}>{page}</button>
+                ))}
+                <button onClick={() => setCurrentPage(prev => Math.min(teamTotalPages, prev + 1))} className="w-[32px] h-[32px] rounded-full flex items-center justify-center bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] disabled:opacity-50" disabled={currentPage >= teamTotalPages}>
+                  <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none"><path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+              </div>
+            )}
+            </>
+            ) : (
+            <>
+            {/* Attendance Reports: Daily Attendance + Status Distribution */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-[20px] mb-[32px]">
               {/* Daily Attendance Bar Chart */}
               <div className="bg-white rounded-[10px] p-[20px]" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #888888' }}>
@@ -1222,6 +1485,8 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
             </>
+            )}
+            </>
             ))}
           </div>
         </main>
@@ -1343,9 +1608,112 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
             );
           })()}
 
-          {!isTeamReportPage && (
+          {(reportsLoading ? (
+            <div className="bg-white rounded-[10px] p-8 text-center">
+              <p className="text-[14px] text-[#6B7280]">{isTeamReportPage ? "Loading team reports..." : "Loading attendance reports..."}</p>
+            </div>
+          ) : (
           <>
-          {/* Charts Section - Mobile */}
+          {isTeamReportPage ? (
+          <>
+          {/* Team Reports Mobile: Activity Completion Trend + Participants by Activity Type */}
+          <div className="flex flex-col gap-4 mb-6">
+            <div className="bg-white rounded-[12px] p-4 shadow-sm border border-[#888888]">
+              <h3 className="text-[14px] font-semibold mb-4 text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: '#000000' }}>Activity Completion Trend</h3>
+              <div className="relative" style={{ height: '180px' }}>
+                <div className="ml-[30px] relative" style={{ height: '100%', paddingBottom: '28px' }}>
+                  <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 28px)' }} viewBox="0 0 1000 150" preserveAspectRatio="none">
+                    <polyline points={teamMonthlyTrendData.map((d, i) => `${(i / 11) * 1000},${valueToY(d.implemented, 80, 150)}`).join(' ')} fill="none" stroke="#00564F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <polyline points={teamMonthlyTrendData.map((d, i) => `${(i / 11) * 1000},${valueToY(d.planned, 80, 150)}`).join(' ')} fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <div className="absolute bottom-0 left-0 right-0 flex justify-between" style={{ height: '28px' }}>
+                    {teamMonthlyTrendData.map((d) => <div key={d.month} className="text-center text-[10px] text-[#827F7F]" style={{ width: `${100/12}%` }}>{d.month}</div>)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-center gap-[20px] mt-3">
+                <div className="flex items-center gap-[8px]"><div className="rounded-full w-[10px] h-[10px] bg-[#00564F]" /><span className="text-[11px] text-[#333333]">Implemented</span></div>
+                <div className="flex items-center gap-[8px]"><div className="rounded-full w-[10px] h-[10px] bg-[#9CA3AF]" /><span className="text-[11px] text-[#333333]">Planned</span></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-[12px] p-4 shadow-sm border border-[#888888]">
+              <h3 className="text-[14px] font-semibold mb-4 text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: '#000000' }}>Participants by Activity Type</h3>
+              <div className="relative" style={{ height: '160px' }}>
+                <div className="ml-[30px] flex items-end justify-start gap-[2px]" style={{ height: '100%', paddingBottom: '28px' }}>
+                  {teamMonthlyParticipantsData.map((data, mi) => (
+                    <div key={mi} className="flex items-end justify-center gap-[1px] flex-1" style={{ height: '100%' }}>
+                      {data.workshop > 0 && <div style={{ width: '45%', height: `${valueToHeightBar(data.workshop, 80)}%`, backgroundColor: '#00564F', borderRadius: '2px 2px 0 0', minHeight: '2px' }} />}
+                      {data.groupSession > 0 && <div style={{ width: '45%', height: `${valueToHeightBar(data.groupSession, 80)}%`, backgroundColor: '#53A7A0', borderRadius: '2px 2px 0 0', minHeight: '2px' }} />}
+                    </div>
+                  ))}
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 flex justify-between" style={{ height: '28px' }}>
+                  {teamMonthlyParticipantsData.map((d) => <div key={d.month} className="text-center text-[10px] text-[#827F7F]" style={{ width: `${100/12}%` }}>{d.month}</div>)}
+                </div>
+              </div>
+              <div className="flex items-center justify-center gap-[20px] mt-3">
+                <div className="flex items-center gap-[8px]"><div className="rounded-full w-[10px] h-[10px] bg-[#00564F]" /><span className="text-[11px] text-[#333333]">Workshop</span></div>
+                <div className="flex items-center gap-[8px]"><div className="rounded-full w-[10px] h-[10px] bg-[#53A7A0]" /><span className="text-[11px] text-[#333333]">Group Session</span></div>
+              </div>
+            </div>
+          </div>
+          {/* Team Filters - Mobile */}
+          <div className="flex flex-col gap-3 mb-6">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="block mb-1 text-[12px] text-[#6B7280]">From</label><input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full px-3 py-2 rounded-[5px] border border-[#E0E0E0] bg-white text-[13px]" /></div>
+              <div><label className="block mb-1 text-[12px] text-[#6B7280]">To</label><input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} min={fromDate} className="w-full px-3 py-2 rounded-[5px] border border-[#E0E0E0] bg-white text-[13px]" /></div>
+            </div>
+            <div className="relative" ref={teamTypeDropdownRef}>
+              <button onClick={() => setIsTeamTypeDropdownOpen(!isTeamTypeDropdownOpen)} className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"><span>{teamSelectedTypes.length === 0 ? "All Type" : teamSelectedTypes.join(", ")}</span><svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
+              {isTeamTypeDropdownOpen && (
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 py-[8px]">
+                  {teamActivityTypeOptions.map((type) => (
+                    <label key={type} className="flex items-center gap-[10px] px-[16px] py-[10px] hover:bg-[#F5F7FA] cursor-pointer text-[14px] text-[#000000]">
+                      <input type="checkbox" checked={teamSelectedTypes.includes(type)} onChange={() => { setTeamSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]); setCurrentPage(1); }} className="w-[16px] h-[16px] rounded border-[#E0E0E0]" />
+                      <span>{type}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="relative" ref={teamStatusDropdownRef}>
+              <button onClick={() => setIsTeamStatusDropdownOpen(!isTeamStatusDropdownOpen)} className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"><span>{teamSelectedStatus}</span><svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
+              {isTeamStatusDropdownOpen && <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">{teamActivityStatusOptions.map((status) => <button key={status} onClick={() => { setTeamSelectedStatus(status); setIsTeamStatusDropdownOpen(false); setCurrentPage(1); }} className={`w-full px-[16px] py-[10px] text-left text-[14px] ${teamSelectedStatus === status ? 'bg-[#E5E7EB]' : 'hover:bg-[#F5F7FA]'}`}>{status}</button>)}</div>}
+            </div>
+            <div className="relative">
+              <svg className="absolute left-[12px] top-1/2 -translate-y-1/2 w-[16px] h-[16px] text-[#9CA3AF]" viewBox="0 0 24 24" fill="none"><path d="M21 21L16.65 16.65M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <input type="text" placeholder="Search by activity name" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} className="w-full h-[40px] pl-[36px] pr-[16px] rounded-[5px] border border-[#E0E0E0] bg-white text-[14px] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#004D40]" />
+            </div>
+          </div>
+          {/* Team Activity Cards - Mobile */}
+          <div className="space-y-4">
+            {teamPaginatedData.length > 0 ? teamPaginatedData.map((row) => (
+              <div key={row.id} className="bg-white rounded-[12px] p-4 shadow-md border border-[#E0E0E0]">
+                <div className="space-y-2">
+                  <div className="flex justify-between"><span className="text-[12px] text-[#6B7280]">Activity</span><span className="text-[13px] font-semibold text-[#000000]">{row.activity || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-[12px] text-[#6B7280]">Type</span><span className="text-[13px] font-semibold text-[#000000]">{row.type || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-[12px] text-[#6B7280]">Location</span><span className="text-[13px] font-semibold text-[#000000]">{row.location || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-[12px] text-[#6B7280]">Responsible</span><span className="text-[13px] font-semibold text-[#000000]">{row.responsibleEmployee || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-[12px] text-[#6B7280]">Planned</span><span className="text-[13px] font-semibold text-[#000000]">{row.plannedDate || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-[12px] text-[#6B7280]">Actual</span><span className="text-[13px] font-semibold text-[#000000]">{row.actualDate || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-[12px] text-[#6B7280]">Attendees</span><span className="text-[13px] font-semibold text-[#000000]">{row.attendees ?? "—"}</span></div>
+                </div>
+              </div>
+            )) : (
+              <div className="bg-white rounded-[12px] p-8 text-center text-[#6B7280]">No activity records found</div>
+            )}
+          </div>
+          {teamFilteredData.length > 0 && (
+            <div className="flex items-center justify-center gap-[8px] mt-8">
+              <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] disabled:opacity-50" disabled={currentPage === 1}><svg className="w-[16px] h-[16px] text-[#000000]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18L9 12L15 6" /></svg></button>
+              {Array.from({ length: teamTotalPages }, (_, i) => i + 1).slice(0, 5).map((page) => <button key={page} onClick={() => setCurrentPage(page)} className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page ? 'font-semibold' : ''}`} style={{ color: currentPage === page ? '#474747' : '#827F7F' }}>{page}</button>)}
+              <button onClick={() => setCurrentPage(prev => Math.min(teamTotalPages, prev + 1))} className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] disabled:opacity-50" disabled={currentPage >= teamTotalPages}><svg className="w-[16px] h-[16px] text-[#000000]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18L15 12L9 6" /></svg></button>
+            </div>
+          )}
+          </>
+          ) : (
+          <>
+          {/* Attendance Reports - Mobile: Daily Attendance + Status Distribution */}
           <div className="flex flex-col gap-4 mb-6">
             {/* Daily Attendance Chart - Mobile */}
             <div className="bg-white rounded-[12px] p-4 shadow-sm border border-[#888888]">
@@ -1783,9 +2151,11 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
           )}
           </>
           )}
+          </>
+          ))}
         </div>
       </div>
-    </div >
+    </div>
   );
 };
 
