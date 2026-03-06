@@ -148,7 +148,7 @@ exports.updateEmployee = async (req, res) => {
             department_id, position_id, status, avatar_url, avatarUrl, role_id
         } = req.body;
 
-        const finalAvatarUrl = req.file ? `/uploads/${req.file.filename}` : (avatar_url || avatarUrl || null);
+        const finalAvatarUrl = req.file ? req.file.path : (avatar_url || avatarUrl || null);
 
         if (!full_name && first_name && last_name) {
             full_name = `${first_name} ${last_name}`;
