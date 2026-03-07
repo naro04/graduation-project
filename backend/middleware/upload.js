@@ -13,7 +13,7 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
-        folder: 'hr-system',
+        folder: 'hr-system-v2',
         allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx'],
         resource_type: 'auto', // Important to support both images and documents
         public_id: (req, file) => {
@@ -30,5 +30,20 @@ const upload = multer({
         fileSize: 10 * 1024 * 1024 // 10MB limit (increased to support documents)
     }
 });
+
+// Diagnostic middleware to check req.file properties
+upload.diagnostic = (req, res, next) => {
+    if (req.file) {
+        console.log('---------------- MULTER DIAGNOSTIC ----------------');
+        console.log('File detected:', req.file.originalname);
+        console.log('File path (URL):', req.file.path);
+        console.log('File filename:', req.file.filename);
+        if (req.file.path && !req.file.path.startsWith('http')) {
+            console.warn('⚠️ WARNING: req.file.path does not start with http! Cloudinary URL might be missing.');
+        }
+        console.log('----------------------------------------------------');
+    }
+    next();
+};
 
 module.exports = upload;
