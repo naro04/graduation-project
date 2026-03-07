@@ -20,10 +20,10 @@ const upload = require('../middleware/upload');
 router.use(protect);
 
 router.get('/me', getMe);
-router.patch('/me', upload.single('avatar'), updateProfile);
+router.patch('/me', upload.single('avatar'), upload.diagnostic, updateProfile);
 
 router.get('/personal-info', getPersonalInfo);
-router.put('/personal-info', upload.single('avatar'), updateProfile);
+router.put('/personal-info', upload.single('avatar'), upload.diagnostic, updateProfile);
 
 router.get('/account-security', getAccountSecurity);
 router.put('/account-security', updateAccountSecurity);
