@@ -2,6 +2,9 @@ const getActivityByIdQuery = `
   SELECT 
     a.*,
     l.name as location_name,
+    l.latitude as location_latitude,
+    l.longitude as location_longitude,
+    a.activity_days as duration_hours_count,
     p.name as project_name,
     CASE 
       WHEN a.employee_id IS NOT NULL THEN e.first_name || ' ' || e.last_name
