@@ -33,15 +33,13 @@ const findUserById = `
     u.id, u.name, u.email, u.avatar_url,
     e.id as employee_id,
     e.avatar_url as employee_avatar_url,
-    e.status as employee_status,
     r.name as role_name,
     r.id as role_id
   FROM users u
   LEFT JOIN employees e ON u.id = e.user_id
   LEFT JOIN user_roles ur ON u.id = ur.user_id
   LEFT JOIN roles r ON ur.role_id = r.id
-  WHERE u.id = $1
-  ORDER BY CASE WHEN r.name = 'Super Admin' THEN 0 ELSE 1 END;
+  WHERE u.id = $1;
 `;
 
 const findRoleByName = `
@@ -74,8 +72,7 @@ const getMe = `
   LEFT JOIN roles r ON ur.role_id = r.id
   LEFT JOIN emergency_contacts ec ON e.id = ec.employee_id
   LEFT JOIN employees s ON e.supervisor_id = s.id
-  WHERE u.id = $1
-  ORDER BY CASE WHEN r.name = 'Super Admin' THEN 0 ELSE 1 END;
+  WHERE u.id = $1;
 `;
 
 module.exports = {
