@@ -61,43 +61,4 @@ const restrictTo = (...requiredPermissions) => {
     };
 };
 
-/**
- * Middleware to check if employee is active
- * Inactive employees can only access dashboard and profile endpoints
- * This middleware should be applied to routes that require active status
- */
-const requireActiveStatus = (req, res, next) => {
-    // If user is Super Admin, bypass check
-    if (req.user && req.user.role_name === 'Super Admin') {
-        return next();
-    }
-
-    // Check if user has employee record
-    if (!req.user || !req.user.employee_id) {
-        console.log('⚠️ requireActiveStatus: User missing employee_id. User Object:', {
-            id: req.user?.id,
-            email: req.user?.email,
-            role_name: req.user?.role_name,
-            employee_id: req.user?.employee_id,
-            full_user: req.user
-        });
-        return res.status(403).json({
-            message: 'Employee record not found. Please contact administrator.'
-        });
-    }
-
-    // Get employee status (from findUserById query)
-    const employeeStatus = req.user.employee_status;
-
-    // If status is 'Inactive', block access to this route
-    if (employeeStatus && employeeStatus.toLowerCase() === 'inactive') {
-        return res.status(403).json({
-            message: 'Your account is inactive. Please contact administrator to activate your account.',
-            status: 'inactive'
-        });
-    }
-
-    next();
-};
-
-module.exports = { protect, restrictTo, requireActiveStatus };
+module.exports = { protect, restrictTo };

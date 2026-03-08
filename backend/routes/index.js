@@ -1,7 +1,7 @@
 const router = require('express').Router();
-const { protect, requireActiveStatus } = require('../middleware/auth');
 
 const profileRouter = require('./profile');
+const userRouter = require('./users');
 const dashboard = require('../controllers/dashboard');
 const authRouter = require('./auth');
 const rbacRouter = require('./rbac');
@@ -17,29 +17,15 @@ const attendanceRouter = require('./attendance');
 const leaveRouter = require('./leaves');
 const uploadsRouter = require('./uploads');
 const notificationSettingsRouter = require('./notificationSettings');
-const notificationsRouter = require('./notifications');
 const apiKeyRouter = require('./apiKey');
 const helpRouter = require('./help');
 const supportRouter = require('./support');
 const systemSettingsRouter = require('./systemSettings');
 const projectsRouter = require('./projects');
 
-// Routes that don't require active status (accessible to inactive users)
 router.use('/profile', profileRouter);
+router.use('/users', userRouter);
 router.use('/auth', authRouter);
-router.use('/', dashboard); // Dashboard is accessible to inactive users
-
-// PROTECTED ROUTES SECTION
-// First ensure user is logged in
-router.use(protect);
-
-// Then allow these routes even for inactive employees
-router.use('/help', helpRouter); // Assuming help is accessible anyway
-router.use('/support', supportRouter);
-
-// Then require active status for everything else
-router.use(requireActiveStatus);
-
 router.use('/rbac', rbacRouter);
 router.use('/departments', deptRouter);
 router.use('/employees', employeeRouter);
@@ -52,10 +38,12 @@ router.use('/gps-verifications', gpsVerificationRouter);
 router.use('/attendance', attendanceRouter);
 router.use('/leaves', leaveRouter);
 router.use('/uploads', uploadsRouter);
-router.use('/notification-settings', notificationSettingsRouter);
-router.use('/notifications', notificationsRouter);
+router.use('/notifications', notificationSettingsRouter);
 router.use('/api-keys', apiKeyRouter);
+router.use('/help', helpRouter);
+router.use('/support', supportRouter);
 router.use('/system-settings', systemSettingsRouter);
 router.use('/projects', projectsRouter);
+router.use('/', dashboard);
 
 module.exports = router;

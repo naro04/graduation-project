@@ -2,7 +2,6 @@ const pool = require('../database/connection');
 const attendanceQueries = require('../database/data/queries/attendance');
 const gpsQueries = require('../database/data/queries/gpsVerification');
 const { calculateDistance, getGPSStatus } = require('../utils/calculateDistance');
-const notificationController = require('./notifications');
 
 /**
  * Get employee record by user_id
@@ -13,41 +12,19 @@ const getEmployeeByUserId = async (userId) => {
 };
 
 /**
- * Attendance Logic Definitions (updated):
- * Present: Check-in by 08:15 AM at the latest AND Check-out after 04:00 PM
- * Late: Check-in after 08:15 AM
- * Early Leave: Check-out before 04:00 PM
- * Missing Check-out: Employee finished shift but no check-out recorded
- * In Progress: Currently within working hours (checked in, not checked out)
- * Absent: No login and no approved leave
- */
-const CHECKIN_CUTOFF_HOUR = 8;
-const CHECKIN_CUTOFF_MINUTE = 15;
-const CHECKOUT_MINIMUM_HOUR = 16; // 4:00 PM
-
-/**
  * Determine daily status based on check-in time
- * Present if check-in by 08:15 AM, Late if after
+ * Assuming 9:00 AM is the cutoff for being on time
  */
 const getDailyStatus = (checkInTime) => {
     const hour = new Date(checkInTime).getHours();
     const minute = new Date(checkInTime).getMinutes();
     const checkInMinutes = hour * 60 + minute;
-    const onTimeMinutes = CHECKIN_CUTOFF_HOUR * 60 + CHECKIN_CUTOFF_MINUTE; // 8:15 AM
-
+    const onTimeMinutes = 9 * 60; // 9:00 AM
+    
     if (checkInMinutes > onTimeMinutes) {
         return 'Late';
     }
     return 'Present';
-};
-
-/**
- * Determine if checkout is early
- */
-const isEarlyCheckout = (checkOutTime) => {
-    if (!checkOutTime) return false;
-    const hour = new Date(checkOutTime).getHours();
-    return hour < CHECKOUT_MINIMUM_HOUR;
 };
 
 /**
@@ -94,7 +71,7 @@ const calculateWorkHours = (checkIn, checkOut) => {
 const verifyGPSForAttendance = async (attendanceId, employeeId, latitude, longitude) => {
     // Get employee's assigned locations
     const locationsResult = await pool.query(gpsQueries.getEmployeeLocationsQuery, [employeeId]);
-
+    
     if (locationsResult.rows.length === 0) {
         // No assigned locations
         await pool.query(gpsQueries.updateGPSStatusQuery, [null, 'Not Verified', attendanceId]);
@@ -129,7 +106,7 @@ const verifyGPSForAttendance = async (attendanceId, employeeId, latitude, longit
     // Determine GPS status based on minimum distance
     const gpsStatus = getGPSStatus(minDistance);
     await pool.query(gpsQueries.updateGPSStatusQuery, [minDistance, gpsStatus, attendanceId]);
-
+    
     return { distance: minDistance, status: gpsStatus };
 };
 
@@ -163,9 +140,9 @@ exports.getMyAttendance = async (req, res) => {
         // Format records for frontend
         const records = result.rows.map(row => ({
             id: row.id,
-            date: row.date || row.check_in_time, // Keep raw date/time for frontend to format
-            checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
-            checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
+            date: formatDate(row.date || row.check_in_time),
+            checkInAt: formatTime(row.check_in_time),
+            checkOutAt: row.check_out_time ? formatTime(row.check_out_time) : null,
             workHours: calculateWorkHours(row.check_in_time, row.check_out_time),
             location: row.location || row.location_address || '-',
             type: row.type || row.work_type || 'Office',
@@ -178,10 +155,10 @@ exports.getMyAttendance = async (req, res) => {
         if (todayAttendance) {
             todayStatus = {
                 checkedIn: true,
-                checkInTime: todayAttendance.check_in_time ? new Date(todayAttendance.check_in_time).toISOString() : null,
+                checkInTime: formatTime(todayAttendance.check_in_time),
                 checkInLocation: todayAttendance.location_address || 'Unknown Location',
                 checkInMethod: todayAttendance.check_in_method || 'GPS',
-                checkOutTime: todayAttendance.check_out_time ? new Date(todayAttendance.check_out_time).toISOString() : null,
+                checkOutTime: todayAttendance.check_out_time ? formatTime(todayAttendance.check_out_time) : null,
                 checkOutLocation: todayAttendance.check_out_time ? (todayAttendance.location_address || 'Unknown Location') : null,
                 checkOutMethod: todayAttendance.check_out_method || null,
                 totalHours: calculateWorkHours(todayAttendance.check_in_time, todayAttendance.check_out_time),
@@ -201,7 +178,7 @@ exports.getMyAttendance = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching attendance:', err);
-        res.status(500).json({ message: 'An error occurred while fetching attendance records. Please try again.' });
+        res.status(500).json({ message: 'Error fetching attendance', error: err.message });
     }
 };
 
@@ -209,7 +186,7 @@ exports.checkIn = async (req, res) => {
     try {
         const { latitude, longitude, location_address, work_type, manual_location_id, check_in_method } = req.body;
         const userId = req.user.id;
-
+        
         // Debug logging
         console.log('Check-in request body:', req.body);
         console.log('check_in_method received:', check_in_method);
@@ -223,8 +200,8 @@ exports.checkIn = async (req, res) => {
         // Check if already checked in today (without check-out)
         const todayAttendanceResult = await pool.query(attendanceQueries.getTodayAttendanceQuery, [userId]);
         if (todayAttendanceResult.rows.length > 0) {
-            return res.status(400).json({
-                message: 'You have already checked in today. Please check out first.'
+            return res.status(400).json({ 
+                message: 'You have already checked in today. Please check out first.' 
             });
         }
 
@@ -234,7 +211,7 @@ exports.checkIn = async (req, res) => {
 
         // Resolve location address
         let finalLocationAddress = location_address;
-
+        
         // If manual location was selected (GPS fallback), get the location name
         if (manual_location_id && !location_address) {
             const locationResult = await pool.query('SELECT name, address FROM locations WHERE id = $1', [manual_location_id]);
@@ -270,21 +247,6 @@ exports.checkIn = async (req, res) => {
             );
             attendance.distance_from_base = gpsVerification.distance;
             attendance.gps_status = gpsVerification.status;
-
-            // NOTIFICATION: Notify Employee/Manager on GPS failure
-            if (gpsVerification.status === 'Suspicious' || gpsVerification.status === 'Rejected') {
-                try {
-                    await notificationController.createNotification(
-                        userId,
-                        'attendance',
-                        'Location Verification Issue',
-                        `Your check-in was marked as ${gpsVerification.status} due to distance from base (${Math.round(gpsVerification.distance)}m).`,
-                        '/attendance/my-attendance'
-                    );
-                } catch (notifyErr) {
-                    console.error('Failed to send attendance notification:', notifyErr);
-                }
-            }
         } else {
             // No GPS coordinates provided - mark as Not Verified
             await pool.query(gpsQueries.updateGPSStatusQuery, [null, 'Not Verified', attendance.id]);
@@ -297,7 +259,7 @@ exports.checkIn = async (req, res) => {
             message: 'Checked in successfully',
             data: {
                 id: attendance.id,
-                checkInTime: new Date(attendance.check_in_time).toISOString(),
+                checkInTime: formatTime(attendance.check_in_time),
                 location: finalLocationAddress || 'Unknown Location',
                 gpsStatus: attendance.gps_status,
                 dailyStatus: dailyStatus
@@ -305,7 +267,7 @@ exports.checkIn = async (req, res) => {
         });
     } catch (err) {
         console.error('Error during check-in:', err);
-        res.status(500).json({ message: 'An error occurred during check-in. Please try again.' });
+        res.status(500).json({ message: 'Error during check-in', error: err.message });
     }
 };
 
@@ -323,8 +285,8 @@ exports.checkOut = async (req, res) => {
         // Get today's check-in record (without check-out)
         const todayAttendanceResult = await pool.query(attendanceQueries.getTodayAttendanceQuery, [userId]);
         if (todayAttendanceResult.rows.length === 0) {
-            return res.status(400).json({
-                message: 'No active check-in found. Please check in first.'
+            return res.status(400).json({ 
+                message: 'No active check-in found. Please check in first.' 
             });
         }
 
@@ -332,7 +294,7 @@ exports.checkOut = async (req, res) => {
 
         // Resolve location address for checkout
         let checkoutLocationAddress = location_address;
-
+        
         if (manual_location_id && !location_address) {
             const locationResult = await pool.query('SELECT name, address FROM locations WHERE id = $1', [manual_location_id]);
             if (locationResult.rows.length > 0) {
@@ -355,8 +317,8 @@ exports.checkOut = async (req, res) => {
             message: 'Checked out successfully',
             data: {
                 id: updatedAttendance.id,
-                checkInTime: new Date(updatedAttendance.check_in_time).toISOString(),
-                checkOutTime: new Date(updatedAttendance.check_out_time).toISOString(),
+                checkInTime: formatTime(updatedAttendance.check_in_time),
+                checkOutTime: formatTime(updatedAttendance.check_out_time),
                 checkInLocation: updatedAttendance.location_address || 'Unknown Location',
                 checkOutLocation: checkoutLocationAddress || updatedAttendance.location_address || 'Unknown Location',
                 totalHours: totalHours,
@@ -365,7 +327,7 @@ exports.checkOut = async (req, res) => {
         });
     } catch (err) {
         console.error('Error during check-out:', err);
-        res.status(500).json({ message: 'An error occurred during check-out. Please try again.' });
+        res.status(500).json({ message: 'Error during check-out', error: err.message });
     }
 };
 
@@ -387,7 +349,7 @@ exports.getLocationsForCheckIn = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching locations:', err);
-        res.status(500).json({ message: 'An error occurred while fetching locations. Please try again.' });
+        res.status(500).json({ message: 'Error fetching locations', error: err.message });
     }
 };
 
@@ -399,10 +361,7 @@ exports.getDailyAttendance = async (req, res) => {
         const { date, location, status, search } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
 
-        const isManager = req.user.role_name === 'Manager';
-        const managerEmployeeId = req.user.employee_id;
-
-        // Get attendance records with filters in SQL
+        // Get attendance records for the specified date
         const attendanceQuery = `
             SELECT 
                 a.id,
@@ -419,28 +378,13 @@ exports.getDailyAttendance = async (req, res) => {
             FROM attendance a
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) = $1
-              AND ($2::UUID IS NULL OR e.supervisor_id = $2)
-              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address = $3)
-              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
-              AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
             ORDER BY a.check_in_time DESC
         `;
-
-        const result = await pool.query(attendanceQuery, [
-            targetDate,
-            isManager ? managerEmployeeId : null,
-            location || null,
-            status || null,
-            search || null
-        ]);
+        
+        const result = await pool.query(attendanceQuery, [targetDate]);
 
         // Calculate stats
-        const totalEmployeesQuery = isManager
-            ? 'SELECT COUNT(*) as total FROM employees WHERE status = $1 AND supervisor_id = $2'
-            : 'SELECT COUNT(*) as total FROM employees WHERE status = $1';
-
-        const totalEmployeesParams = isManager ? ['active', managerEmployeeId] : ['active'];
-        const totalEmployeesResult = await pool.query(totalEmployeesQuery, totalEmployeesParams);
+        const totalEmployeesResult = await pool.query('SELECT COUNT(*) as total FROM employees WHERE status = $1', ['active']);
         const totalEmployees = parseInt(totalEmployeesResult.rows[0]?.total || 0);
 
         const presentCount = result.rows.filter(r => r.status === 'Present' || r.status === 'Late').length;
@@ -454,8 +398,8 @@ exports.getDailyAttendance = async (req, res) => {
             employeeName: row.employee_name,
             employeeCode: row.employee_code,
             avatarUrl: row.avatar_url,
-            checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
-            checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
+            checkInAt: row.check_in_time,
+            checkOutAt: row.check_out_time,
             attendanceType: row.attendance_type || 'Office',
             location: row.location || '-',
             status: row.check_out_time ? row.status : (row.status === 'Present' || row.status === 'Late' ? 'In progress' : row.status),
@@ -463,9 +407,25 @@ exports.getDailyAttendance = async (req, res) => {
             gpsVerified: row.gps_status === 'Verified' || row.gps_status === 'Suspicious'
         }));
 
+        // Apply filters
+        let filteredRecords = records;
+        if (location && location !== 'All Locations') {
+            filteredRecords = filteredRecords.filter(r => r.location === location);
+        }
+        if (status && status !== 'All Status') {
+            filteredRecords = filteredRecords.filter(r => r.status === status);
+        }
+        if (search) {
+            const searchLower = search.toLowerCase();
+            filteredRecords = filteredRecords.filter(r => 
+                r.employeeName.toLowerCase().includes(searchLower) ||
+                r.employeeCode.toLowerCase().includes(searchLower)
+            );
+        }
+
         res.status(200).json({
             status: 'success',
-            records: records,
+            records: filteredRecords,
             stats: {
                 presentToday: presentCount,
                 absentToday: absentCount,
@@ -474,259 +434,25 @@ exports.getDailyAttendance = async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching daily attendance:', err);
-        res.status(500).json({ message: 'An error occurred while fetching daily attendance. Please try again.' });
+        res.status(500).json({ message: 'Error fetching daily attendance', error: err.message });
     }
 };
 
 /**
- * Get attendance reports with date range and statistics for charts
+ * Get attendance reports (HR/Admin view)
  */
 exports.getAttendanceReports = async (req, res) => {
     try {
         const { from, to, location, status, search } = req.query;
 
-        // Default to last 7 days if no date range provided
-        const endDate = to || new Date().toISOString().split('T')[0];
-        const startDate = from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-        const isManager = req.user.role_name === 'Manager';
-        const managerEmployeeId = req.user.employee_id;
-
-        // Get all attendance records in the date range
-        const attendanceQuery = `
-            SELECT 
-                a.id,
-                a.employee_id,
-                e.full_name as employee_name,
-                e.employee_code,
-                e.avatar_url,
-                a.check_in_time,
-                a.check_out_time,
-                a.work_type as attendance_type,
-                a.location_address as location,
-                a.daily_status,
-                a.gps_status,
-                a.check_in_method,
-                a.check_out_method,
-                DATE(a.check_in_time) as attendance_date
-            FROM attendance a
-            JOIN employees e ON a.employee_id = e.id
-            WHERE DATE(a.check_in_time) BETWEEN $1 AND $2
-              AND ($3::UUID IS NULL OR e.supervisor_id = $3)
-            ORDER BY a.check_in_time DESC
-        `;
-
-        const result = await pool.query(attendanceQuery, [
-            startDate,
-            endDate,
-            isManager ? managerEmployeeId : null
-        ]);
-
-        // Get total active employees
-        const totalEmployeesQuery = isManager
-            ? 'SELECT COUNT(*) as total FROM employees WHERE status = $1 AND supervisor_id = $2'
-            : 'SELECT COUNT(*) as total FROM employees WHERE status = $1';
-
-        const totalEmployeesParams = isManager ? ['active', managerEmployeeId] : ['active'];
-        const totalEmployeesResult = await pool.query(totalEmployeesQuery, totalEmployeesParams);
-        const totalEmployees = parseInt(totalEmployeesResult.rows[0]?.total || 0);
-
-        // Calculate final status for each record
-        const records = result.rows.map(row => {
-            let finalStatus = row.daily_status || 'Present';
-            const checkOutTime = row.check_out_time;
-            const checkInTime = row.check_in_time;
-
-            // Determine status based on logic
-            if (!checkOutTime) {
-                // Check if shift is over (assuming 8-hour shift from check-in or past 5 PM)
-                const now = new Date();
-                const checkIn = new Date(checkInTime);
-                const hoursElapsed = (now - checkIn) / (1000 * 60 * 60);
-                const currentHour = now.getHours();
-
-                if (hoursElapsed > 9 || currentHour >= 17) {
-                    finalStatus = 'Missing Check-out';
-                } else {
-                    finalStatus = 'In Progress';
-                }
-            } else if (isEarlyCheckout(checkOutTime)) {
-                finalStatus = row.daily_status === 'Late' ? 'Late' : 'Early Leave';
-            }
-
-            return {
-                id: row.id,
-                employeeId: row.employee_id,
-                employeeName: row.employee_name,
-                employeeCode: row.employee_code,
-                avatarUrl: row.avatar_url,
-                checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
-                checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
-                attendanceType: row.attendance_type || 'Office',
-                location: row.location || '-',
-                status: finalStatus,
-                gpsStatus: row.gps_status,
-                checkInMethod: row.check_in_method,
-                checkOutMethod: row.check_out_method,
-                date: row.attendance_date
-            };
-        });
-
-        // Apply filters
-        let filteredRecords = records;
-        if (location && location !== 'All Locations') {
-            filteredRecords = filteredRecords.filter(r => r.location.includes(location));
-        }
-        if (status && status !== 'All Status') {
-            filteredRecords = filteredRecords.filter(r => r.status === status);
-        }
-        if (search) {
-            const searchLower = search.toLowerCase();
-            filteredRecords = filteredRecords.filter(r =>
-                r.employeeName.toLowerCase().includes(searchLower) ||
-                r.employeeCode.toLowerCase().includes(searchLower)
-            );
-        }
-
-        // Calculate statistics for pie chart
-        const presentCount = filteredRecords.filter(r => r.status === 'Present').length;
-        const lateCount = filteredRecords.filter(r => r.status === 'Late').length;
-        const absentCount = filteredRecords.filter(r => r.status === 'Absent').length;
-        const missingCheckoutCount = filteredRecords.filter(r => r.status === 'Missing Check-out').length;
-        const earlyLeaveCount = filteredRecords.filter(r => r.status === 'Early Leave').length;
-        const inProgressCount = filteredRecords.filter(r => r.status === 'In Progress').length;
-
-        // Calculate daily attendance for bar chart (last 7 days)
-        const dailyStats = {};
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-        // Initialize last 7 days
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-            const dayName = days[date.getDay()];
-            dailyStats[dayName] = { present: 0, late: 0, absent: 0 };
-        }
-
-        // Fill in data from records
-        filteredRecords.forEach(record => {
-            const recordDate = new Date(record.date);
-            const dayName = days[recordDate.getDay()];
-            if (dailyStats[dayName]) {
-                if (record.status === 'Present') {
-                    dailyStats[dayName].present++;
-                } else if (record.status === 'Late') {
-                    dailyStats[dayName].late++;
-                } else if (record.status === 'Absent') {
-                    dailyStats[dayName].absent++;
-                }
-            }
-        });
-
-        // Get unique locations for filter dropdown
-        const locationsResult = await pool.query('SELECT DISTINCT name FROM locations WHERE status = $1', ['active']);
-        const locations = locationsResult.rows.map(r => r.name);
-
-        res.status(200).json({
-            status: 'success',
-            records: filteredRecords,
-            stats: {
-                total: filteredRecords.length,
-                present: presentCount,
-                late: lateCount,
-                absent: absentCount,
-                missingCheckout: missingCheckoutCount,
-                earlyLeave: earlyLeaveCount,
-                inProgress: inProgressCount,
-                // Percentages for pie chart
-                presentPercent: filteredRecords.length > 0 ? Math.round((presentCount / filteredRecords.length) * 100) : 0,
-                latePercent: filteredRecords.length > 0 ? Math.round((lateCount / filteredRecords.length) * 100) : 0,
-                absentPercent: filteredRecords.length > 0 ? Math.round((absentCount / filteredRecords.length) * 100) : 0,
-                missingCheckoutPercent: filteredRecords.length > 0 ? Math.round((missingCheckoutCount / filteredRecords.length) * 100) : 0
-            },
-            dailyStats: dailyStats,
-            locations: locations,
-            dateRange: { from: startDate, to: endDate }
-        });
-    } catch (err) {
-        console.error('Error fetching attendance reports:', err);
-        res.status(500).json({ message: 'An error occurred while fetching attendance reports. Please try again.' });
-    }
-};
-
-/**
- * Get team attendance for manager/supervisor view
- * Shows attendance only for employees where supervisor_id = logged-in user's employee_id
- */
-exports.getTeamAttendance = async (req, res) => {
-    try {
-        const { date, location, status, search } = req.query;
-        const targetDate = date || new Date().toISOString().split('T')[0];
-        const userId = req.user.id;
-
-        // Get the manager's employee_id
-        const managerResult = await pool.query('SELECT id FROM employees WHERE user_id = $1', [userId]);
-        if (managerResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Manager employee record not found' });
-        }
-        const managerEmployeeId = managerResult.rows[0].id;
-
-        // Get team members (employees where supervisor_id = manager's employee_id)
-        const teamMembersResult = await pool.query(
-            'SELECT id, full_name, employee_code FROM employees WHERE supervisor_id = $1 AND status = $2',
-            [managerEmployeeId, 'active']
-        );
-        const teamMemberIds = teamMembersResult.rows.map(e => e.id);
-        const totalTeamMembers = teamMembersResult.rows.length;
-
-        if (totalTeamMembers === 0) {
-            return res.status(200).json({
-                status: 'success',
-                records: [],
-                stats: {
-                    presentToday: 0,
-                    absentToday: 0,
-                    lateArrivals: 0
-                }
-            });
-        }
-
-        // Get attendance records for the specified date for team members only
-        const attendanceQuery = `
-            SELECT 
-                a.id,
-                a.employee_id,
-                e.full_name as employee_name,
-                e.employee_code,
-                e.avatar_url,
-                a.check_in_time,
-                a.check_out_time,
-                a.work_type as attendance_type,
-                a.location_address as location,
-                a.daily_status as status,
-                a.gps_status
-            FROM attendance a
-            JOIN employees e ON a.employee_id = e.id
-            WHERE DATE(a.check_in_time) = $1
-              AND e.supervisor_id = $2
-              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address = $3)
-              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
-              AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
-            ORDER BY a.check_in_time DESC
-        `;
-
-        const result = await pool.query(attendanceQuery, [
-            targetDate,
-            managerEmployeeId,
-            location || null,
-            status || null,
+        // Get attendance records for the date range
+        const result = await pool.query(attendanceQueries.getAttendanceReportsQuery, [
+            from || null,
+            to || null,
+            location && location !== 'All Locations' ? location : null,
+            status && status !== 'All Status' ? status : null,
             search || null
         ]);
-
-        // Calculate stats (based on filtered results for the specific table view)
-        const presentCount = result.rows.filter(r => r.status === 'Present' || r.status === 'Late').length;
-        const lateCount = result.rows.filter(r => r.status === 'Late').length;
-        const absentCount = Math.max(0, totalTeamMembers - presentCount);
 
         // Format records for frontend
         const records = result.rows.map(row => ({
@@ -735,27 +461,22 @@ exports.getTeamAttendance = async (req, res) => {
             employeeName: row.employee_name,
             employeeCode: row.employee_code,
             avatarUrl: row.avatar_url,
-            checkInAt: row.check_in_time ? new Date(row.check_in_time).toISOString() : null,
-            checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
+            checkInAt: row.check_in_time,
+            checkOutAt: row.check_out_time,
             attendanceType: row.attendance_type || 'Office',
             location: row.location || '-',
-            status: row.check_out_time ? row.status : (row.status === 'Present' || row.status === 'Late' ? 'In progress' : row.status),
+            status: row.status,
             gpsStatus: row.gps_status,
-            gpsVerified: row.gps_status === 'Verified' || row.gps_status === 'Suspicious'
+            date: row.date
         }));
 
         res.status(200).json({
             status: 'success',
-            records: records,
-            stats: {
-                presentToday: presentCount,
-                absentToday: absentCount,
-                lateArrivals: lateCount
-            }
+            records: records
         });
     } catch (err) {
-        console.error('Error fetching team attendance:', err);
-        res.status(500).json({ message: 'An error occurred while fetching team attendance. Please try again.' });
+        console.error('Error fetching attendance reports:', err);
+        res.status(500).json({ message: 'Error fetching attendance reports', error: err.message });
     }
 };
 
@@ -765,36 +486,6 @@ exports.getTeamAttendance = async (req, res) => {
 exports.deleteAttendance = async (req, res) => {
     try {
         const { id } = req.params;
-        const isManager = req.user.role_name === 'Manager';
-        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
-
-        // Authorization check
-        const recordResult = await pool.query(`
-            SELECT a.*, e.supervisor_id 
-            FROM attendance a 
-            JOIN employees e ON a.employee_id = e.id 
-            WHERE a.id = $1
-        `, [id]);
-
-        if (recordResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Attendance record not found' });
-        }
-
-        const record = recordResult.rows[0];
-
-        if (isManager && record.supervisor_id !== req.user.employee_id) {
-            return res.status(403).json({
-                status: 'fail',
-                message: 'Access Denied: You can only delete attendance records for your team.'
-            });
-        }
-
-        if (!isAdmin && !isManager) {
-            return res.status(403).json({
-                status: 'fail',
-                message: 'Access Denied: You do not have permission to perform this action.'
-            });
-        }
 
         const result = await pool.query('DELETE FROM attendance WHERE id = $1 RETURNING *', [id]);
 
@@ -807,7 +498,7 @@ exports.deleteAttendance = async (req, res) => {
             message: 'Attendance record deleted successfully'
         });
     } catch (err) {
-        console.error('Error deleting attendance record:', err);
-        res.status(500).json({ message: 'An error occurred while deleting the attendance record. Please try again.' });
+        console.error('Error deleting attendance:', err);
+        res.status(500).json({ message: 'Error deleting attendance', error: err.message });
     }
 };
