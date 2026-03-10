@@ -18,7 +18,7 @@ exports.getLeaves = async (req, res) => {
                 lr.*, 
                 e.full_name as employee_name, 
                 e.avatar_url as employee_avatar,
-                p.name as position,
+                p.title as position,
                 d.name as department,
                 (lr.end_date - lr.start_date + 1) as total_days
             FROM leave_requests lr

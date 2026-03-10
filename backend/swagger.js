@@ -1233,7 +1233,9 @@ support_tickets (id, user_id, subject, category, message, status)
   },
   servers: [
     {
-      url: `${process.env.API_URL || 'http://localhost:5000'}/api/v1`,
+      url: process.env.NODE_ENV === 'production'
+        ? `${process.env.API_URL}/api/v1`
+        : `http://localhost:${process.env.PORT || 5000}/api/v1`,
       description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server',
     },
   ],
