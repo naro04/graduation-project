@@ -41,11 +41,11 @@ exports.getAllActivities = async (req, res) => {
         }
 
         const query = `
-            SELECT 
+            SELECT
                 a.*,
                 a.name as activity_name,
                 a.activity_type as type,
-                p.name as project,
+                a.project_name as project,
                 e.first_name || ' ' || e.last_name as responsible_employee,
                 e.avatar_url as employee_photo,
                 l.name as location,
@@ -55,12 +55,11 @@ exports.getAllActivities = async (req, res) => {
                 ARRAY_AGG(DISTINCT emp.first_name || ' ' || emp.last_name) FILTER (WHERE emp.id IS NOT NULL) as team
             FROM activities a
             LEFT JOIN locations l ON a.location_id = l.id
-            LEFT JOIN projects p ON a.project_id = p.id
             LEFT JOIN employees e ON a.employee_id = e.id
             LEFT JOIN activity_employees ae ON a.id = ae.activity_id
             LEFT JOIN employees emp ON ae.employee_id = emp.id
             ${whereClause}
-            GROUP BY a.id, p.name, e.first_name, e.last_name, e.avatar_url, l.name, l.latitude, l.longitude
+            GROUP BY a.id, e.first_name, e.last_name, e.avatar_url, l.name, l.latitude, l.longitude
             ORDER BY a.start_date DESC, a.created_at DESC
         `;
 
@@ -107,7 +106,7 @@ exports.getActivityById = async (req, res) => {
 
 exports.createLocationActivity = async (req, res) => {
     try {
-        const { name, activity_type, responsible_employee_id, location_id, project_id, employee_ids, activity_days, dates, description, images } = req.body;
+        const { name, activity_type, responsible_employee_id, location_id, project_name, employee_ids, activity_days, dates, description, images } = req.body;
 
         if (!name) {
             return res.status(400).json({ message: 'Activity name is required' });
@@ -131,22 +130,6 @@ exports.createLocationActivity = async (req, res) => {
 
         const start_date = dates[0];
         const end_date = dates[dates.length - 1];
-
-        // Create activity
-        let final_project_id = project_id;
-
-        // If project_id is provided as a string (name), try to find or create the project
-        if (project_id && typeof project_id === 'string' && project_id.length > 0) {
-            // Check if it's a valid UUID. If not, it's a name.
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            if (!uuidRegex.test(project_id)) {
-                const projectResult = await pool.query(
-                    'INSERT INTO projects (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id',
-                    [project_id]
-                );
-                final_project_id = projectResult.rows[0].id;
-            }
-        }
 
         // 1. Validate responsible employee is a Manager
         if (responsible_employee_id) {
@@ -176,7 +159,7 @@ exports.createLocationActivity = async (req, res) => {
                 activity_days || dates.length,
                 'Active',
                 description || null,
-                final_project_id || null,
+                project_name || null,
                 images || []
             ]);
 
@@ -227,7 +210,7 @@ exports.createLocationActivity = async (req, res) => {
 exports.updateLocationActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
-        const { name, activity_type, responsible_employee_id, location_id, project_id, employee_ids, activity_days, dates, description, images } = req.body;
+        const { name, activity_type, responsible_employee_id, location_id, project_name, employee_ids, activity_days, dates, description, images } = req.body;
 
         console.log('Update activity request:', {
             activity_id,
@@ -235,7 +218,7 @@ exports.updateLocationActivity = async (req, res) => {
             activity_type,
             responsible_employee_id,
             location_id,
-            project_id,
+            project_name,
             employee_ids,
             employee_ids_type: typeof employee_ids,
             employee_ids_isArray: Array.isArray(employee_ids),
@@ -264,21 +247,6 @@ exports.updateLocationActivity = async (req, res) => {
         const end_date = dates ? dates[dates.length - 1] : existingActivity.end_date;
         const final_activity_days = dates ? dates.length : (activity_days || existingActivity.activity_days);
 
-        // Update activity
-        let final_project_id = project_id;
-
-        // If project_id is provided as a string (name), try to find or create the project
-        if (project_id && typeof project_id === 'string' && project_id.length > 0) {
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            if (!uuidRegex.test(project_id)) {
-                const projectResult = await pool.query(
-                    'INSERT INTO projects (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id',
-                    [project_id]
-                );
-                final_project_id = projectResult.rows[0].id;
-            }
-        }
-
         // Validate responsible employee if changed
         if (responsible_employee_id) {
             const respEmpResult = await pool.query(`
@@ -306,7 +274,7 @@ exports.updateLocationActivity = async (req, res) => {
                 end_date,
                 final_activity_days,
                 description !== undefined ? description : existingActivity.description,
-                final_project_id || existingActivity.project_id || null,
+                project_name !== undefined ? project_name : existingActivity.project_name || null,
                 images || existingActivity.images || [],
                 activity_id
             ]);
@@ -491,8 +459,7 @@ exports.getTeamActivities = async (req, res) => {
                 a.id,
                 a.name,
                 a.activity_type as type,
-                a.project_id,
-                p.name as project,
+                a.project_name as project,
                 a.employee_id,
                 e.first_name || ' ' || e.last_name as responsible_employee,
                 a.location_id,
@@ -512,7 +479,6 @@ exports.getTeamActivities = async (req, res) => {
                 a.created_at,
                 a.updated_at
             FROM activities a
-            LEFT JOIN projects p ON a.project_id = p.id
             LEFT JOIN employees e ON a.employee_id = e.id
             LEFT JOIN locations l ON a.location_id = l.id
             LEFT JOIN activity_employees ae ON a.id = ae.activity_id
@@ -565,11 +531,9 @@ exports.getActivityReports = async (req, res) => {
         const recordsResult = await pool.query(`
             SELECT DISTINCT
                 a.*,
-                p.name as project_name,
                 e.first_name || ' ' || e.last_name as responsible_employee,
                 l.name as location_name
             FROM activities a
-            LEFT JOIN projects p ON a.project_id = p.id
             LEFT JOIN employees e ON a.employee_id = e.id
             LEFT JOIN locations l ON a.location_id = l.id
             LEFT JOIN activity_employees ae ON a.id = ae.activity_id
