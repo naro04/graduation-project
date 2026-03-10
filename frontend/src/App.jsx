@@ -3,6 +3,15 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { getEffectiveRole } from './services/auth.js'
 import LoginPage from './components/LoginPage.jsx'
 import RegisterPage from './components/RegisterPage.jsx'
+
+// Activities ليس له صفحة مستقلة لـ manager / fieldEmployee / officer — نوجّه لأول فرعي أو الداشبورد
+function ActivitiesOrRedirect() {
+  const role = getEffectiveRole('superAdmin');
+  if (role === 'manager') return <Navigate to="/approvals/activities" replace />;
+  if (role === 'fieldEmployee') return <Navigate to="/activities/log" replace />;
+  if (role === 'officer') return <Navigate to="/dashboard" replace />;
+  return <ActivitiesPage userRole="superAdmin" />;
+}
 import ForgotPasswordPage from './components/ForgotPasswordPage.jsx'
 import DashboardPage from './components/DashboardPage.jsx'
 import ProfilePageWithSidebar from './components/ProfilePageWithSidebar.jsx'
@@ -38,15 +47,6 @@ import NotificationsSettingsPage from './components/NotificationsSettingsPage.js
 import APIKeysPage from './components/APIKeysPage.jsx'
 import HelpCenterPage from './components/HelpCenterPage.jsx'
 import SupportPage from './components/SupportPage.jsx'
-
-// Activities ليس له صفحة مستقلة لـ manager / fieldEmployee / officer — نوجّه لأول فرعي أو الداشبورد
-function ActivitiesOrRedirect() {
-  const role = getEffectiveRole('superAdmin');
-  if (role === 'manager') return <Navigate to="/approvals/activities" replace />;
-  if (role === 'fieldEmployee') return <Navigate to="/activities/log" replace />;
-  if (role === 'officer') return <Navigate to="/dashboard" replace />;
-  return <ActivitiesPage userRole="superAdmin" />;
-}
 
 function App() {
   return (
