@@ -252,7 +252,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS activities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   employee_id UUID REFERENCES employees(id) ON DELETE CASCADE, -- Nullable for location activities
-  project_id UUID REFERENCES projects(id), -- Link to project
+  project_name TEXT, -- Free-text project name
   name TEXT NOT NULL, -- Activity title/name
   activity_type TEXT,
   description TEXT,
