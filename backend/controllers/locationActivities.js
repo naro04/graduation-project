@@ -108,6 +108,25 @@ exports.createLocationActivity = async (req, res) => {
     try {
         const { name, activity_type, responsible_employee_id, location_id, project_name, employee_ids, activity_days, dates, description, images } = req.body;
 
+        let final_project_name = project_name;
+        let final_images = images || [];
+        let final_description = description;
+
+        // The frontend bundles projectName and activityImageUrls into the description field separated by newlines
+        if (description && !project_name) {
+            const lines = description.split('\n');
+            const urlLines = lines.filter(line => line.startsWith('http') || line.startsWith('https') || line.startsWith('data:image'));
+            const textLines = lines.filter(line => !line.startsWith('http') && !line.startsWith('https') && !line.startsWith('data:image') && line.trim() !== '');
+            
+            if (textLines.length > 0) {
+                final_project_name = textLines.join('\n');
+            }
+            if (urlLines.length > 0) {
+                final_images = urlLines;
+            }
+            final_description = null; // Since there is no actual description field in the UI
+        }
+
         if (!name) {
             return res.status(400).json({ message: 'Activity name is required' });
         }
@@ -158,9 +177,9 @@ exports.createLocationActivity = async (req, res) => {
                 end_date,
                 activity_days || dates.length,
                 'Active',
-                description || null,
-                project_name || null,
-                images || []
+                final_description || null,
+                final_project_name || null,
+                final_images || []
             ]);
 
             const activity = activityResult.rows[0];
@@ -211,6 +230,24 @@ exports.updateLocationActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
         const { name, activity_type, responsible_employee_id, location_id, project_name, employee_ids, activity_days, dates, description, images } = req.body;
+
+        let final_project_name = project_name;
+        let final_images = images || [];
+        let final_description = description;
+
+        if (description && !project_name) {
+            const lines = description.split('\n');
+            const urlLines = lines.filter(line => line.startsWith('http') || line.startsWith('https') || line.startsWith('data:image'));
+            const textLines = lines.filter(line => !line.startsWith('http') && !line.startsWith('https') && !line.startsWith('data:image') && line.trim() !== '');
+            
+            if (textLines.length > 0) {
+                final_project_name = textLines.join('\n');
+            }
+            if (urlLines.length > 0) {
+                final_images = urlLines;
+            }
+            final_description = null;
+        }
 
         console.log('Update activity request:', {
             activity_id,
@@ -273,9 +310,9 @@ exports.updateLocationActivity = async (req, res) => {
                 start_date,
                 end_date,
                 final_activity_days,
-                description !== undefined ? description : existingActivity.description,
-                project_name !== undefined ? project_name : existingActivity.project_name || null,
-                images || existingActivity.images || [],
+                final_description !== undefined ? final_description : existingActivity.description,
+                final_project_name !== undefined ? final_project_name : existingActivity.project_name || null,
+                final_images.length > 0 ? final_images : existingActivity.images || [],
                 activity_id
             ]);
 
