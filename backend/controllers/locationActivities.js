@@ -112,19 +112,20 @@ exports.createLocationActivity = async (req, res) => {
         let final_images = images || [];
         let final_description = description;
 
-        // The frontend bundles projectName and activityImageUrls into the description field separated by newlines
+        // The frontend bundles projectName and activityImageUrls into the description field separated by newlines.
+        // We need to split them: text → project_name + description, URLs → images.
+        // The frontend's ActivityDetailsModal reads 'description' for display and 'images' for photos.
         if (description && !project_name) {
             const lines = description.split('\n');
             const urlLines = lines.filter(line => line.startsWith('http') || line.startsWith('https') || line.startsWith('data:image'));
             const textLines = lines.filter(line => !line.startsWith('http') && !line.startsWith('https') && !line.startsWith('data:image') && line.trim() !== '');
             
-            if (textLines.length > 0) {
-                final_project_name = textLines.join('\n');
-            }
+            const extractedText = textLines.length > 0 ? textLines.join('\n') : null;
+            final_project_name = extractedText;
+            final_description = extractedText; // Keep text in description for the details modal
             if (urlLines.length > 0) {
                 final_images = urlLines;
             }
-            final_description = null; // Since there is no actual description field in the UI
         }
 
         if (!name) {
@@ -240,13 +241,12 @@ exports.updateLocationActivity = async (req, res) => {
             const urlLines = lines.filter(line => line.startsWith('http') || line.startsWith('https') || line.startsWith('data:image'));
             const textLines = lines.filter(line => !line.startsWith('http') && !line.startsWith('https') && !line.startsWith('data:image') && line.trim() !== '');
             
-            if (textLines.length > 0) {
-                final_project_name = textLines.join('\n');
-            }
+            const extractedText = textLines.length > 0 ? textLines.join('\n') : null;
+            final_project_name = extractedText;
+            final_description = extractedText; // Keep text in description for the details modal
             if (urlLines.length > 0) {
                 final_images = urlLines;
             }
-            final_description = null;
         }
 
         console.log('Update activity request:', {
