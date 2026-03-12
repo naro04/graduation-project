@@ -9,10 +9,8 @@
     "db:build": "node database/data/build_schema.js",
     "db:seed": "node database/data/seed_data.js",
     "db:migrate": "node database/migrations/run_migration.js",
-    "db:setup:railway": "node database/setup_railway.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "db:setup:railway": "node database/setup_railway.js"
+
   },
   "keywords": [],
   "author": "",
@@ -37,7 +35,5 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "supertest": "^6.3.3"
   }
 }
