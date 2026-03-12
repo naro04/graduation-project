@@ -351,16 +351,19 @@ exports.getTeamLeaves = async (req, res) => {
 exports.getLeaveReports = async (req, res) => {
     try {
         const { dateFrom, dateTo, type, status, search } = req.query;
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = isManager ? req.user.employee_id : null;
 
         const [distributionRes, trendRes, recordsRes] = await Promise.all([
-            pool.query(leaveQueries.getLeaveDistributionQuery),
-            pool.query(leaveQueries.getLeaveTrendQuery),
+            pool.query(leaveQueries.getLeaveDistributionQuery, [managerEmployeeId]),
+            pool.query(leaveQueries.getLeaveTrendQuery, [managerEmployeeId]),
             pool.query(leaveQueries.getDetailedLeaveReportQuery, [
                 dateFrom || null,
                 dateTo || null,
                 type && type !== 'All Leave Type' ? type : null,
                 status && status !== 'All Status' ? status : null,
-                search || null
+                search || null,
+                managerEmployeeId
             ])
         ]);
 

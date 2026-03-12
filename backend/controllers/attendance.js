@@ -598,21 +598,32 @@ exports.getAttendanceReports = async (req, res) => {
         // Calculate statistics for pie chart
         const presentCount = filteredRecords.filter(r => r.status === 'Present').length;
         const lateCount = filteredRecords.filter(r => r.status === 'Late').length;
-        const absentCount = filteredRecords.filter(r => r.status === 'Absent').length;
         const missingCheckoutCount = filteredRecords.filter(r => r.status === 'Missing Check-out').length;
         const earlyLeaveCount = filteredRecords.filter(r => r.status === 'Early Leave').length;
         const inProgressCount = filteredRecords.filter(r => r.status === 'In Progress').length;
+        
+        // Calculate days in range for total expected shifts
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const diffTime = Math.abs(end - start);
+        const daysInRange = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        // Total base for percentages: total active employees * days in range
+        const totalExpectedShifts = totalEmployees * daysInRange;
+        const totalActualRecords = presentCount + lateCount + missingCheckoutCount + earlyLeaveCount + inProgressCount;
+        const absentCount = Math.max(0, totalExpectedShifts - totalActualRecords);
 
-        // Calculate daily attendance for bar chart (last 7 days)
+        // Calculate daily attendance for bar chart
         const dailyStats = {};
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-        // Initialize last 7 days
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date();
+        // Initialize based on the range or last 7 days if range is too large
+        const barChartDays = Math.min(daysInRange, 7);
+        for (let i = barChartDays - 1; i >= 0; i--) {
+            const date = new Date(endDate);
             date.setDate(date.getDate() - i);
             const dayName = days[date.getDay()];
-            dailyStats[dayName] = { present: 0, late: 0, absent: 0 };
+            dailyStats[dayName] = { present: 0, late: 0, absent: totalEmployees }; // Start with everyone absent
         }
 
         // Fill in data from records
@@ -620,12 +631,15 @@ exports.getAttendanceReports = async (req, res) => {
             const recordDate = new Date(record.date);
             const dayName = days[recordDate.getDay()];
             if (dailyStats[dayName]) {
-                if (record.status === 'Present') {
+                if (record.status === 'Present' || record.status === 'Early Leave' || record.status === 'In Progress') {
                     dailyStats[dayName].present++;
+                    dailyStats[dayName].absent = Math.max(0, dailyStats[dayName].absent - 1);
                 } else if (record.status === 'Late') {
                     dailyStats[dayName].late++;
-                } else if (record.status === 'Absent') {
-                    dailyStats[dayName].absent++;
+                    dailyStats[dayName].absent = Math.max(0, dailyStats[dayName].absent - 1);
+                } else if (record.status === 'Missing Check-out') {
+                    dailyStats[dayName].present++; // Count as present for the bar chart simplified view
+                    dailyStats[dayName].absent = Math.max(0, dailyStats[dayName].absent - 1);
                 }
             }
         });
@@ -638,18 +652,18 @@ exports.getAttendanceReports = async (req, res) => {
             status: 'success',
             records: filteredRecords,
             stats: {
-                total: filteredRecords.length,
-                present: presentCount,
+                total: totalExpectedShifts,
+                present: presentCount + earlyLeaveCount + inProgressCount,
                 late: lateCount,
                 absent: absentCount,
                 missingCheckout: missingCheckoutCount,
                 earlyLeave: earlyLeaveCount,
                 inProgress: inProgressCount,
-                // Percentages for pie chart
-                presentPercent: filteredRecords.length > 0 ? Math.round((presentCount / filteredRecords.length) * 100) : 0,
-                latePercent: filteredRecords.length > 0 ? Math.round((lateCount / filteredRecords.length) * 100) : 0,
-                absentPercent: filteredRecords.length > 0 ? Math.round((absentCount / filteredRecords.length) * 100) : 0,
-                missingCheckoutPercent: filteredRecords.length > 0 ? Math.round((missingCheckoutCount / filteredRecords.length) * 100) : 0
+                // Percentages for pie chart (base = totalExpectedShifts)
+                presentPercent: totalExpectedShifts > 0 ? Math.round(((presentCount + earlyLeaveCount + inProgressCount) / totalExpectedShifts) * 100) : 0,
+                latePercent: totalExpectedShifts > 0 ? Math.round((lateCount / totalExpectedShifts) * 100) : 0,
+                absentPercent: totalExpectedShifts > 0 ? Math.round((absentCount / totalExpectedShifts) * 100) : 0,
+                missingCheckoutPercent: totalExpectedShifts > 0 ? Math.round((missingCheckoutCount / totalExpectedShifts) * 100) : 0
             },
             dailyStats: dailyStats,
             locations: locations,
