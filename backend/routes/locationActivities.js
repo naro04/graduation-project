@@ -26,6 +26,7 @@ router.route('/:activity_id')
     .get(restrictTo('manage_locations', 'manage_employees'), activityController.getActivityById)
     .put(restrictTo('manage_locations'), activityController.updateLocationActivity)
     .patch(restrictTo('manage_locations'), activityController.updateLocationActivity)
+
     .delete(restrictTo('manage_locations'), activityController.deleteLocationActivity);
 
 module.exports = router;
