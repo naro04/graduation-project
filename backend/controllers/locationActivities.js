@@ -606,4 +606,47 @@ exports.getActivityReports = async (req, res) => {
     }
 };
 
+/**
+ * Assign team members to an activity (bulk)
+ * POST /api/v1/location-activities/:activity_id/assign
+ */
+exports.assignTeamToActivity = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { activity_id } = req.params;
+        const { employee_ids } = req.body;
+
+        if (!employee_ids || !Array.isArray(employee_ids) || employee_ids.length === 0) {
+            return res.status(400).json({ message: 'employee_ids must be a non-empty array' });
+        }
+
+        // 1. Verify activity exists
+        const activityRes = await client.query('SELECT id FROM activities WHERE id = $1', [activity_id]);
+        if (activityRes.rowCount === 0) {
+            return res.status(404).json({ message: 'Activity not found' });
+        }
+
+        await client.query('BEGIN');
+
+        // 2. Assign employees
+        for (const employee_id of employee_ids) {
+            await client.query(activityQueries.assignEmployeesToActivityQuery, [activity_id, employee_id]);
+        }
+
+        await client.query('COMMIT');
+
+        res.status(200).json({
+            status: 'success',
+            message: `Successfully assigned ${employee_ids.length} employee(s) to activity`
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error in assignTeamToActivity:', err);
+        res.status(500).json({ message: 'Error assigning team members', error: err.message });
+    } finally {
+        client.release();
+    }
+};
+
 
