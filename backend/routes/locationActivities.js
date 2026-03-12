@@ -15,6 +15,8 @@ router.get('/team', activityController.getTeamActivities);
 
 router.get('/reports', restrictTo('manage_locations'), activityController.getActivityReports);
 
+router.post('/:activity_id/assign', restrictTo('manage_locations', 'manage_employees'), activityController.assignTeamToActivity);
+
 router.get('/:activity_id/employees', restrictTo('manage_locations', 'manage_employees'), activityController.getActivityEmployees);
 
 router.patch('/:activity_id/approve', restrictTo('manage_locations'), activityController.approveActivity);
