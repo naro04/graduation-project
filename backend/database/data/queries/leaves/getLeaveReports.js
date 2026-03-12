@@ -1,20 +1,24 @@
 const getLeaveDistributionQuery = `
   SELECT 
-    leave_type as type,
+    lr.leave_type as type,
     COUNT(*) as count
-  FROM leave_requests
-  WHERE status = 'approved'
-  GROUP BY leave_type;
+  FROM leave_requests lr
+  JOIN employees e ON lr.employee_id = e.id
+  WHERE lr.status = 'approved'
+    AND ($1::UUID IS NULL OR e.supervisor_id = $1)
+  GROUP BY lr.leave_type;
 `;
 
 const getLeaveTrendQuery = `
   SELECT 
-    TO_CHAR(DATE_TRUNC('month', created_at), 'Mon') as month,
+    TO_CHAR(DATE_TRUNC('month', lr.created_at), 'Mon') as month,
     COUNT(*) as count
-  FROM leave_requests
-  WHERE created_at >= DATE_TRUNC('year', CURRENT_DATE)
-  GROUP BY DATE_TRUNC('month', created_at), TO_CHAR(DATE_TRUNC('month', created_at), 'Mon')
-  ORDER BY DATE_TRUNC('month', created_at);
+  FROM leave_requests lr
+  JOIN employees e ON lr.employee_id = e.id
+  WHERE lr.created_at >= DATE_TRUNC('year', CURRENT_DATE)
+    AND ($1::UUID IS NULL OR e.supervisor_id = $1)
+  GROUP BY DATE_TRUNC('month', lr.created_at), TO_CHAR(DATE_TRUNC('month', lr.created_at), 'Mon')
+  ORDER BY DATE_TRUNC('month', lr.created_at);
 `;
 
 const getDetailedLeaveReportQuery = `
@@ -35,6 +39,7 @@ const getDetailedLeaveReportQuery = `
     AND ($3::TEXT IS NULL OR lr.leave_type = $3::TEXT)
     AND ($4::TEXT IS NULL OR lr.status = $4::TEXT)
     AND ($5::TEXT IS NULL OR e.full_name ILIKE '%' || $5::TEXT || '%')
+    AND ($6::UUID IS NULL OR e.supervisor_id = $6)
   ORDER BY lr.created_at DESC;
 `;
 
@@ -43,3 +48,4 @@ module.exports = {
     getLeaveTrendQuery,
     getDetailedLeaveReportQuery
 };
+

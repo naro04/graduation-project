@@ -23,6 +23,7 @@ const helpRouter = require('./help');
 const supportRouter = require('./support');
 const systemSettingsRouter = require('./systemSettings');
 const projectsRouter = require('./projects');
+const reportsRouter = require('./reports');
 
 // Routes that don't require active status (accessible to inactive users)
 router.use('/profile', profileRouter);
@@ -57,5 +58,6 @@ router.use('/notifications', notificationsRouter);
 router.use('/api-keys', apiKeyRouter);
 router.use('/system-settings', systemSettingsRouter);
 router.use('/projects', projectsRouter);
+router.use('/reports', reportsRouter);
 
 module.exports = router;
