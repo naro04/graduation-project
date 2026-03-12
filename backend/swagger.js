@@ -23,7 +23,7 @@ const paths = {
       summary: 'User Login',
       requestBody: {
         required: true,
-        content: { 'application/json': { schema: { type: 'object', properties: { email: { type: 'string' }, password: { type: 'string' }, rememberMe: { type: 'boolean' } } } } },
+        content: { 'application/json': { schema: { type: 'object', properties: { email: { type: 'string' }, emailOrId: { type: 'string' }, identifier: { type: 'string' }, password: { type: 'string' }, rememberMe: { type: 'boolean' } } } } },
       },
       responses: {
         200: {
@@ -40,7 +40,7 @@ const paths = {
       summary: 'User Registration',
       requestBody: {
         required: true,
-        content: { 'application/json': { schema: { type: 'object', properties: { firstName: { type: 'string' }, lastName: { type: 'string' }, email: { type: 'string' }, password: { type: 'string' }, phone: { type: 'string' }, privacyPolicyAgreement: { type: 'boolean' } } } } },
+        content: { 'application/json': { schema: { type: 'object', properties: { first_name: { type: 'string' }, last_name: { type: 'string' }, name: { type: 'string' }, email: { type: 'string' }, password: { type: 'string' }, confirm_password: { type: 'string' }, phone: { type: 'string' }, roleId: { type: 'string', format: 'uuid' }, privacyPolicyAgreement: { type: 'boolean' } } } } },
       },
       responses: {
         201: {
@@ -303,6 +303,9 @@ const paths = {
     post: {
       tags: ['Departments'],
       summary: 'Create a department',
+      requestBody: {
+        content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive'] } } } } }
+      },
       responses: { 201: { description: 'Created' } }
     }
   },
@@ -354,6 +357,9 @@ const paths = {
     post: {
       tags: ['Employees'],
       summary: 'Create a new employee',
+      requestBody: {
+        content: { 'application/json': { schema: { type: 'object', properties: { first_name: { type: 'string' }, last_name: { type: 'string' }, full_name: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' }, department_id: { type: 'string', format: 'uuid' }, position_id: { type: 'string', format: 'uuid' }, role_id: { type: 'string', format: 'uuid' }, status: { type: 'string', enum: ['active', 'inactive'] }, user_id: { type: 'string', format: 'uuid' }, avatar_url: { type: 'string' } } } } }
+      },
       responses: { 201: { description: 'Created' } }
     }
   },
@@ -570,6 +576,9 @@ const paths = {
     post: {
       tags: ['Activities'],
       summary: 'Create activity',
+      requestBody: {
+        content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' }, activity_type: { type: 'string' }, responsible_employee_id: { type: 'string', format: 'uuid' }, location_id: { type: 'string', format: 'uuid' }, project_name: { type: 'string' }, employee_ids: { type: 'array', items: { type: 'string', format: 'uuid' } }, activity_days: { type: 'integer' }, dates: { type: 'array', items: { type: 'string', format: 'date' } }, description: { type: 'string' }, images: { type: 'array', items: { type: 'string' } } } } } }
+      },
       responses: { 201: { description: 'Created' } }
     }
   },
@@ -588,7 +597,7 @@ const paths = {
       parameters: [
         { name: 'date', in: 'query', schema: { type: 'string', format: 'date' }, description: 'Filter by date' },
         { name: 'status', in: 'query', schema: { type: 'string' }, description: 'Filter by implementation status' },
-        { name: 'approvalStatus', in: 'query', schema: { type: 'string' }, description: 'Filter by approval status' },
+        { name: 'approval_status', in: 'query', schema: { type: 'string' }, description: 'Filter by approval status' },
         { name: 'type', in: 'query', schema: { type: 'string' }, description: 'Filter by activity type' },
         { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search by employee name' }
       ],
@@ -668,7 +677,7 @@ const paths = {
       tags: ['Attendance'],
       summary: 'Record attendance check-in',
       requestBody: {
-        content: { 'application/json': { schema: { type: 'object', properties: { locationId: { type: 'string' }, method: { type: 'string', enum: ['GPS', 'QR', 'MANUAL'] } } } } }
+        content: { 'application/json': { schema: { type: 'object', properties: { latitude: { type: 'number' }, longitude: { type: 'number' }, location_address: { type: 'string' }, work_type: { type: 'string', enum: ['Office', 'Remote', 'Field'] }, manual_location_id: { type: 'string', format: 'uuid' }, check_in_method: { type: 'string', enum: ['GPS', 'Manual'] } } } } }
       },
       responses: { 200: { description: 'Checked in' } }
     }
@@ -677,6 +686,9 @@ const paths = {
     post: {
       tags: ['Attendance'],
       summary: 'Record attendance check-out',
+      requestBody: {
+        content: { 'application/json': { schema: { type: 'object', properties: { latitude: { type: 'number' }, longitude: { type: 'number' }, location_address: { type: 'string' }, manual_location_id: { type: 'string', format: 'uuid' }, check_out_method: { type: 'string', enum: ['GPS', 'Manual'] } } } } }
+      },
       responses: { 200: { description: 'Checked out' } }
     }
   },
@@ -757,7 +769,7 @@ const paths = {
       tags: ['Leaves'],
       summary: 'Submit a leave request',
       requestBody: {
-        content: { 'application/json': { schema: { type: 'object', properties: { leaveType: { type: 'string' }, startDate: { type: 'string', format: 'date' }, endDate: { type: 'string', format: 'date' }, reason: { type: 'string' } } } } }
+        content: { 'application/json': { schema: { type: 'object', properties: { employee_id: { type: 'string', format: 'uuid' }, leave_type: { type: 'string' }, start_date: { type: 'string', format: 'date' }, end_date: { type: 'string', format: 'date' }, reason: { type: 'string' }, document_url: { type: 'string' } } } } }
       },
       responses: { 201: { description: 'Leave requested' } },
     },
