@@ -590,8 +590,50 @@ exports.getActivityReports = async (req, res) => {
             isManager ? managerEmployeeId : null
         ]);
 
-        const trendResult = await pool.query(activityQueries.getCompletionTrendQuery);
-        const participantsResult = await pool.query(activityQueries.getParticipantsByTypeQuery);
+        let trendParams = [];
+        let trendWhereClause = "WHERE start_date >= date_trunc('year', CURRENT_DATE)";
+        
+        let participantsParams = [];
+        let participantsWhereClause = "WHERE implementation_status = 'Implemented'";
+
+        if (isManager) {
+            trendParams.push(managerEmployeeId);
+            trendWhereClause += ` AND (employee_id = $1 OR EXISTS (
+                SELECT 1 FROM activity_employees ae2 
+                JOIN employees e2 ON ae2.employee_id = e2.id 
+                WHERE ae2.activity_id = activities.id AND e2.supervisor_id = $1
+            ))`;
+
+            participantsParams.push(managerEmployeeId);
+            participantsWhereClause += ` AND (employee_id = $1 OR EXISTS (
+                SELECT 1 FROM activity_employees ae3 
+                JOIN employees e3 ON ae3.employee_id = e3.id 
+                WHERE ae3.activity_id = activities.id AND e3.supervisor_id = $1
+            ))`;
+        }
+
+        const trendQuery = `
+            SELECT 
+                TO_CHAR(date_trunc('month', start_date), 'Mon') as month,
+                COUNT(*) FILTER (WHERE implementation_status IN ('Planned', 'Implemented')) as planned,
+                COUNT(*) FILTER (WHERE implementation_status = 'Implemented') as implemented
+            FROM activities
+            ${trendWhereClause}
+            GROUP BY date_trunc('month', start_date)
+            ORDER BY date_trunc('month', start_date);
+        `;
+
+        const participantsQuery = `
+            SELECT 
+                activity_type as type,
+                SUM(attendees_count) as attendees
+            FROM activities
+            ${participantsWhereClause}
+            GROUP BY activity_type;
+        `;
+
+        const trendResult = await pool.query(trendQuery, trendParams);
+        const participantsResult = await pool.query(participantsQuery, participantsParams);
 
         res.status(200).json({
             status: 'success',
