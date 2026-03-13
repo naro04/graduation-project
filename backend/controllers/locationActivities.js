@@ -567,7 +567,25 @@ exports.getActivityReports = async (req, res) => {
 
         const recordsResult = await pool.query(`
             SELECT DISTINCT
-                a.*,
+                a.id,
+                a.name,
+                a.activity_type,
+                a.description,
+                a.start_date,
+                a.end_date,
+                a.implementation_status,
+                a.approval_status,
+                a.created_at,
+                a.project_name,
+                a.start_date as actual_date,
+                COALESCE((
+                    SELECT COUNT(DISTINCT att.employee_id)
+                    FROM attendance att
+                    WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = a.id)
+                      AND att.check_in_time::DATE >= a.start_date 
+                      AND att.check_in_time::DATE <= a.end_date 
+                      AND att.gps_status = 'Verified'
+                ), 0) as attendees_count,
                 e.first_name || ' ' || e.last_name as responsible_employee,
                 l.name as location_name
             FROM activities a
@@ -626,7 +644,16 @@ exports.getActivityReports = async (req, res) => {
         const participantsQuery = `
             SELECT 
                 activity_type as type,
-                SUM(attendees_count) as attendees
+                SUM(
+                  COALESCE((
+                      SELECT COUNT(DISTINCT att.employee_id)
+                      FROM attendance att
+                      WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = activities.id)
+                        AND att.check_in_time::DATE >= activities.start_date 
+                        AND att.check_in_time::DATE <= activities.end_date 
+                        AND att.gps_status = 'Verified'
+                  ), 0)
+                ) as attendees
             FROM activities
             ${participantsWhereClause}
             GROUP BY activity_type;
