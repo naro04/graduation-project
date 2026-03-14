@@ -579,7 +579,7 @@ exports.getActivityReports = async (req, res) => {
                 a.project_name,
                 a.start_date as actual_date,
                 COALESCE((
-                    SELECT COUNT(DISTINCT att.employee_id)
+                    SELECT CAST(COUNT(DISTINCT att.employee_id) AS INTEGER)
                     FROM attendance att
                     WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = a.id)
                       AND att.check_in_time::DATE >= a.start_date 
@@ -646,7 +646,7 @@ exports.getActivityReports = async (req, res) => {
                 activity_type as type,
                 SUM(
                   COALESCE((
-                      SELECT COUNT(DISTINCT att.employee_id)
+                      SELECT CAST(COUNT(DISTINCT att.employee_id) AS INTEGER)
                       FROM attendance att
                       WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = activities.id)
                         AND att.check_in_time::DATE >= activities.start_date 
