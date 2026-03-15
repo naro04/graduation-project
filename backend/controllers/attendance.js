@@ -420,7 +420,7 @@ exports.getDailyAttendance = async (req, res) => {
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) = $1
               AND ($2::UUID IS NULL OR e.supervisor_id = $2)
-              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address = $3)
+              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address ILIKE '%' || $3 || '%')
               AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
               AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
             ORDER BY a.check_in_time DESC
@@ -492,7 +492,7 @@ exports.getAttendanceReports = async (req, res) => {
         const isManager = req.user.role_name === 'Manager';
         const managerEmployeeId = req.user.employee_id;
 
-        // Get all attendance records in the date range
+        // Get all attendance records in the date range with SQL filtering
         const attendanceQuery = `
             SELECT 
                 a.id,
@@ -508,18 +508,52 @@ exports.getAttendanceReports = async (req, res) => {
                 a.gps_status,
                 a.check_in_method,
                 a.check_out_method,
-                DATE(a.check_in_time) as attendance_date
+                DATE(a.check_in_time) as attendance_date,
+                -- Compute the final status directly in SQL to allow filtering
+                (CASE
+                    WHEN a.check_out_time IS NULL THEN
+                        CASE
+                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                            ELSE 'In progress'
+                        END
+                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                        CASE
+                            WHEN a.daily_status = 'Late' THEN 'Late'
+                            ELSE 'Early Leave'
+                        END
+                    ELSE COALESCE(a.daily_status, 'Present')
+                END) as computed_status
             FROM attendance a
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) BETWEEN $1 AND $2
               AND ($3::UUID IS NULL OR e.supervisor_id = $3)
+              AND ($4::TEXT IS NULL OR $4 = 'All Locations' OR a.location_address ILIKE '%' || $4 || '%')
+              AND ($6::TEXT IS NULL OR (e.full_name ILIKE '%' || $6 || '%' OR e.employee_code ILIKE '%' || $6 || '%'))
+              -- Filter by status using the same logic as the computed column
+              AND ($5::TEXT IS NULL OR $5 = 'All Status' OR 
+                (CASE
+                    WHEN a.check_out_time IS NULL THEN
+                        CASE
+                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                            ELSE 'In progress'
+                        END
+                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                        CASE
+                            WHEN a.daily_status = 'Late' THEN 'Late'
+                            ELSE 'Early Leave'
+                        END
+                    ELSE COALESCE(a.daily_status, 'Present')
+                END) = $5)
             ORDER BY a.check_in_time DESC
         `;
 
         const result = await pool.query(attendanceQuery, [
             startDate,
             endDate,
-            isManager ? managerEmployeeId : null
+            isManager ? managerEmployeeId : null,
+            location || null,
+            status || null,
+            search || null
         ]);
 
         // Get total active employees
@@ -531,29 +565,8 @@ exports.getAttendanceReports = async (req, res) => {
         const totalEmployeesResult = await pool.query(totalEmployeesQuery, totalEmployeesParams);
         const totalEmployees = parseInt(totalEmployeesResult.rows[0]?.total || 0);
 
-        // Calculate final status for each record
+        // Map results - status is now already computed or filtered in SQL
         const records = result.rows.map(row => {
-            let finalStatus = row.daily_status || 'Present';
-            const checkOutTime = row.check_out_time;
-            const checkInTime = row.check_in_time;
-
-            // Determine status based on logic
-            if (!checkOutTime) {
-                // Check if shift is over (assuming 8-hour shift from check-in or past 5 PM)
-                const now = new Date();
-                const checkIn = new Date(checkInTime);
-                const hoursElapsed = (now - checkIn) / (1000 * 60 * 60);
-                const currentHour = now.getHours();
-
-                if (hoursElapsed > 9 || currentHour >= 17) {
-                    finalStatus = 'Missing Check-out';
-                } else {
-                    finalStatus = 'In Progress';
-                }
-            } else if (isEarlyCheckout(checkOutTime)) {
-                finalStatus = row.daily_status === 'Late' ? 'Late' : 'Early Leave';
-            }
-
             return {
                 id: row.id,
                 employee_id: row.employee_id,
@@ -571,7 +584,7 @@ exports.getAttendanceReports = async (req, res) => {
                 attendance_type: row.attendance_type || 'Office',
                 attendanceType: row.attendance_type || 'Office',
                 location: row.location || '-',
-                status: finalStatus,
+                status: row.computed_status,
                 gpsStatus: row.gps_status,
                 checkInMethod: row.check_in_method,
                 checkOutMethod: row.check_out_method,
@@ -579,21 +592,7 @@ exports.getAttendanceReports = async (req, res) => {
             };
         });
 
-        // Apply filters
-        let filteredRecords = records;
-        if (location && location !== 'All Locations') {
-            filteredRecords = filteredRecords.filter(r => r.location.includes(location));
-        }
-        if (status && status !== 'All Status') {
-            filteredRecords = filteredRecords.filter(r => r.status === status);
-        }
-        if (search) {
-            const searchLower = search.toLowerCase();
-            filteredRecords = filteredRecords.filter(r =>
-                r.employeeName.toLowerCase().includes(searchLower) ||
-                r.employeeCode.toLowerCase().includes(searchLower)
-            );
-        }
+        const filteredRecords = records; // Already filtered in SQL
 
         // Calculate statistics for pie chart
         const presentCount = filteredRecords.filter(r => r.status === 'Present').length;
@@ -730,7 +729,7 @@ exports.getTeamAttendance = async (req, res) => {
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) = $1
               AND e.supervisor_id = $2
-              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address = $3)
+              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address ILIKE '%' || $3 || '%')
               AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
               AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
             ORDER BY a.check_in_time DESC
