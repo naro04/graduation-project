@@ -68,44 +68,29 @@ router.delete('/delete-image', async (req, res) => {
             return res.status(400).json({ message: 'URL is required' });
         }
 
-        // If it's a Cloudinary URL, we should ideally delete it from Cloudinary
-        // But for safety during migration, we'll check if it's a local path first
+        // All images/files are now on Cloudinary
         if (imageUrl.includes('res.cloudinary.com')) {
             try {
                 // Extract public_id from Cloudinary URL
-                // Example: https://res.cloudinary.com/dvhhxjzeo/image/upload/v123456789/hr-system/public_id.jpg
                 const parts = imageUrl.split('/');
                 const lastPart = parts[parts.length - 1];
                 const filename = lastPart.split('.')[0];
                 const folder = parts[parts.length - 2];
                 const publicId = `${folder}/${filename}`;
 
-                const result = await require('cloudinary').v2.uploader.destroy(publicId);
+                const result = await cloudinary.uploader.destroy(publicId);
                 return res.status(200).json({
                     status: 'success',
-                    message: 'Image deleted from Cloudinary',
+                    message: 'File deleted from Cloudinary',
                     result
                 });
             } catch (clErr) {
                 console.error('Cloudinary deletion error:', clErr);
-                // Continue to local check as fallback
+                return res.status(500).json({ message: 'Error deleting from Cloudinary', error: clErr.message });
             }
         }
 
-        // Fallback for local files (old logic)
-        const filename = path.basename(imageUrl);
-        const filePath = path.join(__dirname, '..', 'uploads', filename);
-
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            res.status(200).json({
-                status: 'success',
-                message: 'Local file deleted successfully'
-            });
-        } else {
-            // If not found locally and wasn't a recognized Cloudinary URL handled above
-            res.status(200).json({ status: 'success', message: 'File already removed or not found' });
-        }
+        res.status(400).json({ message: 'Invalid storage URL or file not found on Cloudinary' });
     } catch (error) {
         res.status(500).json({ message: 'Error deleting image', error: error.message });
     }
