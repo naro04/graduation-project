@@ -14,8 +14,7 @@ const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
         folder: 'hr-system-v2',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx'],
-        resource_type: 'auto', // Important to support both images and documents
+        resource_type: 'auto', // Important to support both images and raw documents
         public_id: (req, file) => {
             const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
             return uniqueSuffix;
@@ -23,11 +22,31 @@ const storage = new CloudinaryStorage({
     }
 });
 
+// Allowed MIME types for manual validation
+const fileFilter = (req, file, cb) => {
+    const allowedMimeTypes = [
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'application/pdf',
+        'application/msword', // doc
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' // docx
+    ];
+
+    if (allowedMimeTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Invalid file type. Only JPG, PNG, GIF, WEBP, PDF, DOC, and DOCX are allowed.'), false);
+    }
+};
+
 // Create multer upload instance
 const upload = multer({
     storage: storage,
+    fileFilter: fileFilter,
     limits: {
-        fileSize: 10 * 1024 * 1024 // 10MB limit (increased to support documents)
+        fileSize: 10 * 1024 * 1024 // 10MB limit
     }
 });
 
