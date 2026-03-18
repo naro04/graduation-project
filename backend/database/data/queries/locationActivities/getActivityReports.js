@@ -12,25 +12,26 @@ const getActivityReportsQuery = `
     l.name as location,
     a.start_date,
     a.end_date,
-    a.start_date as actual_date,
-    COALESCE((
-        SELECT CAST(COUNT(DISTINCT att.employee_id) AS INTEGER)
-        FROM attendance att
-        WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = a.id)
-          AND att.check_in_time::DATE >= a.start_date 
-          AND att.check_in_time::DATE <= a.end_date 
-          AND att.gps_status = 'Verified'
-    ), 0) as attendees,
-    a.implementation_status as status,
+    (CASE 
+        WHEN a.end_date IS NOT NULL THEN 'Implemented'
+        WHEN CURRENT_DATE > DATE(a.end_time) AND a.end_date IS NULL THEN 'Overdue'
+        WHEN a.start_date IS NOT NULL AND a.end_date IS NULL THEN 'Pending'
+        ELSE 'Planned'
+    END) as status,
     a.approval_status as approval,
     a.description
   FROM activities a
   LEFT JOIN locations l ON a.location_id = l.id
   LEFT JOIN employees e ON a.employee_id = e.id
-  WHERE ($1::DATE IS NULL OR a.start_date >= $1::DATE)
-    AND ($2::DATE IS NULL OR a.start_date <= $2::DATE)
+  WHERE ($1::DATE IS NULL OR DATE(a.start_time) >= $1::DATE)
+    AND ($2::DATE IS NULL OR DATE(a.start_time) <= $2::DATE)
     AND ($3::TEXT IS NULL OR a.activity_type = $3::TEXT)
-    AND ($4::TEXT IS NULL OR a.implementation_status = $4::TEXT)
+    AND ($4::TEXT IS NULL OR (CASE 
+        WHEN a.end_date IS NOT NULL THEN 'Implemented'
+        WHEN CURRENT_DATE > DATE(a.end_time) AND a.end_date IS NULL THEN 'Overdue'
+        WHEN a.start_date IS NOT NULL AND a.end_date IS NULL THEN 'Pending'
+        ELSE 'Planned'
+    END) = $4::TEXT)
     AND ($5::TEXT IS NULL OR (a.name ILIKE '%' || $5::TEXT || '%'))
   ORDER BY a.start_date DESC;
 `;

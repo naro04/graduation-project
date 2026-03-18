@@ -5,6 +5,18 @@ const getActivityByIdQuery = `
     l.latitude as location_latitude,
     l.longitude as location_longitude,
     a.activity_days as duration_hours_count,
+    (CASE 
+        WHEN a.end_date IS NOT NULL THEN 'Implemented'
+        WHEN CURRENT_DATE > DATE(a.end_time) AND a.end_date IS NULL THEN 'Overdue'
+        WHEN a.start_date IS NOT NULL AND a.end_date IS NULL THEN 'Pending'
+        ELSE 'Planned'
+    END) as implementation_status,
+    (CASE 
+        WHEN a.end_date IS NOT NULL THEN 'Implemented'
+        WHEN CURRENT_DATE > DATE(a.end_time) AND a.end_date IS NULL THEN 'Overdue'
+        WHEN a.start_date IS NOT NULL AND a.end_date IS NULL THEN 'Pending'
+        ELSE 'Planned'
+    END) as computed_status,
     CASE
       WHEN a.employee_id IS NOT NULL THEN e.first_name || ' ' || e.last_name
       ELSE NULL
