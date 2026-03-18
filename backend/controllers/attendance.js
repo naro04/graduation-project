@@ -421,67 +421,59 @@ exports.getDailyAttendance = async (req, res) => {
 
         // Get attendance records with filters in SQL
         const attendanceQuery = `
-            SELECT 
-                a.id,
-                a.employee_id,
-                e.full_name as employee_name,
-                e.employee_code,
-                e.avatar_url,
-                a.check_in_time,
-                a.check_out_time,
-                a.work_type as attendance_type,
-                -- Return translated name for frontend match
-                (CASE 
-                    WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
-                    WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
-                    WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
-                    WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
-                    WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
-                    WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
-                    WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
-                    WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
-                    ELSE a.location_address
-                END) as location,
-                a.daily_status as status,
-                a.gps_status,
-                -- Compute the final status directly in SQL
-                (CASE
-                    WHEN a.check_out_time IS NULL THEN
-                        CASE
-                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
-                            ELSE 'In progress'
-                        END
-                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
-                        CASE
-                            WHEN a.daily_status = 'Late' THEN 'Late'
-                            ELSE 'Early Leave'
-                        END
-                    ELSE COALESCE(a.daily_status, 'Present')
-                END) as computed_status
-            FROM attendance a
-            JOIN employees e ON a.employee_id = e.id
-            WHERE DATE(a.check_in_time) = $1
-              AND ($2::UUID IS NULL OR e.supervisor_id = $2)
+            WITH base_attendance AS (
+                SELECT 
+                    a.id,
+                    a.employee_id,
+                    e.full_name as employee_name,
+                    e.employee_code,
+                    e.avatar_url,
+                    a.check_in_time,
+                    a.check_out_time,
+                    a.work_type as attendance_type,
+                    a.location_address,
+                    e.supervisor_id,
+                    -- Return translated name for frontend match
+                    (CASE 
+                        WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
+                        WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
+                        WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
+                        WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
+                        WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
+                        WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
+                        WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
+                        WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
+                        ELSE a.location_address
+                    END) as location,
+                    a.daily_status as status,
+                    a.gps_status,
+                    -- Compute the final status directly in SQL
+                    (CASE
+                        WHEN a.check_out_time IS NULL THEN
+                            CASE
+                                WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                                ELSE 'In progress'
+                            END
+                        WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                            CASE
+                                WHEN a.daily_status = 'Late' THEN 'Late'
+                                ELSE 'Early Leave'
+                            END
+                        ELSE COALESCE(a.daily_status, 'Present')
+                    END) as computed_status
+                FROM attendance a
+                JOIN employees e ON a.employee_id = e.id
+            )
+            SELECT * FROM base_attendance
+            WHERE DATE(check_in_time) = $1
+              AND ($2::UUID IS NULL OR supervisor_id = $2)
               AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR 
-                   a.location_address ILIKE '%' || $3 || '%' OR
-                   ($6::TEXT IS NOT NULL AND a.location_address ILIKE '%' || $6 || '%') OR
-                   ($7::TEXT IS NOT NULL AND REPLACE(a.location_address, ' ', '') ILIKE '%' || $7 || '%'))
-              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR 
-                (CASE
-                    WHEN a.check_out_time IS NULL THEN
-                        CASE
-                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
-                            ELSE 'In progress'
-                        END
-                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
-                        CASE
-                            WHEN a.daily_status = 'Late' THEN 'Late'
-                            ELSE 'Early Leave'
-                        END
-                    ELSE COALESCE(a.daily_status, 'Present')
-                END) = $4)
-              AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
-            ORDER BY a.check_in_time DESC
+                   location ILIKE '%' || $3 || '%' OR
+                   ($6::TEXT IS NOT NULL AND location_address ILIKE '%' || $6 || '%') OR
+                   ($7::TEXT IS NOT NULL AND REPLACE(location_address, ' ', '') ILIKE '%' || $7 || '%'))
+              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR computed_status = $4)
+              AND ($5::TEXT IS NULL OR (employee_name ILIKE '%' || $5 || '%' OR employee_code ILIKE '%' || $5 || '%'))
+            ORDER BY check_in_time DESC
         `;
 
         const result = await pool.query(attendanceQuery, [
@@ -571,72 +563,64 @@ exports.getAttendanceReports = async (req, res) => {
 
         // Get all attendance records in the date range with SQL filtering
         const attendanceQuery = `
-            SELECT 
-                a.id,
-                a.employee_id,
-                e.full_name as employee_name,
-                e.employee_code,
-                e.avatar_url,
-                a.check_in_time,
-                a.check_out_time,
-                a.work_type as attendance_type,
-                -- Return translated name for frontend match
-                (CASE 
-                    WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
-                    WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
-                    WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
-                    WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
-                    WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
-                    WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
-                    WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
-                    WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
-                    ELSE a.location_address
-                END) as location,
-                a.daily_status,
-                a.gps_status,
-                a.check_in_method,
-                a.check_out_method,
-                DATE(a.check_in_time) as attendance_date,
-                -- Compute the final status directly in SQL to allow filtering
-                (CASE
-                    WHEN a.check_out_time IS NULL THEN
-                        CASE
-                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
-                            ELSE 'In progress'
-                        END
-                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
-                        CASE
-                            WHEN a.daily_status = 'Late' THEN 'Late'
-                            ELSE 'Early Leave'
-                        END
-                    ELSE COALESCE(a.daily_status, 'Present')
-                END) as computed_status
-            FROM attendance a
-            JOIN employees e ON a.employee_id = e.id
-            WHERE DATE(a.check_in_time) BETWEEN $1 AND $2
-              AND ($3::UUID IS NULL OR e.supervisor_id = $3)
+            WITH base_attendance AS (
+                SELECT 
+                    a.id,
+                    a.employee_id,
+                    e.full_name as employee_name,
+                    e.employee_code,
+                    e.avatar_url,
+                    a.check_in_time,
+                    a.check_out_time,
+                    a.work_type as attendance_type,
+                    a.location_address,
+                    e.supervisor_id,
+                    -- Return translated name for frontend match
+                    (CASE 
+                        WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
+                        WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
+                        WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
+                        WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
+                        WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
+                        WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
+                        WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
+                        WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
+                        ELSE a.location_address
+                    END) as location,
+                    a.daily_status,
+                    a.gps_status,
+                    a.check_in_method,
+                    a.check_out_method,
+                    DATE(a.check_in_time) as attendance_date,
+                    -- Compute the final status directly in SQL to allow filtering
+                    (CASE
+                        WHEN a.check_out_time IS NULL THEN
+                            CASE
+                                WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                                ELSE 'In progress'
+                            END
+                        WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                            CASE
+                                WHEN a.daily_status = 'Late' THEN 'Late'
+                                ELSE 'Early Leave'
+                            END
+                        ELSE COALESCE(a.daily_status, 'Present')
+                    END) as computed_status
+                FROM attendance a
+                JOIN employees e ON a.employee_id = e.id
+            )
+            SELECT * FROM base_attendance
+            WHERE attendance_date BETWEEN $1 AND $2
+              AND ($3::UUID IS NULL OR supervisor_id = $3)
               -- Better location matching: English, Arabic mapping, or space-insensitive
               AND ($4::TEXT IS NULL OR $4 = 'All Locations' OR 
-                   a.location_address ILIKE '%' || $4 || '%' OR
-                   ($7::TEXT IS NOT NULL AND a.location_address ILIKE '%' || $7 || '%') OR
-                   ($8::TEXT IS NOT NULL AND REPLACE(a.location_address, ' ', '') ILIKE '%' || $8 || '%'))
-              AND ($6::TEXT IS NULL OR (e.full_name ILIKE '%' || $6 || '%' OR e.employee_code ILIKE '%' || $6 || '%'))
-              -- Filter by status using the same logic as the computed column
-              AND ($5::TEXT IS NULL OR $5 = 'All Status' OR 
-                (CASE
-                    WHEN a.check_out_time IS NULL THEN
-                        CASE
-                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
-                            ELSE 'In progress'
-                        END
-                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
-                        CASE
-                            WHEN a.daily_status = 'Late' THEN 'Late'
-                            ELSE 'Early Leave'
-                        END
-                    ELSE COALESCE(a.daily_status, 'Present')
-                END) = $5)
-            ORDER BY a.check_in_time DESC
+                   location ILIKE '%' || $4 || '%' OR
+                   ($7::TEXT IS NOT NULL AND location_address ILIKE '%' || $7 || '%') OR
+                   ($8::TEXT IS NOT NULL AND REPLACE(location_address, ' ', '') ILIKE '%' || $8 || '%'))
+              AND ($6::TEXT IS NULL OR (employee_name ILIKE '%' || $6 || '%' OR employee_code ILIKE '%' || $6 || '%'))
+              -- Filter by status using the computed column from base_attendance
+              AND ($5::TEXT IS NULL OR $5 = 'All Status' OR computed_status = $5)
+            ORDER BY check_in_time DESC
         `;
 
         const result = await pool.query(attendanceQuery, [
@@ -824,67 +808,59 @@ exports.getTeamAttendance = async (req, res) => {
 
         // Get attendance records for the specified date for team members only
         const attendanceQuery = `
-            SELECT 
-                a.id,
-                a.employee_id,
-                e.full_name as employee_name,
-                e.employee_code,
-                e.avatar_url,
-                a.check_in_time,
-                a.check_out_time,
-                a.work_type as attendance_type,
-                -- Return translated name for frontend match
-                (CASE 
-                    WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
-                    WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
-                    WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
-                    WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
-                    WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
-                    WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
-                    WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
-                    WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
-                    ELSE a.location_address
-                END) as location,
-                a.daily_status as status,
-                a.gps_status,
-                -- Compute the final status directly in SQL
-                (CASE
-                    WHEN a.check_out_time IS NULL THEN
-                        CASE
-                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
-                            ELSE 'In progress'
-                        END
-                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
-                        CASE
-                            WHEN a.daily_status = 'Late' THEN 'Late'
-                            ELSE 'Early Leave'
-                        END
-                    ELSE COALESCE(a.daily_status, 'Present')
-                END) as computed_status
-            FROM attendance a
-            JOIN employees e ON a.employee_id = e.id
-            WHERE DATE(a.check_in_time) = $1
-              AND e.supervisor_id = $2
+            WITH base_attendance AS (
+                SELECT 
+                    a.id,
+                    a.employee_id,
+                    e.full_name as employee_name,
+                    e.employee_code,
+                    e.avatar_url,
+                    a.check_in_time,
+                    a.check_out_time,
+                    a.work_type as attendance_type,
+                    a.location_address,
+                    e.supervisor_id,
+                    -- Return translated name for frontend match
+                    (CASE 
+                        WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
+                        WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
+                        WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
+                        WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
+                        WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
+                        WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
+                        WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
+                        WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
+                        ELSE a.location_address
+                    END) as location,
+                    a.daily_status as status,
+                    a.gps_status,
+                    -- Compute the final status directly in SQL
+                    (CASE
+                        WHEN a.check_out_time IS NULL THEN
+                            CASE
+                                WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                                ELSE 'In progress'
+                            END
+                        WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                            CASE
+                                WHEN a.daily_status = 'Late' THEN 'Late'
+                                ELSE 'Early Leave'
+                            END
+                        ELSE COALESCE(a.daily_status, 'Present')
+                    END) as computed_status
+                FROM attendance a
+                JOIN employees e ON a.employee_id = e.id
+            )
+            SELECT * FROM base_attendance
+            WHERE DATE(check_in_time) = $1
+              AND supervisor_id = $2
               AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR 
-                   a.location_address ILIKE '%' || $3 || '%' OR
-                   ($6::TEXT IS NOT NULL AND a.location_address ILIKE '%' || $6 || '%') OR
-                   ($7::TEXT IS NOT NULL AND REPLACE(a.location_address, ' ', '') ILIKE '%' || $7 || '%'))
-              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR 
-                (CASE
-                    WHEN a.check_out_time IS NULL THEN
-                        CASE
-                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
-                            ELSE 'In progress'
-                        END
-                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
-                        CASE
-                            WHEN a.daily_status = 'Late' THEN 'Late'
-                            ELSE 'Early Leave'
-                        END
-                    ELSE COALESCE(a.daily_status, 'Present')
-                END) = $4)
-              AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
-            ORDER BY a.check_in_time DESC
+                   location ILIKE '%' || $3 || '%' OR
+                   ($6::TEXT IS NOT NULL AND location_address ILIKE '%' || $6 || '%') OR
+                   ($7::TEXT IS NOT NULL AND REPLACE(location_address, ' ', '') ILIKE '%' || $7 || '%'))
+              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR computed_status = $4)
+              AND ($5::TEXT IS NULL OR (employee_name ILIKE '%' || $5 || '%' OR employee_code ILIKE '%' || $5 || '%'))
+            ORDER BY check_in_time DESC
         `;
 
         const result = await pool.query(attendanceQuery, [
