@@ -13,72 +13,54 @@ exports.getAllActivities = async (req, res) => {
 
         if (date) {
             queryParams.push(date);
-            whereClause += ` AND (DATE(start_time) <= $${queryParams.length}::DATE AND DATE(end_time) >= $${queryParams.length}::DATE)`;
+            whereClause += ` AND (a.start_date <= $${queryParams.length}::DATE AND a.end_date >= $${queryParams.length}::DATE)`;
         }
 
         if (status && status !== 'All Status') {
             queryParams.push(status);
-            whereClause += ` AND computed_status = $${queryParams.length}`;
+            whereClause += ` AND a.implementation_status = $${queryParams.length}`;
         }
 
         if (approval_status && approval_status !== 'All Approval Status') {
             queryParams.push(approval_status.toLowerCase());
-            whereClause += ` AND approval_status = $${queryParams.length}`;
+            whereClause += ` AND a.approval_status = $${queryParams.length}`;
         }
 
         if (search) {
             queryParams.push(`%${search}%`);
-            whereClause += ` AND name ILIKE $${queryParams.length}`;
+            whereClause += ` AND a.name ILIKE $${queryParams.length}`;
         }
 
         if (isManager) {
             queryParams.push(managerEmployeeId);
-            whereClause += ` AND (employee_id = $${queryParams.length} OR EXISTS (
+            whereClause += ` AND (a.employee_id = $${queryParams.length} OR EXISTS (
                 SELECT 1 FROM activity_employees ae2 
                 JOIN employees e2 ON ae2.employee_id = e2.id 
-                WHERE ae2.activity_id = id AND e2.supervisor_id = $${queryParams.length}
+                WHERE ae2.activity_id = a.id AND e2.supervisor_id = $${queryParams.length}
             ))`;
         }
 
         const query = `
-            WITH base_activities AS (
-                SELECT
-                    a.*,
-                    (CASE 
-                        WHEN a.end_date IS NOT NULL THEN 'Implemented'
-                        WHEN CURRENT_DATE > DATE(a.end_time) AND a.end_date IS NULL THEN 'Overdue'
-                        WHEN a.start_date IS NOT NULL AND a.end_date IS NULL THEN 'Pending'
-                        ELSE 'Planned'
-                    END) as computed_status
-                FROM activities a
-            )
             SELECT
-                ba.*,
-                ba.computed_status as implementation_status,
-                ba.name as activity_name,
-                ba.activity_type as type,
-                ba.project_name as project,
+                a.*,
+                a.name as activity_name,
+                a.activity_type as type,
+                a.project_name as project,
                 e.first_name || ' ' || e.last_name as responsible_employee,
                 e.avatar_url as employee_photo,
                 l.name as location,
-                COALESCE(ba.location_latitude, l.latitude) as latitude,
-                COALESCE(ba.location_longitude, l.longitude) as longitude,
-                ba.activity_days as duration,
+                COALESCE(a.location_latitude, l.latitude) as latitude,
+                COALESCE(a.location_longitude, l.longitude) as longitude,
+                a.activity_days as duration,
                 ARRAY_AGG(DISTINCT emp.first_name || ' ' || emp.last_name) FILTER (WHERE emp.id IS NOT NULL) as team
-            FROM base_activities ba
-            LEFT JOIN locations l ON ba.location_id = l.id
-            LEFT JOIN employees e ON ba.employee_id = e.id
-            LEFT JOIN activity_employees ae ON ba.id = ae.activity_id
+            FROM activities a
+            LEFT JOIN locations l ON a.location_id = l.id
+            LEFT JOIN employees e ON a.employee_id = e.id
+            LEFT JOIN activity_employees ae ON a.id = ae.activity_id
             LEFT JOIN employees emp ON ae.employee_id = emp.id
             ${whereClause}
-            GROUP BY ba.id, ba.employee_id, ba.project_name, ba.name, ba.activity_type, ba.description, 
-                     ba.location_id, ba.location_latitude, ba.location_longitude, ba.location_address, 
-                     ba.start_time, ba.end_time, ba.start_date, ba.end_date, ba.activity_days, 
-                     ba.status, ba.implementation_status, ba.approval_status, ba.approved_by, 
-                     ba.approved_at, ba.created_at, ba.updated_at, ba.attendees_count, ba.actual_date,
-                     ba.project_id, ba.images, ba.computed_status,
-                     e.first_name, e.last_name, e.avatar_url, l.name, l.latitude, l.longitude
-            ORDER BY ba.start_time DESC, ba.created_at DESC
+            GROUP BY a.id, e.first_name, e.last_name, e.avatar_url, l.name, l.latitude, l.longitude
+            ORDER BY a.start_date DESC, a.created_at DESC
         `;
 
         const result = await pool.query(query, queryParams);
@@ -88,10 +70,8 @@ exports.getAllActivities = async (req, res) => {
         const stats = {
             planned: activities.filter(a => a.implementation_status === 'Planned').length,
             implemented: activities.filter(a => a.implementation_status === 'Implemented').length,
-            pending_progress: activities.filter(a => a.implementation_status === 'Pending').length,
-            overdue: activities.filter(a => a.implementation_status === 'Overdue').length,
-            approved: activities.filter(a => (a.approval_status || '').toLowerCase() === 'approved').length,
-            pending_approval: activities.filter(a => (a.approval_status || '').toLowerCase() === 'pending').length
+            approved: activities.filter(a => a.approval_status === 'approved').length,
+            pending: activities.filter(a => a.approval_status === 'pending').length
         };
 
         res.status(200).json({
@@ -250,12 +230,7 @@ exports.createLocationActivity = async (req, res) => {
 exports.updateLocationActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
-        const { 
-            name, activity_type, responsible_employee_id, location_id, 
-            project_name, employee_ids, activity_days, dates, 
-            description, images,
-            actual_start_date, actual_end_date
-        } = req.body;
+        const { name, activity_type, responsible_employee_id, location_id, project_name, employee_ids, activity_days, dates, description, images } = req.body;
 
         let final_project_name = project_name;
         let final_images = images || [];
@@ -282,11 +257,15 @@ exports.updateLocationActivity = async (req, res) => {
             location_id,
             project_name,
             employee_ids,
-            actual_start_date,
-            actual_end_date
+            employee_ids_type: typeof employee_ids,
+            employee_ids_isArray: Array.isArray(employee_ids),
+            employee_ids_length: employee_ids?.length,
+            activity_days,
+            dates,
+            images
         });
 
-        // Check if activity exists
+        // Check if activity exists and get its end_date
         const existingActivityResult = await pool.query(activityQueries.getActivityByIdQuery, [activity_id]);
         if (existingActivityResult.rows.length === 0) {
             return res.status(404).json({ message: 'Activity not found' });
@@ -294,16 +273,16 @@ exports.updateLocationActivity = async (req, res) => {
 
         const existingActivity = existingActivityResult.rows[0];
 
-        // Planned dates (using existing dates array if provided)
-        const planned_start = dates ? dates[0] : existingActivity.start_time;
-        const planned_end = dates ? dates[dates.length - 1] : existingActivity.end_time;
-        const final_activity_days = dates ? dates.length : (activity_days || existingActivity.activity_days);
+        // Validate dates if provided
+        if (dates && (!Array.isArray(dates) || dates.length === 0)) {
+            return res.status(400).json({ message: 'dates must be a non-empty array' });
+        }
 
-        // Actual dates (from request or fallback to existing)
-        // If the user sends 'actual_end_date', it marks as Implemented
-        // If the user sends 'actual_start_date', it marks as Pending
-        const actual_start = actual_start_date !== undefined ? actual_start_date : existingActivity.start_date;
-        const actual_end = actual_end_date !== undefined ? actual_end_date : existingActivity.end_date;
+        // If dates is provided, use dates.length as activity_days (dates takes precedence)
+        // Only validate activity_days if it's provided AND dates is NOT provided
+        const start_date = dates ? dates[0] : existingActivity.start_date;
+        const end_date = dates ? dates[dates.length - 1] : existingActivity.end_date;
+        const final_activity_days = dates ? dates.length : (activity_days || existingActivity.activity_days);
 
         // Validate responsible employee if changed
         if (responsible_employee_id) {
@@ -323,38 +302,17 @@ exports.updateLocationActivity = async (req, res) => {
         try {
             await client.query('BEGIN');
 
-            const query = `
-                UPDATE activities
-                SET name = $1, 
-                    activity_type = $2, 
-                    employee_id = $3, 
-                    location_id = $4, 
-                    start_time = $5, 
-                    end_time = $6, 
-                    activity_days = $7, 
-                    description = $8, 
-                    project_name = $9, 
-                    images = $10,
-                    start_date = $11,
-                    end_date = $12,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = $13
-                RETURNING *;
-            `;
-
-            const updateResult = await client.query(query, [
+            const updateResult = await client.query(activityQueries.updateLocationActivityQuery, [
                 name || existingActivity.name,
                 activity_type || existingActivity.activity_type || 'Workshop',
                 responsible_employee_id || existingActivity.employee_id || null,
                 location_id || existingActivity.location_id,
-                planned_start,
-                planned_end,
+                start_date,
+                end_date,
                 final_activity_days,
                 final_description !== undefined ? final_description : existingActivity.description,
                 final_project_name !== undefined ? final_project_name : existingActivity.project_name || null,
                 final_images.length > 0 ? final_images : existingActivity.images || [],
-                actual_start,
-                actual_end,
                 activity_id
             ]);
 
@@ -534,55 +492,42 @@ exports.getTeamActivities = async (req, res) => {
         const { status, approval_status, search } = req.query;
 
         const activitiesQuery = `
-            WITH base_activities AS (
-                SELECT
-                    a.*,
-                    (CASE 
-                        WHEN a.end_date IS NOT NULL THEN 'Implemented'
-                        WHEN CURRENT_DATE > DATE(a.end_time) AND a.end_date IS NULL THEN 'Overdue'
-                        WHEN a.start_date IS NOT NULL AND a.end_date IS NULL THEN 'Pending'
-                        ELSE 'Planned'
-                    END) as computed_status
-                FROM activities a
-            )
             SELECT DISTINCT
-                ba.id,
-                ba.name,
-                ba.activity_type as type,
-                ba.project_name as project,
-                ba.employee_id,
+                a.id,
+                a.name,
+                a.activity_type as type,
+                a.project_name as project,
+                a.employee_id,
                 e.first_name || ' ' || e.last_name as responsible_employee,
-                ba.location_id,
+                a.location_id,
                 l.name as location,
-                COALESCE(ba.location_address, l.address) as location_address,
-                COALESCE(ba.location_latitude, l.latitude) as latitude,
-                COALESCE(ba.location_longitude, l.longitude) as longitude,
-                ba.start_date,
-                ba.end_date,
-                ba.start_time,
-                ba.end_time,
-                ba.start_time as date,
-                ba.activity_days as duration,
-                ba.status,
-                ba.computed_status as implementation_status,
-                ba.approval_status,
-                ba.description,
-                ba.images,
-                ba.created_at,
-                ba.updated_at
-            FROM base_activities ba
-            LEFT JOIN employees e ON ba.employee_id = e.id
-            LEFT JOIN locations l ON ba.location_id = l.id
-            LEFT JOIN activity_employees ae ON ba.id = ae.activity_id
+                COALESCE(a.location_address, l.address) as location_address,
+                COALESCE(a.location_latitude, l.latitude) as latitude,
+                COALESCE(a.location_longitude, l.longitude) as longitude,
+                a.start_date,
+                a.end_date,
+                a.start_date as date,
+                a.activity_days as duration,
+                a.status,
+                a.implementation_status,
+                a.approval_status,
+                a.description,
+                a.images,
+                a.created_at,
+                a.updated_at
+            FROM activities a
+            LEFT JOIN employees e ON a.employee_id = e.id
+            LEFT JOIN locations l ON a.location_id = l.id
+            LEFT JOIN activity_employees ae ON a.id = ae.activity_id
             WHERE (
-                ba.employee_id = ANY($1::uuid[])
+                a.employee_id = ANY($1::uuid[])
                 OR ae.employee_id = ANY($1::uuid[])
             )
-            AND ($2::DATE IS NULL OR DATE(ba.start_time) = $2)
-            AND ($3::TEXT IS NULL OR ba.computed_status = $3)
-            AND ($4::TEXT IS NULL OR ba.approval_status = $4)
-            AND ($5::TEXT IS NULL OR ba.name ILIKE '%' || $5 || '%')
-            ORDER BY ba.start_time DESC, ba.created_at DESC
+            AND ($2::DATE IS NULL OR DATE(a.start_date) = $2)
+            AND ($3::TEXT IS NULL OR a.implementation_status = $3)
+            AND ($4::TEXT IS NULL OR a.approval_status = $4)
+            AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
+            ORDER BY a.start_date DESC, a.created_at DESC
         `;
 
         const result = await pool.query(activitiesQuery, [
@@ -598,10 +543,8 @@ exports.getTeamActivities = async (req, res) => {
         const stats = {
             planned: activities.filter(a => a.implementation_status === 'Planned').length,
             implemented: activities.filter(a => a.implementation_status === 'Implemented').length,
-            pending_progress: activities.filter(a => a.implementation_status === 'Pending').length,
-            overdue: activities.filter(a => a.implementation_status === 'Overdue').length,
-            approved: activities.filter(a => (a.approval_status || '').toLowerCase() === 'approved').length,
-            pending_approval: activities.filter(a => (a.approval_status || '').toLowerCase() === 'pending').length
+            approved: activities.filter(a => a.approval_status === 'Approved').length,
+            pending: activities.filter(a => a.approval_status === 'Pending').length
         };
 
         res.status(200).json({
@@ -623,52 +566,39 @@ exports.getActivityReports = async (req, res) => {
         const managerEmployeeId = req.user.employee_id;
 
         const recordsResult = await pool.query(`
-            WITH base_activities AS (
-                SELECT
-                    a.*,
-                    (CASE 
-                        WHEN a.end_date IS NOT NULL THEN 'Implemented'
-                        WHEN CURRENT_DATE > DATE(a.end_time) AND a.end_date IS NULL THEN 'Overdue'
-                        WHEN a.start_date IS NOT NULL AND a.end_date IS NULL THEN 'Pending'
-                        ELSE 'Planned'
-                    END) as computed_status
-                FROM activities a
-            )
             SELECT DISTINCT
-                ba.id,
-                ba.name,
-                ba.activity_type,
-                ba.description,
-                ba.start_time,
-                ba.end_time,
-                ba.start_date,
-                ba.end_date,
-                ba.computed_status as implementation_status,
-                ba.approval_status,
-                ba.created_at,
-                ba.project_name,
-                ba.start_time as actual_date,
+                a.id,
+                a.name,
+                a.activity_type,
+                a.description,
+                a.start_date,
+                a.end_date,
+                a.implementation_status,
+                a.approval_status,
+                a.created_at,
+                a.project_name,
+                a.start_date as actual_date,
                 COALESCE((
                     SELECT CAST(COUNT(DISTINCT att.employee_id) AS INTEGER)
                     FROM attendance att
-                    WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = ba.id)
-                      AND att.check_in_time::DATE >= DATE(ba.start_time) 
-                      AND att.check_in_time::DATE <= DATE(ba.end_time) 
+                    WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = a.id)
+                      AND att.check_in_time::DATE >= a.start_date 
+                      AND att.check_in_time::DATE <= a.end_date 
                       AND att.gps_status = 'Verified'
                 ), 0) as attendees_count,
                 e.first_name || ' ' || e.last_name as responsible_employee,
                 l.name as location_name
-            FROM base_activities ba
-            LEFT JOIN employees e ON ba.employee_id = e.id
-            LEFT JOIN locations l ON ba.location_id = l.id
-            LEFT JOIN activity_employees ae ON ba.id = ae.activity_id
-            WHERE ($1::DATE IS NULL OR DATE(ba.start_time) >= $1)
-              AND ($2::DATE IS NULL OR DATE(ba.end_time) <= $2)
-              AND ($3::TEXT IS NULL OR ba.activity_type = $3)
-              AND ($4::TEXT IS NULL OR ba.approval_status = $4)
-              AND ($5::TEXT IS NULL OR ba.name ILIKE '%' || $5 || '%')
-              AND ($6::UUID IS NULL OR ba.employee_id = $6 OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
-            ORDER BY ba.created_at DESC;
+            FROM activities a
+            LEFT JOIN employees e ON a.employee_id = e.id
+            LEFT JOIN locations l ON a.location_id = l.id
+            LEFT JOIN activity_employees ae ON a.id = ae.activity_id
+            WHERE ($1::DATE IS NULL OR a.start_date >= $1)
+              AND ($2::DATE IS NULL OR a.end_date <= $2)
+              AND ($3::TEXT IS NULL OR a.activity_type = $3)
+              AND ($4::TEXT IS NULL OR a.approval_status = $4)
+              AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
+              AND ($6::UUID IS NULL OR a.employee_id = $6 OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
+            ORDER BY a.created_at DESC;
         `, [
             from || null,
             to || null,
