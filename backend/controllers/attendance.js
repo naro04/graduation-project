@@ -430,7 +430,18 @@ exports.getDailyAttendance = async (req, res) => {
                 a.check_in_time,
                 a.check_out_time,
                 a.work_type as attendance_type,
-                a.location_address as location,
+                -- Return translated name for frontend match
+                (CASE 
+                    WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
+                    WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
+                    WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
+                    WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
+                    WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
+                    WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
+                    WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
+                    WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
+                    ELSE a.location_address
+                END) as location,
                 a.daily_status as status,
                 a.gps_status,
                 -- Compute the final status directly in SQL
@@ -507,7 +518,7 @@ exports.getDailyAttendance = async (req, res) => {
             checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
             attendanceType: row.attendance_type || 'Office',
             location: row.location || '-',
-            status: row.check_out_time ? row.status : (row.status === 'Present' || row.status === 'Late' ? 'In progress' : row.status),
+            status: row.computed_status,
             gpsStatus: row.gps_status,
             gpsVerified: row.gps_status === 'Verified' || row.gps_status === 'Suspicious'
         }));
@@ -569,7 +580,18 @@ exports.getAttendanceReports = async (req, res) => {
                 a.check_in_time,
                 a.check_out_time,
                 a.work_type as attendance_type,
-                a.location_address as location,
+                -- Return translated name for frontend match
+                (CASE 
+                    WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
+                    WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
+                    WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
+                    WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
+                    WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
+                    WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
+                    WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
+                    WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
+                    ELSE a.location_address
+                END) as location,
                 a.daily_status,
                 a.gps_status,
                 a.check_in_method,
@@ -811,7 +833,18 @@ exports.getTeamAttendance = async (req, res) => {
                 a.check_in_time,
                 a.check_out_time,
                 a.work_type as attendance_type,
-                a.location_address as location,
+                -- Return translated name for frontend match
+                (CASE 
+                    WHEN a.location_address ILIKE '%دير البلح%' OR a.location_address ILIKE '%Deir%' THEN 'Deir AlBalah'
+                    WHEN a.location_address ILIKE '%الزوايدة%' OR a.location_address ILIKE '%Zawayda%' THEN 'Zawayda'
+                    WHEN a.location_address ILIKE '%رفح%' OR a.location_address ILIKE '%Rafah%' THEN 'Rafah'
+                    WHEN a.location_address ILIKE '%شمال غزة%' OR a.location_address ILIKE '%North Gaza%' THEN 'North Gaza'
+                    WHEN a.location_address ILIKE '%غزة%' AND a.location_address NOT ILIKE '%دير البلح%' THEN 'Gaza'
+                    WHEN a.location_address ILIKE '%خان يونس%' OR a.location_address ILIKE '%Khan Yunis%' THEN 'Khan Yunis'
+                    WHEN a.location_address ILIKE '%الرمال%' OR a.location_address ILIKE '%Remal%' THEN 'Remal Office'
+                    WHEN a.location_address ILIKE '%السوارحة%' OR a.location_address ILIKE '%Sawarha%' THEN 'Sawarha'
+                    ELSE a.location_address
+                END) as location,
                 a.daily_status as status,
                 a.gps_status,
                 -- Compute the final status directly in SQL
@@ -880,7 +913,7 @@ exports.getTeamAttendance = async (req, res) => {
             checkOutAt: row.check_out_time ? new Date(row.check_out_time).toISOString() : null,
             attendanceType: row.attendance_type || 'Office',
             location: row.location || '-',
-            status: row.check_out_time ? row.status : (row.status === 'Present' || row.status === 'Late' ? 'In progress' : row.status),
+            status: row.computed_status,
             gpsStatus: row.gps_status,
             gpsVerified: row.gps_status === 'Verified' || row.gps_status === 'Suspicious'
         }));
