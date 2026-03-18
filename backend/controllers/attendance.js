@@ -402,6 +402,23 @@ exports.getDailyAttendance = async (req, res) => {
         const isManager = req.user.role_name === 'Manager';
         const managerEmployeeId = req.user.employee_id;
 
+        // Location mapping for Arabic substrings
+        const locationMappings = {
+            'Deir AlBalah': 'دير البلح',
+            'Deir Al Balah': 'دير البلح',
+            'Zawayda': 'الزوايدة',
+            'Rafah': 'رفح',
+            'North Gaza': 'شمال غزة',
+            'Gaza': 'غزة',
+            'Khan Yunis': 'خان يونس',
+            'Remal Office': 'الرمال',
+            'Remal': 'الرمال',
+            'Sawarha': 'السوارحة'
+        };
+
+        const locationArabic = locationMappings[location] || null;
+        const cleanLocation = location ? location.replace(/\s+/g, '') : null;
+
         // Get attendance records with filters in SQL
         const attendanceQuery = `
             SELECT 
@@ -415,13 +432,43 @@ exports.getDailyAttendance = async (req, res) => {
                 a.work_type as attendance_type,
                 a.location_address as location,
                 a.daily_status as status,
-                a.gps_status
+                a.gps_status,
+                -- Compute the final status directly in SQL
+                (CASE
+                    WHEN a.check_out_time IS NULL THEN
+                        CASE
+                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                            ELSE 'In progress'
+                        END
+                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                        CASE
+                            WHEN a.daily_status = 'Late' THEN 'Late'
+                            ELSE 'Early Leave'
+                        END
+                    ELSE COALESCE(a.daily_status, 'Present')
+                END) as computed_status
             FROM attendance a
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) = $1
               AND ($2::UUID IS NULL OR e.supervisor_id = $2)
-              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address ILIKE '%' || $3 || '%')
-              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
+              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR 
+                   a.location_address ILIKE '%' || $3 || '%' OR
+                   ($6::TEXT IS NOT NULL AND a.location_address ILIKE '%' || $6 || '%') OR
+                   ($7::TEXT IS NOT NULL AND REPLACE(a.location_address, ' ', '') ILIKE '%' || $7 || '%'))
+              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR 
+                (CASE
+                    WHEN a.check_out_time IS NULL THEN
+                        CASE
+                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                            ELSE 'In progress'
+                        END
+                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                        CASE
+                            WHEN a.daily_status = 'Late' THEN 'Late'
+                            ELSE 'Early Leave'
+                        END
+                    ELSE COALESCE(a.daily_status, 'Present')
+                END) = $4)
               AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
             ORDER BY a.check_in_time DESC
         `;
@@ -431,7 +478,9 @@ exports.getDailyAttendance = async (req, res) => {
             isManager ? managerEmployeeId : null,
             location || null,
             status || null,
-            search || null
+            search || null,
+            locationArabic,
+            cleanLocation
         ]);
 
         // Calculate stats
@@ -492,6 +541,23 @@ exports.getAttendanceReports = async (req, res) => {
         const isManager = req.user.role_name === 'Manager';
         const managerEmployeeId = req.user.employee_id;
 
+        // Location mapping for English names to Arabic substrings found in GPS addresses
+        const locationMappings = {
+            'Deir AlBalah': 'دير البلح',
+            'Deir Al Balah': 'دير البلح',
+            'Zawayda': 'الزوايدة',
+            'Rafah': 'رفح',
+            'North Gaza': 'شمال غزة',
+            'Gaza': 'غزة',
+            'Khan Yunis': 'خان يونس',
+            'Remal Office': 'الرمال',
+            'Remal': 'الرمال',
+            'Sawarha': 'السوارحة'
+        };
+
+        const locationArabic = locationMappings[location] || null;
+        const cleanLocation = location ? location.replace(/\s+/g, '') : null;
+
         // Get all attendance records in the date range with SQL filtering
         const attendanceQuery = `
             SELECT 
@@ -527,7 +593,11 @@ exports.getAttendanceReports = async (req, res) => {
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) BETWEEN $1 AND $2
               AND ($3::UUID IS NULL OR e.supervisor_id = $3)
-              AND ($4::TEXT IS NULL OR $4 = 'All Locations' OR a.location_address ILIKE '%' || $4 || '%')
+              -- Better location matching: English, Arabic mapping, or space-insensitive
+              AND ($4::TEXT IS NULL OR $4 = 'All Locations' OR 
+                   a.location_address ILIKE '%' || $4 || '%' OR
+                   ($7::TEXT IS NOT NULL AND a.location_address ILIKE '%' || $7 || '%') OR
+                   ($8::TEXT IS NOT NULL AND REPLACE(a.location_address, ' ', '') ILIKE '%' || $8 || '%'))
               AND ($6::TEXT IS NULL OR (e.full_name ILIKE '%' || $6 || '%' OR e.employee_code ILIKE '%' || $6 || '%'))
               -- Filter by status using the same logic as the computed column
               AND ($5::TEXT IS NULL OR $5 = 'All Status' OR 
@@ -553,7 +623,9 @@ exports.getAttendanceReports = async (req, res) => {
             isManager ? managerEmployeeId : null,
             location || null,
             status || null,
-            search || null
+            search || null,
+            locationArabic,
+            cleanLocation
         ]);
 
         // Get total active employees
@@ -711,6 +783,23 @@ exports.getTeamAttendance = async (req, res) => {
             });
         }
 
+        // Location mapping
+        const locationMappings = {
+            'Deir AlBalah': 'دير البلح',
+            'Deir Al Balah': 'دير البلح',
+            'Zawayda': 'الزوايدة',
+            'Rafah': 'رفح',
+            'North Gaza': 'شمال غزة',
+            'Gaza': 'غزة',
+            'Khan Yunis': 'خان يونس',
+            'Remal Office': 'الرمال',
+            'Remal': 'الرمال',
+            'Sawarha': 'السوارحة'
+        };
+
+        const locationArabic = locationMappings[location] || null;
+        const cleanLocation = location ? location.replace(/\s+/g, '') : null;
+
         // Get attendance records for the specified date for team members only
         const attendanceQuery = `
             SELECT 
@@ -724,13 +813,43 @@ exports.getTeamAttendance = async (req, res) => {
                 a.work_type as attendance_type,
                 a.location_address as location,
                 a.daily_status as status,
-                a.gps_status
+                a.gps_status,
+                -- Compute the final status directly in SQL
+                (CASE
+                    WHEN a.check_out_time IS NULL THEN
+                        CASE
+                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                            ELSE 'In progress'
+                        END
+                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                        CASE
+                            WHEN a.daily_status = 'Late' THEN 'Late'
+                            ELSE 'Early Leave'
+                        END
+                    ELSE COALESCE(a.daily_status, 'Present')
+                END) as computed_status
             FROM attendance a
             JOIN employees e ON a.employee_id = e.id
             WHERE DATE(a.check_in_time) = $1
               AND e.supervisor_id = $2
-              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR a.location_address ILIKE '%' || $3 || '%')
-              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR a.daily_status = $4)
+              AND ($3::TEXT IS NULL OR $3 = 'All Locations' OR 
+                   a.location_address ILIKE '%' || $3 || '%' OR
+                   ($6::TEXT IS NOT NULL AND a.location_address ILIKE '%' || $6 || '%') OR
+                   ($7::TEXT IS NOT NULL AND REPLACE(a.location_address, ' ', '') ILIKE '%' || $7 || '%'))
+              AND ($4::TEXT IS NULL OR $4 = 'All Status' OR 
+                (CASE
+                    WHEN a.check_out_time IS NULL THEN
+                        CASE
+                            WHEN (EXTRACT(EPOCH FROM (NOW() - a.check_in_time)) / 3600) > 9 OR EXTRACT(HOUR FROM NOW()) >= 17 THEN 'Missing Check-out'
+                            ELSE 'In progress'
+                        END
+                    WHEN a.check_out_time IS NOT NULL AND EXTRACT(HOUR FROM a.check_out_time) < 16 THEN
+                        CASE
+                            WHEN a.daily_status = 'Late' THEN 'Late'
+                            ELSE 'Early Leave'
+                        END
+                    ELSE COALESCE(a.daily_status, 'Present')
+                END) = $4)
               AND ($5::TEXT IS NULL OR (e.full_name ILIKE '%' || $5 || '%' OR e.employee_code ILIKE '%' || $5 || '%'))
             ORDER BY a.check_in_time DESC
         `;
@@ -740,7 +859,9 @@ exports.getTeamAttendance = async (req, res) => {
             managerEmployeeId,
             location || null,
             status || null,
-            search || null
+            search || null,
+            locationArabic,
+            cleanLocation
         ]);
 
         // Calculate stats (based on filtered results for the specific table view)
