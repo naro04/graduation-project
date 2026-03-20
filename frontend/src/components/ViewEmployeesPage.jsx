@@ -1,8 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
 import HeaderIcons from "./HeaderIcons";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getEmployees } from "../services/employees.js";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -12,19 +16,27 @@ const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4b2785c.pn
 const NotificationIcon = new URL("../images/ebf8a1610effc5cf80410fb898c4452b8d535684.png", import.meta.url).href;
 const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href;
 
-// Employee Photos
-const MohamedAliPhoto = new URL("../images/Mohamed Ali.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
-const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).href;
-const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
-const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
-
 const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
   const effectiveRole = getEffectiveRole();
   const { locationName, activityName } = useParams();
   const [activeMenu, setActiveMenu] = useState("5-3");
+  const [employeesData, setEmployeesData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const userDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) setIsUserDropdownOpen(false);
+    };
+    if (isUserDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isUserDropdownOpen]);
 
   // Role display names
   const roleDisplayNames = {
@@ -35,14 +47,35 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
     officer: "Officer",
   };
 
-  // Sample employees data
-  const employeesData = [
-    { id: 1, name: "Mohamed Ali", department: "Office", position: "Data Entry", photo: MohamedAliPhoto },
-    { id: 2, name: "Amal Ahmed", department: "Field Operation", position: "Trainer", photo: AmalAhmedPhoto },
-    { id: 3, name: "Amjad Saeed", department: "HR", position: "HR Manager", photo: AmjadSaeedPhoto },
-    { id: 4, name: "Jana Hassan", department: "IT", position: "System Administration", photo: JanaHassanPhoto },
-    { id: 5, name: "Hasan Jaber", department: "Project Management", position: "Project Manager", photo: HasanJaberPhoto }
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    getEmployees({ location_name: locationName, activity_name: activityName })
+      .then((res) => {
+        if (cancelled) return;
+        const list = res?.data ?? [];
+        const normalized = (Array.isArray(list) ? list : []).map((item) => {
+          const name = (item.name ?? item.full_name ?? [item.first_name, item.last_name].filter(Boolean).join(" ")) || "—";
+          return {
+            id: item.id ?? item.employee_id,
+            name,
+            department: item.department_name ?? item.department ?? "—",
+            position: item.position_title ?? item.position ?? item.job_title ?? "—",
+            photo: toAbsoluteAvatarUrl(item.avatar_url ?? item.profile_image ?? item.photo) || (item.avatar_url ?? item.photo ?? null),
+          };
+        });
+        setEmployeesData(normalized);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(err?.response?.data?.message ?? err?.message ?? "Failed to load employees");
+          setEmployeesData([]);
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [locationName, activityName]);
 
   const decodedLocationName = locationName ? decodeURIComponent(locationName) : "";
   const decodedActivityName = activityName ? decodeURIComponent(activityName) : "";
@@ -75,19 +108,25 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
               
               <div className="flex items-center gap-[16px] flex-shrink-0">
                 <HeaderIcons />
-                <div className="flex items-center gap-[12px] cursor-pointer">
-                  <img 
-                    src={UserAvatar}
-                    alt="User"
-                    className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
-                  />
-                  <div>
-                    <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
-                      <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
+                <div className="relative" ref={userDropdownRef}>
+                  <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <div>
+                      <div className="flex items-center gap-[6px]">
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
+                        <img src={DropdownArrow} alt="" className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
+                      </div>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
+                  {isUserDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
+                      <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                      <div className="h-[1px] bg-[#DC2626] my-[4px]" />
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); window.location.href = "/login"; }}>Log Out</button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -128,9 +167,13 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
                   color: '#6B7280'
                 }}
               >
-                {employeesData.length} Employees
+                {loading ? "Loading…" : `${employeesData.length} Employees`}
               </p>
             </div>
+
+            {loadError && (
+              <p className="mb-4 text-[14px] text-red-600">{loadError}</p>
+            )}
 
             {/* Employees Table */}
             <div className="bg-white border border-[#E0E0E0] rounded-[4px] overflow-hidden">
@@ -179,7 +222,10 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Table Rows */}
-              {employeesData.map((employee, index) => (
+              {loading ? (
+                <div className="p-8 text-center text-[#6B7280]">Loading employees…</div>
+              ) : (
+              employeesData.map((employee, index) => (
                 <div 
                   key={employee.id}
                   className={`grid grid-cols-[2fr_1fr_1fr] border-b border-[#E0E0E0] ${
@@ -193,7 +239,7 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
                        borderRight: '1px solid #E0E0E0'
                      }}
                    >
-                     <img 
+                     <AvatarOrPlaceholder 
                        src={employee.photo} 
                        alt={employee.name}
                        className="w-[40px] h-[40px] rounded-full object-cover"
@@ -235,7 +281,8 @@ const ViewEmployeesPage = ({ userRole = "superAdmin" }) => {
                     {employee.position}
                   </div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
 
             {/* Close Button */}

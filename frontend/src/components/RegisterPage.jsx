@@ -13,9 +13,9 @@ const EyeIcon = new URL("../images/icons/eye.png", import.meta.url).href;
 const Rectangle12 = new URL("../images/Shapes/Rectangle 12.png", import.meta.url).href;
 const Rectangle13 = new URL("../images/Shapes/Rectangle 13.png", import.meta.url).href;
 const Polygon1 = new URL("../images/Shapes/Polygon 1.png", import.meta.url).href;
-const Polygon1Alt = new URL("../images/Shapes/Polygon 1 (1).png", import.meta.url).href;
+const Polygon1Alt = new URL("../images/Shapes/Polygon 1 " + "(1).png", import.meta.url).href;
 const Ellipse1 = new URL("../images/Shapes/Ellipse 1.png", import.meta.url).href;
-const Ellipse1Alt = new URL("../images/Shapes/Ellipse 1 (1).png", import.meta.url).href;
+const Ellipse1Alt = new URL("../images/Shapes/Ellipse 1 " + "(1).png", import.meta.url).href;
 
 
 const RegisterPage = () => {

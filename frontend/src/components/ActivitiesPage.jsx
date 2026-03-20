@@ -4,6 +4,9 @@ import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getLocationActivities } from "../services/locationActivities";
 import HeaderIcons from "./HeaderIcons";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -18,10 +21,6 @@ const PlannedIcon = new URL("../images/icons/planned.png", import.meta.url).href
 const CalendarIcon = new URL("../images/icons/calender.png", import.meta.url).href;
 const ApprovedIcon = new URL("../images/icons/approved.png", import.meta.url).href;
 const PendingIcon = new URL("../images/icons/pending.png", import.meta.url).href;
-
-// Employee Photos
-const AmeerJamalPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
 
 // Action icons
 const ViewIcon = new URL("../images/icons/eye.png", import.meta.url).href;
@@ -43,7 +42,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
   const [isApprovalStatusDropdownOpen, setIsApprovalStatusDropdownOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedDate, setSelectedDate] = useState(new Date(2025, 11, 7)); // December 7, 2025
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [selectedActivities, setSelectedActivities] = useState([]);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState(null);
@@ -53,6 +52,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [activitiesError, setActivitiesError] = useState(null);
   const dateInputRef = useRef(null);
+  const initialDateSetFromActivitiesRef = useRef(false);
   const statusDropdownRef = useRef(null);
   const approvalStatusDropdownRef = useRef(null);
   const userDropdownMobileRef = useRef(null);
@@ -95,32 +95,81 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
     return { lat: latStr, lng: lngStr };
   };
 
-  // Normalize API response to UI shape (activity, type, status, approval, location, date, etc.)
+  // مطابقة أسماء الباكند من getAllActivities: project, approval, type, implementation_status, date, location, responsible_employee, ...
   const activitiesData = React.useMemo(() => {
     return (activitiesFromApi || []).map((a) => {
-      const approvalRaw = (a.approval_status ?? a.approvalStatus ?? "").toString();
-      const approval = approvalRaw ? approvalRaw.charAt(0).toUpperCase() + approvalRaw.slice(1).toLowerCase() : "";
-      const statusRaw = (a.status ?? "").toString();
-      const status = statusRaw === "Implemented" || statusRaw === "Planned" ? statusRaw : (statusRaw || "Planned");
-      const startDate = a.start_date ?? a.startDate ?? "";
+      // الباكند يرسل: approval_status AS approval → الحقل اسمه approval
+      const approvalVal = a.approval ?? a.approval_status ?? a.approvalStatus ?? "";
+      const approvalStr = String(approvalVal ?? "").trim();
+      const approval = approvalStr
+        ? (approvalStr.charAt(0).toUpperCase() + approvalStr.slice(1).toLowerCase())
+        : "—";
+      const approvalDisplay =
+        approval === "Approved" || approval === "Rejected" || approval === "Pending" ? approval : approval || "—";
+
+      // الباكند يرسل: implementation_status (Planned/Implemented) و status
+      const implStatus = a.implementation_status ?? a.implementationStatus ?? a.status ?? "";
+      const statusStr = String(implStatus ?? "").trim();
+      const status =
+        statusStr === "Implemented" || statusStr === "Planned" ? statusStr : statusStr || "Planned";
+
+      // الباكند يرسل: start_date AS date → الحقل اسمه date
+      const startDate = a.date ?? a.start_date ?? a.startDate ?? "";
+
+      // الباكند يرسل: p.name AS project و a.project_id (لو project_id فاضي أو المشروع مش موجود، project يكون null)
+      const projectVal = a.project ?? a.project_name ?? a.projectName ?? "";
+      let project =
+        projectVal != null && String(projectVal).trim() ? String(projectVal).trim() : "—";
+      const projectId = a.project_id ?? a.projectId;
+      if (project === "—" && projectId != null && projectId !== "") {
+        project = `المشروع #${typeof projectId === "string" && projectId.length > 8 ? projectId.slice(0, 8) : projectId}`;
+      }
+
       return {
         id: a.id,
         activity: a.name ?? a.activity_name ?? "",
         type: a.type ?? a.activity_type ?? "—",
-        project: a.project ?? "—",
+        project,
         responsibleEmployee: a.responsible_employee ?? a.responsibleEmployee ?? a.employee_name ?? "—",
-        employeePhoto: a.employee_photo ?? AmeerJamalPhoto,
+        employeePhoto: toAbsoluteAvatarUrl(a.employee_photo ?? a.avatar_url) || (a.employee_photo ?? a.avatar_url ?? null),
         status,
-        approval: approval === "Approved" || approval === "Rejected" || approval === "Pending" ? approval : (approval || "—"),
+        approval: approvalDisplay,
         location: a.location_name ?? a.location ?? "—",
         coordinates: getActivityCoordinates(a),
         date: startDate ? new Date(startDate) : new Date(),
-        duration: a.duration ?? "—",
+        duration: a.duration ?? a.activity_days ?? "—",
         team: a.team ?? "—",
         description: a.description ?? "",
       };
     });
   }, [activitiesFromApi]);
+
+  // Set default filter date to nearest activity date when activities first load
+  useEffect(() => {
+    if (activitiesLoading || initialDateSetFromActivitiesRef.current) return;
+    const list = activitiesFromApi || [];
+    if (list.length === 0) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let nearestDate = null;
+    let minDiff = Infinity;
+    for (const a of list) {
+      const startDate = a.date ?? a.start_date ?? a.startDate ?? "";
+      if (!startDate) continue;
+      const d = new Date(startDate);
+      if (Number.isNaN(d.getTime())) continue;
+      d.setHours(0, 0, 0, 0);
+      const diff = Math.abs(d.getTime() - today.getTime());
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearestDate = d;
+      }
+    }
+    if (nearestDate) {
+      setSelectedDate(nearestDate);
+      initialDateSetFromActivitiesRef.current = true;
+    }
+  }, [activitiesLoading, activitiesFromApi]);
 
   // Summary statistics from API data
   const summaryStats = React.useMemo(() => {
@@ -240,8 +289,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -264,7 +312,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -932,8 +980,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -950,7 +997,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1116,9 +1163,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
               <div key={activity.id} className="bg-white rounded-[10px] border border-[#E0E0E0] shadow-sm p-[16px]">
                 <div className="flex items-start justify-between mb-[12px]">
                   <div className="flex items-center gap-[12px]">
-                    <div className="w-[40px] h-[40px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      <img src={activity.employeePhoto} alt={activity.responsibleEmployee} className="w-full h-full object-cover" />
-                    </div>
+                    <AvatarOrPlaceholder src={activity.employeePhoto} alt={activity.responsibleEmployee} className="w-[40px] h-[40px] rounded-full flex-shrink-0" />
                     <div>
                       <p className="text-[14px] font-medium text-[#111827] mb-[2px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
                         {activity.responsibleEmployee}
@@ -1377,6 +1422,11 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
           onDelete={(activity) => {
             setActivityToDelete(activity);
             setShowWarningModal(true);
+          }}
+          onApprovalChange={() => {
+            getLocationActivities()
+              .then((list) => setActivitiesFromApi(Array.isArray(list) ? list : []))
+              .catch(() => {});
           }}
         />
       )}

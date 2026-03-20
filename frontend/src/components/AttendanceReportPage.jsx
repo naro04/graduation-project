@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LogoutModal from "./LogoutModal";
 import { getAttendanceReports, getAttendanceLocations, getTeamAttendance } from "../services/attendance";
@@ -28,12 +31,6 @@ const IconCompletedTasks = new URL("../images/icons/approved.png", import.meta.u
 const IconOverdueTasks = new URL("../images/icons/warnning.png", import.meta.url).href;
 const IconAttendanceCommitment = new URL("../images/icons/Attendance1.png", import.meta.url).href;
 
-// Employee Photos
-const MohamedAliPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
-const AmjadSaeedPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
-const JanaHassanPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).href;
-
 const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -46,8 +43,12 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("All Locations");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
-  const [fromDate, setFromDate] = useState("2025-12-12");
-  const [toDate, setToDate] = useState("2025-12-19");
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -74,6 +75,8 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const [teamActivityReports, setTeamActivityReports] = useState({ records: [], stats: { completionTrend: [], participantsByType: [] } });
   const locationDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
+  const locationDropdownRefMobile = useRef(null);
+  const statusDropdownRefMobile = useRef(null);
   const teamTypeDropdownRef = useRef(null);
   const teamStatusDropdownRef = useRef(null);
   const exportAllDropdownRef = useRef(null);
@@ -94,8 +97,15 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     let cancelled = false;
     setReportsLoading(true);
     setReportsError(null);
+    const reportParams = {
+      from: fromDate,
+      to: toDate,
+    };
+    if (selectedLocation && selectedLocation !== "All Locations") reportParams.location = selectedLocation;
+    if (selectedStatus && selectedStatus !== "All Status") reportParams.status = selectedStatus;
+    if (searchQuery && searchQuery.trim()) reportParams.search = searchQuery.trim();
     Promise.all([
-      getAttendanceReports({ from: fromDate, to: toDate }).catch((err) => {
+      getAttendanceReports(reportParams).catch((err) => {
         if (!cancelled) setReportsError(err?.response?.data?.message || err?.message || "Failed to load reports");
         return [];
       }),
@@ -108,7 +118,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       if (!cancelled) setReportsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, selectedLocation, selectedStatus, searchQuery]);
 
   useEffect(() => {
     if (!isTeamReportPage) return;
@@ -135,10 +145,23 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     return () => { cancelled = true; };
   }, [isTeamReportPage, fromDate, toDate]);
 
+  // Format date-time to single line for table (no scroll: compact)
+  const formatDateTimeShort = (val) => {
+    if (val == null || val === "" || val === "—") return "—";
+    const str = String(val);
+    try {
+      const d = new Date(str);
+      if (Number.isNaN(d.getTime())) return str;
+      return d.toLocaleString(undefined, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+    } catch {
+      return str;
+    }
+  };
+
   const normalizeAttendanceRow = (r) => ({
     id: r.id ?? r.attendance_id,
     employeeName: r.employee_name ?? r.employeeName ?? "—",
-    employeePhoto: r.photo ?? r.avatar_url ?? MohamedAliPhoto,
+    employeePhoto: toAbsoluteAvatarUrl(r.avatar_url) || (r.photo ?? r.avatar_url ?? null),
     employeeId: String(r.employee_id ?? r.employeeId ?? "—"),
     checkIn: r.check_in ?? r.check_in_time ?? r.checkIn ?? "—",
     checkOut: r.check_out ?? r.check_out_time ?? r.checkOut ?? "—",
@@ -308,15 +331,15 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     }
   };
 
-  // Close dropdowns when clicking outside
+  // Close dropdowns when clicking outside (check both desktop and mobile refs)
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (locationDropdownRef.current && !locationDropdownRef.current.contains(event.target)) {
-        setIsLocationDropdownOpen(false);
-      }
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
-        setIsStatusDropdownOpen(false);
-      }
+      const insideLocation = (locationDropdownRef.current && locationDropdownRef.current.contains(event.target)) ||
+        (locationDropdownRefMobile.current && locationDropdownRefMobile.current.contains(event.target));
+      if (!insideLocation) setIsLocationDropdownOpen(false);
+      const insideStatus = (statusDropdownRef.current && statusDropdownRef.current.contains(event.target)) ||
+        (statusDropdownRefMobile.current && statusDropdownRefMobile.current.contains(event.target));
+      if (!insideStatus) setIsStatusDropdownOpen(false);
       if (teamTypeDropdownRef.current && !teamTypeDropdownRef.current.contains(event.target)) {
         setIsTeamTypeDropdownOpen(false);
       }
@@ -377,7 +400,12 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     const name = (record.employeeName || "").toLowerCase();
     const id = String(record.employeeId || "");
     const matchesSearch = name.includes(searchQuery.toLowerCase()) || id.includes(searchQuery);
-    const matchesLocation = selectedLocation === "All Locations" || record.location === selectedLocation;
+    const locA = (record.location || "").trim().toLowerCase();
+    const locB = (selectedLocation || "").trim().toLowerCase();
+    const matchesLocation = selectedLocation === "All Locations" || !locB ||
+      locA === locB ||
+      (locA && locA.includes(locB)) ||
+      (locB && locA.includes(locB));
     const matchesStatus = selectedStatus === "All Status" || record.status === selectedStatus;
     return matchesSearch && matchesLocation && matchesStatus;
   });
@@ -482,8 +510,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -509,7 +536,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1148,8 +1175,9 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Location Dropdown */}
-              <div className="relative" ref={locationDropdownRef}>
+              <div className="relative z-[100]" ref={locationDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[160px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -1160,10 +1188,11 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isLocationDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[160px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200] min-w-[160px]">
                     {locations.map((location) => (
                       <button
                         key={location}
+                        type="button"
                         onClick={() => {
                           setSelectedLocation(location);
                           setIsLocationDropdownOpen(false);
@@ -1187,8 +1216,9 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Status Dropdown */}
-              <div className="relative" ref={statusDropdownRef}>
+              <div className="relative z-[100]" ref={statusDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -1199,10 +1229,11 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[140px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200] min-w-[140px]">
                     {statusOptions.map((status) => (
                       <button
                         key={status}
+                        type="button"
                         onClick={() => {
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
@@ -1309,10 +1340,10 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               </div>
             )}
 
-            {/* Attendance Table */}
+            {/* Attendance Table - horizontal scroll inside box, full content visible */}
             <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #B5B1B1' }}>
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[900px]">
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
@@ -1323,27 +1354,13 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                           className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                         />
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Employee
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Employee ID
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Check-in
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Check-out
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Attendance Type
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Location
-                      </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Status
-                      </th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Employee</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Employee ID</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Check-in</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Check-out</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Attendance Type</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Location</th>
+                      <th className="px-[12px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1360,40 +1377,28 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <div className="flex items-center justify-center gap-[12px]">
-                              <img
+                              <AvatarOrPlaceholder
                                 src={record.employeePhoto}
                                 alt={record.employeeName}
-                                className="w-[32px] h-[32px] rounded-full object-cover"
+                                className="w-[32px] h-[32px] rounded-full object-cover flex-shrink-0"
                               />
-                              <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                                {record.employeeName}
-                              </span>
+                              <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{record.employeeName}</span>
                             </div>
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                              {record.employeeId}
-                            </span>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{record.employeeId}</span>
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                              {record.checkIn}
-                            </span>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{formatDateTimeShort(record.checkIn)}</span>
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                              {record.checkOut}
-                            </span>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{record.checkOut === "—" ? "—" : formatDateTimeShort(record.checkOut)}</span>
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                              {record.attendanceType}
-                            </span>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{record.attendanceType}</span>
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
-                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                              {record.location}
-                            </span>
+                            <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>{record.location}</span>
                           </td>
                           <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <span
@@ -1516,8 +1521,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1537,7 +1541,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1968,8 +1972,9 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Location Dropdown */}
-            <div className="relative" ref={locationDropdownRef}>
+            <div className="relative z-[100]" ref={locationDropdownRefMobile}>
               <button
+                type="button"
                 onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -1979,10 +1984,11 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isLocationDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200]">
                   {locations.map((location) => (
                     <button
                       key={location}
+                      type="button"
                       onClick={() => {
                         setSelectedLocation(location);
                         setIsLocationDropdownOpen(false);
@@ -1999,8 +2005,9 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Status Dropdown */}
-            <div className="relative" ref={statusDropdownRef}>
+            <div className="relative z-[100]" ref={statusDropdownRefMobile}>
               <button
+                type="button"
                 onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -2010,10 +2017,11 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isStatusDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200]">
                   {statusOptions.map((status) => (
                     <button
                       key={status}
+                      type="button"
                       onClick={() => {
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
@@ -2057,7 +2065,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
                 >
                   {/* Header with Employee Info */}
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#F0F0F0]">
-                    <img
+                    <AvatarOrPlaceholder
                       src={record.employeePhoto}
                       alt={record.employeeName}
                       className="w-[48px] h-[48px] rounded-full object-cover flex-shrink-0"

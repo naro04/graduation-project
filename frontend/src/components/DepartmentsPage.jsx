@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import LogoutModal from "./LogoutModal";
 import HeaderIcons from "./HeaderIcons";
@@ -127,6 +128,27 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
     return matchesSearch && matchesDepartment && matchesStatus;
   });
 
+  // Pagination: 10 per page
+  const itemsPerPage = 10;
+  const actualTotalPages = Math.max(1, Math.ceil(filteredDepartments.length / itemsPerPage));
+  const totalPages = Math.max(3, actualTotalPages);
+  const paginatedDepartments = filteredDepartments.slice(
+    (currentPage - 1) * itemsPerPage,
+    (currentPage - 1) * itemsPerPage + itemsPerPage
+  );
+
+  // Reset to page 1 when filters/search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedDepartmentFilter, selectedStatus]);
+
+  // Clamp current page if out of range
+  useEffect(() => {
+    if (currentPage > actualTotalPages && actualTotalPages >= 1) {
+      setCurrentPage(actualTotalPages);
+    }
+  }, [actualTotalPages, currentPage]);
+
   // Handle checkbox selection
   const handleCheckboxChange = (departmentId) => {
     setSelectedDepartments(prev => {
@@ -138,12 +160,13 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
     });
   };
 
-  // Handle select all
+  // Handle select all (current page only)
   const handleSelectAll = () => {
-    if (selectedDepartments.length === filteredDepartments.length) {
-      setSelectedDepartments([]);
+    if (paginatedDepartments.length > 0 && paginatedDepartments.every(d => selectedDepartments.includes(d.id))) {
+      setSelectedDepartments(prev => prev.filter(id => !paginatedDepartments.some(d => d.id === id)));
     } else {
-      setSelectedDepartments(filteredDepartments.map(dept => dept.id));
+      const pageIds = paginatedDepartments.map(d => d.id);
+      setSelectedDepartments(prev => [...new Set([...prev, ...pageIds])]);
     }
   };
 
@@ -233,8 +256,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -257,7 +279,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -338,7 +360,9 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                         {["All Departments", ...departments.map((d) => d.name).filter(Boolean)].map((dept) => (
                           <button
                             key={dept}
-                            onClick={() => {
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
                               setSelectedDepartmentFilter(dept);
                               setIsDepartmentDropdownOpen(false);
                             }}
@@ -374,7 +398,9 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                         {["All Status", "Active", "Under Review", "Inactive"].map((status) => (
                           <button
                             key={status}
-                            onClick={() => {
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
                               setSelectedStatus(status);
                               setIsStatusDropdownOpen(false);
                             }}
@@ -475,7 +501,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                       <th className="text-center py-[16px] px-[20px] text-[14px] font-semibold" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0', color: '#6C6C6C' }}>
                         <input
                           type="checkbox"
-                          checked={selectedDepartments.length === filteredDepartments.length && filteredDepartments.length > 0}
+                          checked={paginatedDepartments.length > 0 && paginatedDepartments.every(d => selectedDepartments.includes(d.id))}
                           onChange={handleSelectAll}
                           className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
                         />
@@ -495,8 +521,8 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredDepartments.map((department, index) => (
-                      <tr key={department.id} className="transition-colors" style={{ borderBottom: index < filteredDepartments.length - 1 ? '1px solid #E0E0E0' : 'none' }}>
+                    {paginatedDepartments.map((department, index) => (
+                      <tr key={department.id} className="transition-colors" style={{ borderBottom: index < paginatedDepartments.length - 1 ? '1px solid #E0E0E0' : 'none' }}>
                         <td className="py-[16px] px-[20px] text-center" style={{ borderRight: '1px solid #E0E0E0' }}>
                           <input
                             type="checkbox"
@@ -569,37 +595,45 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
               {filteredDepartments.length > 0 && (
                 <div className="border-t border-[#E0E0E0] px-[20px] py-[16px] flex items-center justify-center gap-[8px]">
                   <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    onClick={() => currentPage > 1 && setCurrentPage(prev => Math.max(1, prev - 1))}
+                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
+                    style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'default' : 'pointer' }}
+                    aria-disabled={currentPage === 1}
                   >
                     <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                     </svg>
                   </button>
 
-                  {[1, 2, 3].map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page
-                        ? 'font-semibold'
-                        : ''
-                        }`}
-                      style={{
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: currentPage === page ? 600 : 400,
-                        color: currentPage === page ? '#474747' : '#827F7F'
-                      }}
-                    >
-                      {page}
-                    </button>
-                  ))}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                    const isDisabled = page > actualTotalPages;
+                    return (
+                      <button
+                        key={page}
+                        type="button"
+                        onClick={() => !isDisabled && setCurrentPage(page)}
+                        className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page ? 'font-semibold' : ''}`}
+                        style={{
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: currentPage === page ? 600 : 400,
+                          color: currentPage === page ? '#474747' : isDisabled ? '#9CA3AF' : '#827F7F',
+                          cursor: isDisabled ? 'default' : 'pointer',
+                          opacity: isDisabled ? 0.5 : 1
+                        }}
+                        aria-disabled={isDisabled}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
 
                   <button
-                    onClick={() => setCurrentPage(prev => prev + 1)}
-                    disabled={currentPage === 3}
-                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    onClick={() => currentPage < actualTotalPages && setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
+                    style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1, cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
+                    aria-disabled={currentPage >= actualTotalPages}
                   >
                     <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1260,8 +1294,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1278,7 +1311,7 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1362,10 +1395,12 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
               </svg>
               {isDepartmentDropdownOpen && (
                 <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full">
-                  {["Human Resource", "Field Operations", "Office Administration", "Project Management", "Finance", "Information Technology", "All Departments"].map((dept) => (
+                  {["All Departments", ...departments.map((d) => d.name).filter(Boolean)].map((dept) => (
                     <button
                       key={dept}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         setSelectedDepartmentFilter(dept);
                         setIsDepartmentDropdownOpen(false);
                       }}
@@ -1401,7 +1436,9 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
                   {["All Status", "Active", "Under Review", "Inactive"].map((status) => (
                     <button
                       key={status}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
                       }}
@@ -1434,9 +1471,9 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
             Add Department
           </button>
 
-          {/* Departments Cards - Mobile */}
+          {/* Departments Cards - Mobile (10 per page) */}
           <div className="flex flex-col gap-[12px]">
-            {filteredDepartments.map((department) => (
+            {paginatedDepartments.map((department) => (
               <div key={department.id} className="bg-white rounded-[10px] border border-[#E0E0E0] shadow-sm p-[16px]">
                 <div className="flex items-start justify-between mb-[12px]">
                   <div>
@@ -1489,6 +1526,45 @@ const DepartmentsPage = ({ userRole = "superAdmin" }) => {
               </div>
             ))}
           </div>
+
+          {/* Mobile Pagination */}
+          {filteredDepartments.length > 0 && (
+            <div className="flex items-center justify-center gap-[8px] mt-6 pb-4">
+              <button
+                type="button"
+                onClick={() => currentPage > 1 && setCurrentPage(prev => Math.max(1, prev - 1))}
+                className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center"
+                style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'default' : 'pointer' }}
+                aria-disabled={currentPage === 1}
+              >
+                <svg className="w-[16px] h-[16px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                const isDisabled = page > actualTotalPages;
+                return (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => !isDisabled && setCurrentPage(page)}
+                    className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] bg-white border border-[#E0E0E0] ${currentPage === page ? 'font-semibold' : ''}`}
+                    style={{ color: currentPage === page ? '#474747' : isDisabled ? '#9CA3AF' : '#827F7F', cursor: isDisabled ? 'default' : 'pointer', opacity: isDisabled ? 0.5 : 1 }}
+                    aria-disabled={isDisabled}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => currentPage < actualTotalPages && setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center"
+                style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1, cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
+                aria-disabled={currentPage >= actualTotalPages}
+              >
+                <svg className="w-[16px] h-[16px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+            </div>
+          )}
 
           {filteredDepartments.length === 0 && (
             <div className="py-[60px] text-center">

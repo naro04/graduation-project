@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getDashboardStats } from "../services/dashboard.js";
 import { getCurrentUser, getMe, getEffectiveRole, logout } from "../services/auth.js";
 
@@ -29,7 +30,7 @@ const ProfileGreenIcon = new URL("../images/icons/profile green.png", import.met
 // Quick Navigation icons
 const EmployeesIcon = new URL("../images/icons/Employees.png", import.meta.url).href;
 const LocationsIcon = new URL("../images/icons/Locations.png", import.meta.url).href;
-const ActivitiesIcon = new URL("../images/icons/Activities1 (1).png", import.meta.url).href;
+const ActivitiesIcon = new URL("../images/icons/Activities1 " + "(1).png", import.meta.url).href;
 
 import LogoutModal from "./LogoutModal";
 import HeaderIcons from "./HeaderIcons";
@@ -50,8 +51,8 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const [activeMenu, setActiveMenu] = useState(1);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [currentDate, setCurrentDate] = useState(new Date(2025, 11, 7)); // December 2025, day 7 selected
-  const [selectedDate, setSelectedDate] = useState(7);
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(() => new Date().getDate());
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
@@ -482,8 +483,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -510,7 +510,11 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}
+                        className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors"
+                      >
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1182,8 +1186,7 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1200,7 +1203,11 @@ const DashboardPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}
+                    className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors"
+                  >
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>

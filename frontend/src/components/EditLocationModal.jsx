@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import LocationMapPicker from "./LocationMapPicker";
 
-const EditLocationModal = ({ location, onClose, onUpdate, onDelete }) => {
+const EditLocationModal = ({ location, onClose, onUpdate, onDelete, locationTypes = [] }) => {
     const [formData, setFormData] = useState({
         name: "",
-        type: "Office",
+        type: "",
         status: "Active",
         latitude: "",
         longitude: ""
@@ -12,15 +12,17 @@ const EditLocationModal = ({ location, onClose, onUpdate, onDelete }) => {
 
     useEffect(() => {
         if (location) {
+            const firstType = locationTypes[0];
+            const defaultType = firstType ? (firstType.name || firstType.type || firstType.title) : "";
             setFormData({
                 name: location.name || "",
-                type: location.type || "Office",
+                type: location.type || defaultType,
                 status: location.status || "Active",
                 latitude: location.latitude ?? "",
                 longitude: location.longitude ?? ""
             });
         }
-    }, [location]);
+    }, [location, locationTypes]);
 
     const handleMapSelect = (lat, lng) => {
         setFormData(prev => ({
@@ -78,8 +80,10 @@ const EditLocationModal = ({ location, onClose, onUpdate, onDelete }) => {
                                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                 className="w-full h-[36px] px-[12px] border border-[#E0E0E0] rounded-[4px] text-[14px] focus:outline-none focus:border-[#00564F] appearance-none bg-white cursor-pointer"
                             >
-                                <option value="Office">Office</option>
-                                <option value="Field">Field</option>
+                                {locationTypes.map((t) => {
+                                    const name = t.name || t.type || t.title;
+                                    return name ? <option key={t.id || name} value={name}>{name}</option> : null;
+                                })}
                             </select>
                             <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#6B7280] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />

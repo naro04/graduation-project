@@ -5,6 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import Sidebar from "./Sidebar";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { deleteAttendance } from "../services/attendance";
 
 // Fix default marker icons in Leaflet with Vite/bundler
 delete L.Icon.Default.prototype._getIconUrl;
@@ -40,8 +41,10 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
   const currentUser = getCurrentUser();
   const effectiveRole = getEffectiveRole();
   const employee = location.state?.employee;
-  const selectedDate = location.state?.date || new Date(2025, 11, 7);
+  const selectedDate = location.state?.date || new Date();
   const [showWarningModal, setShowWarningModal] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   // Format date
   const formatDate = (date) => {
@@ -314,14 +317,14 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
         <p className="p-[24px] text-center text-[#6B7280]">Mobile view coming soon</p>
       </div>
 
-      {/* Warning Modal */}
+      {/* Warning Modal - z-[9999] so it appears above the Leaflet map (which uses high z-index) */}
       {showWarningModal && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]"
           onClick={() => setShowWarningModal(false)}
         >
           <div 
-            className="bg-white shadow-lg relative"
+            className="bg-white shadow-lg relative z-[9999]"
             style={{
               width: '469px',
               height: '290px',
@@ -384,17 +387,37 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
               >
                 This action can't be undone
               </p>
+              {deleteError && (
+                <p className="text-red-600 text-sm mt-2" style={{ fontFamily: 'Inter, sans-serif' }}>
+                  {deleteError}
+                </p>
+              )}
             </div>
 
             {/* Action Buttons */}
             <div className="flex items-center justify-center gap-[20px] px-[20px]">
               <button
-                onClick={() => {
-                  console.log('Deleting employee attendance:', employee);
-                  setShowWarningModal(false);
-                  navigate('/attendance/gps');
+                onClick={async () => {
+                  const attendanceId = employee?.id ?? employee?.originalData?.id;
+                  if (!attendanceId) {
+                    setDeleteError('لا يمكن تحديد سجل الحضور.');
+                    return;
+                  }
+                  setDeleteError(null);
+                  setDeleteLoading(true);
+                  try {
+                    await deleteAttendance(attendanceId);
+                    setShowWarningModal(false);
+                    navigate('/attendance/gps');
+                  } catch (err) {
+                    const msg = err?.response?.data?.message || err?.message || 'فشل حذف سجل التحقق.';
+                    setDeleteError(msg);
+                  } finally {
+                    setDeleteLoading(false);
+                  }
                 }}
-                className="text-white focus:outline-none"
+                disabled={deleteLoading}
+                className="text-white focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{ 
                   width: '144px',
                   height: '34px',
@@ -408,7 +431,7 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
                   boxShadow: '0 2px 4px rgba(0, 0, 0, 0.25)'
                 }}
               >
-                Delete
+                {deleteLoading ? '...' : 'Delete'}
               </button>
               <button
                 onClick={() => {

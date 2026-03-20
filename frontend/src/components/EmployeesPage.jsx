@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
 import { logout, getCurrentUser, getEffectiveRole } from "../services/auth.js";
@@ -8,16 +9,9 @@ import { getDepartments } from "../services/departments.js";
 import { getPositions } from "../services/positions.js";
 import { getRoles } from "../services/rbac.js";
 import HeaderIcons from "./HeaderIcons.jsx";
-import { BASE_URL } from "../services/api.js";
-
-const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
-
-function toAbsoluteAvatarUrl(avatarUrl) {
-  if (!avatarUrl || typeof avatarUrl !== "string") return null;
-  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
-  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
-  return `${API_ORIGIN}${path}`;
-}
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 // Logo images
 const LogoMobile = new URL("../images/LogoMobile.jpg", import.meta.url).href;
@@ -47,6 +41,7 @@ const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).hr
 const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
 
 const EmployeesPage = ({ userRole = "superAdmin" }) => {
+  const navigate = useNavigate();
   const currentUser = getCurrentUser();
   const effectiveRole = getEffectiveRole();
   const [activeMenu, setActiveMenu] = useState(2);
@@ -96,22 +91,19 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
     status: "Active"
   });
 
-  // Mapping of departments to positions
-  const departmentPositions = {
-    "HR": ["HR Manager"],
-    "Field Operations": ["Activity Facilitator", "Trainer", "Social Worker"],
-    "Office": ["Administrative Assistant", "Data Entry", "Office Coordinator"],
-    "Project Management": ["Project Manager", "Team Leader", "Field Supervisor"],
-    "Finance": ["Finance Manager", "Accountant", "Financial Analyst"],
-    "IT": ["System Administration"]
-  };
-
-  // Get available positions based on selected department
+  // من الـ API: مناصب حسب القسم (إن وُجد department_id في المنصب) وإلا كل المناصب
   const getAvailablePositions = () => {
+    if (!positionsList.length) return [];
     if (!formData.department || formData.department === "" || formData.department === "Select Department") {
-      return [];
+      return positionsList.map((p) => ({ title: p.title || p.name, ...p }));
     }
-    return departmentPositions[formData.department] || [];
+    const dept = departmentsList.find((d) => (d.name || d.title) === formData.department);
+    const filtered = dept
+      ? positionsList.filter(
+          (p) => p.department_id === dept.id || (p.department_name || p.department) === formData.department
+        )
+      : positionsList;
+    return filtered.length ? filtered.map((p) => ({ title: p.title || p.name, ...p })) : positionsList.map((p) => ({ title: p.title || p.name, ...p }));
   };
 
   // Handle department change
@@ -223,7 +215,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
           status: emp.status === "active" ? "Active" : (emp.status === "under_review" ? "Under Review" : "Inactive"),
           phone: emp.phone || "",
           joinDate: emp.hired_at || "",
-          photo: toAbsoluteAvatarUrl(emp.avatar_url) || EmployeeIcon,
+          photo: toAbsoluteAvatarUrl(emp.avatar_url) || null,
           originalData: emp
         }));
 
@@ -243,7 +235,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
     fetchEmployees();
   }, []);
 
-  useEffect(() => {
+  const fetchDepartmentsPositionsRoles = () => {
     Promise.all([getDepartments(), getPositions(), getRoles()])
       .then(([depts, positions, roles]) => {
         setDepartmentsList(Array.isArray(depts) ? depts : []);
@@ -251,7 +243,18 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
         setRolesList(Array.isArray(roles) ? roles : []);
       })
       .catch((err) => console.error("Failed to load departments/positions/roles:", err));
+  };
+
+  useEffect(() => {
+    fetchDepartmentsPositionsRoles();
   }, []);
+
+  // عند فتح Add أو Edit Employee نحدّث قوائم الـ Department والـ Position والـ Role عشان أي قسم/منصب/دور جديد يظهر بالدروب داون
+  useEffect(() => {
+    if (showAddEmployeePage || showEditEmployeePage) {
+      fetchDepartmentsPositionsRoles();
+    }
+  }, [showAddEmployeePage, showEditEmployeePage]);
 
   // Handle form submission for adding/editing employee
   const handleAddEmployeeSubmit = async (e) => {
@@ -381,6 +384,27 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
     });
   }, [employeesData, searchQuery, selectedDepartment, selectedRole, selectedStatus]);
 
+  // Pagination: 10 per page
+  const itemsPerPage = 10;
+  const actualTotalPages = Math.max(1, Math.ceil(filteredEmployees.length / itemsPerPage));
+  const totalPages = Math.max(3, actualTotalPages);
+  const paginatedEmployees = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredEmployees.slice(start, start + itemsPerPage);
+  }, [filteredEmployees, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters/search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedDepartment, selectedRole, selectedStatus]);
+
+  // Clamp current page if out of range
+  useEffect(() => {
+    if (currentPage > actualTotalPages && actualTotalPages >= 1) {
+      setCurrentPage(actualTotalPages);
+    }
+  }, [actualTotalPages, currentPage]);
+
   // Handle checkbox selection
   const handleCheckboxChange = (employeeId) => {
     setSelectedEmployees(prev => {
@@ -392,12 +416,13 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
     });
   };
 
-  // Handle select all
+  // Handle select all (current page only)
   const handleSelectAll = () => {
-    if (selectedEmployees.length === filteredEmployees.length) {
-      setSelectedEmployees([]);
+    if (selectedEmployees.length === paginatedEmployees.length && paginatedEmployees.length > 0) {
+      setSelectedEmployees(prev => prev.filter(id => !paginatedEmployees.some(e => e.id === id)));
     } else {
-      setSelectedEmployees(filteredEmployees.map(e => e.id));
+      const pageIds = paginatedEmployees.map(e => e.id);
+      setSelectedEmployees(prev => [...new Set([...prev, ...pageIds])]);
     }
   };
 
@@ -593,8 +618,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -617,7 +641,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -706,7 +730,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                 </svg>
                 {isDepartmentDropdownOpen && (
                   <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full">
-                    {["HR", "Field Operations", "Office", "Project Management", "Finance", "IT", "All Departments"].map((dept) => (
+                    {["All Departments", ...(departmentsList.map((d) => d.name || d.title).filter(Boolean))].map((dept) => (
                       <button
                         key={dept}
                         onClick={() => {
@@ -743,7 +767,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                 </svg>
                 {isRoleDropdownOpen && (
                   <div className="absolute top-full left-0 mt-[4px] bg-white rounded-[8px] border border-[#E0E0E0] shadow-lg z-50 w-full">
-                    {["Super Admin", "HR Admin", "Manager", "Field Worker", "Office Staff", "All Roles"].map((role) => (
+                    {["All Roles", ...(rolesList.map((r) => r.name).filter(Boolean))].map((role) => (
                       <button
                         key={role}
                         onClick={() => {
@@ -886,7 +910,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                       <th className="text-center py-[16px] px-[20px] text-[14px] font-semibold" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, borderBottom: '1px solid #E0E0E0', borderRight: '1px solid #E0E0E0', color: '#6C6C6C' }}>
                         <input
                           type="checkbox"
-                          checked={selectedEmployees.length === filteredEmployees.length && filteredEmployees.length > 0}
+                          checked={paginatedEmployees.length > 0 && paginatedEmployees.every(e => selectedEmployees.includes(e.id))}
                           onChange={handleSelectAll}
                           className="w-[16px] h-[16px] rounded border-[#E0E0E0] cursor-pointer"
                         />
@@ -922,8 +946,8 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         </td>
                       </tr>
                     )}
-                    {!isLoadingEmployees && filteredEmployees.map((employee, index) => (
-                      <tr key={employee.id} className="transition-colors" style={{ borderBottom: index < filteredEmployees.length - 1 ? '1px solid #E0E0E0' : 'none' }}>
+                    {!isLoadingEmployees && paginatedEmployees.map((employee, index) => (
+                      <tr key={employee.id} className="transition-colors" style={{ borderBottom: index < paginatedEmployees.length - 1 ? '1px solid #E0E0E0' : 'none' }}>
                         <td className="py-[16px] px-[20px] text-center" style={{ borderRight: '1px solid #E0E0E0' }}>
                           <input
                             type="checkbox"
@@ -934,14 +958,11 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         </td>
                         <td className="py-[16px] px-[20px] text-center" style={{ borderRight: '1px solid #E0E0E0' }}>
                           <div className="flex items-center justify-center gap-[12px]">
-                            <div className="w-[40px] h-[40px] rounded-full bg-[#E0E0E0] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                              <img
-                                src={employee.photo || EmployeeIcon}
-                                alt={employee.name}
-                                className="w-full h-full object-cover"
-                                onError={(e) => { e.target.onerror = null; e.target.src = EmployeeIcon; }}
-                              />
-                            </div>
+                            <AvatarOrPlaceholder
+                              src={employee.photo}
+                              alt={employee.name}
+                              className="w-[40px] h-[40px] rounded-full flex-shrink-0"
+                            />
                             <p className="text-[14px] font-medium" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, color: '#000000' }}>
                               {employee.name}
                             </p>
@@ -1028,44 +1049,49 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                 </div>
               )}
 
-              {/* Pagination */}
+              {/* Pagination - 10 per page */}
               {filteredEmployees.length > 0 && (
                 <div className="border-t border-[#E0E0E0] px-[20px] py-[16px] flex items-center justify-center gap-[8px]">
-                  {/* Previous Button */}
                   <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    onClick={() => currentPage > 1 && setCurrentPage(prev => Math.max(1, prev - 1))}
+                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
+                    style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'default' : 'pointer' }}
+                    aria-disabled={currentPage === 1}
                   >
                     <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                     </svg>
                   </button>
 
-                  {/* Page Numbers */}
-                  {[1, 2, 3].map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page
-                        ? 'font-semibold'
-                        : ''
-                        }`}
-                      style={{
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: currentPage === page ? 600 : 400,
-                        color: currentPage === page ? '#474747' : '#827F7F'
-                      }}
-                    >
-                      {page}
-                    </button>
-                  ))}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                    const isDisabled = page > actualTotalPages;
+                    return (
+                      <button
+                        key={page}
+                        type="button"
+                        onClick={() => !isDisabled && setCurrentPage(page)}
+                        className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page ? 'font-semibold' : ''}`}
+                        style={{
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: currentPage === page ? 600 : 400,
+                          color: currentPage === page ? '#474747' : isDisabled ? '#9CA3AF' : '#827F7F',
+                          cursor: isDisabled ? 'default' : 'pointer',
+                          opacity: isDisabled ? 0.5 : 1
+                        }}
+                        aria-disabled={isDisabled}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
 
-                  {/* Next Button */}
                   <button
-                    onClick={() => setCurrentPage(prev => prev + 1)}
-                    disabled={currentPage === 3}
-                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    onClick={() => currentPage < actualTotalPages && setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                    className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
+                    style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1, cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
+                    aria-disabled={currentPage >= actualTotalPages}
                   >
                     <svg className="w-[16px] h-[16px] text-[#000000]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1100,8 +1126,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1118,7 +1143,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1202,20 +1227,17 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
             Add Employee
           </button>
 
-          {/* Employees Cards - Mobile */}
+          {/* Employees Cards - Mobile (10 per page) */}
           <div className="flex flex-col gap-[12px]">
-            {filteredEmployees.map((employee) => (
+            {paginatedEmployees.map((employee) => (
               <div key={employee.id} className="bg-white rounded-[10px] border border-[#E0E0E0] shadow-sm p-[16px]">
                 <div className="flex items-start justify-between mb-[12px]">
                   <div className="flex items-center gap-[12px]">
-                    <div className="w-[40px] h-[40px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      <img
-                        src={employee.photo || EmployeeIcon}
-                        alt={employee.name}
-                        className="w-full h-full object-cover"
-                        onError={(e) => { e.target.onerror = null; e.target.src = EmployeeIcon; }}
-                      />
-                    </div>
+                    <AvatarOrPlaceholder
+                      src={employee.photo}
+                      alt={employee.name}
+                      className="w-[40px] h-[40px] rounded-full flex-shrink-0"
+                    />
                     <div>
                       <p className="text-[14px] font-medium text-[#111827] mb-[2px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
                         {employee.name}
@@ -1280,6 +1302,45 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
               </div>
             ))}
           </div>
+
+          {/* Mobile Pagination */}
+          {filteredEmployees.length > 0 && (
+            <div className="flex items-center justify-center gap-[8px] mt-6 pb-4">
+              <button
+                type="button"
+                onClick={() => currentPage > 1 && setCurrentPage(prev => Math.max(1, prev - 1))}
+                className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center"
+                style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'default' : 'pointer' }}
+                aria-disabled={currentPage === 1}
+              >
+                <svg className="w-[16px] h-[16px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                const isDisabled = page > actualTotalPages;
+                return (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => !isDisabled && setCurrentPage(page)}
+                    className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] bg-white border border-[#E0E0E0] ${currentPage === page ? 'font-semibold' : ''}`}
+                    style={{ color: currentPage === page ? '#474747' : isDisabled ? '#9CA3AF' : '#827F7F', cursor: isDisabled ? 'default' : 'pointer', opacity: isDisabled ? 0.5 : 1 }}
+                    aria-disabled={isDisabled}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => currentPage < actualTotalPages && setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center"
+                style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1, cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
+                aria-disabled={currentPage >= actualTotalPages}
+              >
+                <svg className="w-[16px] h-[16px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+            </div>
+          )}
 
           {/* Empty State - Mobile */}
           {filteredEmployees.length === 0 && (
@@ -1480,12 +1541,52 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         }}
                       >
                         <option value="">Select Department</option>
-                        <option value="HR">HR</option>
-                        <option value="Field Operations">Field Operations</option>
-                        <option value="Office">Office</option>
-                        <option value="Project Management">Project Management</option>
-                        <option value="Finance">Finance</option>
-                        <option value="IT">IT</option>
+                        {departmentsList.map((d) => {
+                          const name = d.name || d.title;
+                          return name ? <option key={d.id || name} value={name}>{name}</option> : null;
+                        })}
+                      </select>
+                      <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Role */}
+                  <div className="flex items-center">
+                    <label
+                      className="flex-shrink-0 mr-[12px]"
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 500,
+                        fontSize: '16px',
+                        lineHeight: '100%',
+                        color: '#181818',
+                        width: '100px'
+                      }}
+                    >
+                      Role
+                    </label>
+                    <div className="relative flex-1">
+                      <select
+                        value={formData.role}
+                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        className="w-full focus:outline-none bg-white appearance-none cursor-pointer"
+                        style={{
+                          height: '26px',
+                          padding: '0 12px',
+                          paddingRight: '32px',
+                          borderRadius: '4px',
+                          border: '0.8px solid #939393',
+                          fontFamily: 'Inter, sans-serif',
+                          fontSize: '14px',
+                          color: '#000000'
+                        }}
+                      >
+                        <option value="">Select Role</option>
+                        {rolesList.map((r) => (
+                          <option key={r.id || r.name} value={r.name}>{r.name}</option>
+                        ))}
                       </select>
                       <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1526,55 +1627,14 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         }}
                       >
                         <option value="">Select Position</option>
-                        {getAvailablePositions().map((position) => (
-                          <option key={position} value={position}>
-                            {position}
-                          </option>
-                        ))}
-                      </select>
-                      <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  {/* Role */}
-                  <div className="flex items-center">
-                    <label
-                      className="flex-shrink-0 mr-[12px]"
-                      style={{
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 500,
-                        fontSize: '16px',
-                        lineHeight: '100%',
-                        color: '#181818',
-                        width: '100px'
-                      }}
-                    >
-                      Role
-                    </label>
-                    <div className="relative flex-1">
-                      <select
-                        value={formData.role}
-                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                        className="w-full focus:outline-none bg-white appearance-none cursor-pointer"
-                        style={{
-                          height: '26px',
-                          padding: '0 12px',
-                          paddingRight: '32px',
-                          borderRadius: '4px',
-                          border: '0.8px solid #939393',
-                          fontFamily: 'Inter, sans-serif',
-                          fontSize: '14px',
-                          color: '#000000'
-                        }}
-                      >
-                        <option value="">Select Role</option>
-                        <option value="Super Admin">Super Admin</option>
-                        <option value="HR Admin">HR Admin</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Field Worker">Field Worker</option>
-                        <option value="Office Staff">Office Staff</option>
+                        {getAvailablePositions().map((pos) => {
+                          const title = pos.title || pos.name || pos;
+                          return (
+                            <option key={pos.id || title} value={title}>
+                              {title}
+                            </option>
+                          );
+                        })}
                       </select>
                       <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1852,12 +1912,52 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         }}
                       >
                         <option value="">Select Department</option>
-                        <option value="HR">HR</option>
-                        <option value="Field Operations">Field Operations</option>
-                        <option value="Office">Office</option>
-                        <option value="Project Management">Project Management</option>
-                        <option value="Finance">Finance</option>
-                        <option value="IT">IT</option>
+                        {departmentsList.map((d) => {
+                          const name = d.name || d.title;
+                          return name ? <option key={d.id || name} value={name}>{name}</option> : null;
+                        })}
+                      </select>
+                      <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Role */}
+                  <div className="flex items-center">
+                    <label
+                      className="flex-shrink-0 mr-[12px]"
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 500,
+                        fontSize: '16px',
+                        lineHeight: '100%',
+                        color: '#181818',
+                        width: '100px'
+                      }}
+                    >
+                      Role
+                    </label>
+                    <div className="relative flex-1">
+                      <select
+                        value={formData.role}
+                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        className="w-full focus:outline-none bg-white appearance-none cursor-pointer"
+                        style={{
+                          height: '26px',
+                          padding: '0 12px',
+                          paddingRight: '32px',
+                          borderRadius: '4px',
+                          border: '0.8px solid #939393',
+                          fontFamily: 'Inter, sans-serif',
+                          fontSize: '14px',
+                          color: '#6B7280'
+                        }}
+                      >
+                        <option value="">Select Role</option>
+                        {rolesList.map((r) => (
+                          <option key={r.id || r.name} value={r.name}>{r.name}</option>
+                        ))}
                       </select>
                       <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1898,55 +1998,14 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         }}
                       >
                         <option value="">Select Position</option>
-                        {getAvailablePositions().map((position) => (
-                          <option key={position} value={position}>
-                            {position}
-                          </option>
-                        ))}
-                      </select>
-                      <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  {/* Role */}
-                  <div className="flex items-center">
-                    <label
-                      className="flex-shrink-0 mr-[12px]"
-                      style={{
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 500,
-                        fontSize: '16px',
-                        lineHeight: '100%',
-                        color: '#181818',
-                        width: '100px'
-                      }}
-                    >
-                      Role
-                    </label>
-                    <div className="relative flex-1">
-                      <select
-                        value={formData.role}
-                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                        className="w-full focus:outline-none bg-white appearance-none cursor-pointer"
-                        style={{
-                          height: '26px',
-                          padding: '0 12px',
-                          paddingRight: '32px',
-                          borderRadius: '4px',
-                          border: '0.8px solid #939393',
-                          fontFamily: 'Inter, sans-serif',
-                          fontSize: '14px',
-                          color: '#6B7280'
-                        }}
-                      >
-                        <option value="">Select Role</option>
-                        <option value="Super Admin">Super Admin</option>
-                        <option value="HR Admin">HR Admin</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Field Worker">Field Worker</option>
-                        <option value="Office Staff">Office Staff</option>
+                        {getAvailablePositions().map((pos) => {
+                          const title = pos.title || pos.name || pos;
+                          return (
+                            <option key={pos.id || title} value={title}>
+                              {title}
+                            </option>
+                          );
+                        })}
                       </select>
                       <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -2038,7 +2097,12 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                     </button>
                     <button
                       type="submit"
-                      className="px-[24px] py-[6px] rounded-[5px] hover:opacity-90 transition-opacity"
+                      disabled={isSavingEmployee}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleAddEmployeeSubmit(e);
+                      }}
+                      className="px-[24px] py-[6px] rounded-[5px] hover:opacity-90 transition-opacity disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
                       style={{
                         backgroundColor: '#00564F',
                         color: '#FFFFFF',
@@ -2049,7 +2113,7 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                         boxShadow: '0 2px 4px rgba(0, 0, 0, 0.25)'
                       }}
                     >
-                      Update
+                      {isSavingEmployee ? 'Updating...' : 'Update'}
                     </button>
                   </div>
                 </div>

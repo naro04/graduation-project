@@ -35,18 +35,34 @@ export const markAllNotificationsRead = async () => {
 
 /**
  * Get notification settings
- * GET /api/v1/notification-settings
+ * Tries GET /api/v1/notifications/settings, then GET /api/v1/notification-settings on 404
  */
 export const getNotificationSettings = async () => {
-  const response = await apiClient.get("/notification-settings");
-  return response.data?.data ?? response.data;
+  try {
+    const response = await apiClient.get("/notifications/settings");
+    return response.data?.data ?? response.data;
+  } catch (err) {
+    if (err.response?.status === 404) {
+      const fallback = await apiClient.get("/notification-settings");
+      return fallback.data?.data ?? fallback.data;
+    }
+    throw err;
+  }
 };
 
 /**
  * Update notification settings
- * PATCH /api/v1/notification-settings
+ * Tries PUT /api/v1/notifications/settings, then PUT /api/v1/notification-settings on 404
  */
 export const updateNotificationSettings = async (settings) => {
-  const response = await apiClient.patch("/notification-settings", settings);
-  return response.data?.data ?? response.data;
+  try {
+    const response = await apiClient.put("/notifications/settings", settings);
+    return response.data?.data ?? response.data;
+  } catch (err) {
+    if (err.response?.status === 404) {
+      const fallback = await apiClient.put("/notification-settings", settings);
+      return fallback.data?.data ?? fallback.data;
+    }
+    throw err;
+  }
 };

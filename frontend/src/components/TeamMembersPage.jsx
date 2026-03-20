@@ -9,16 +9,8 @@ import { getRoles } from "../services/rbac.js";
 import { getCurrentUser, getEffectiveRole, logout, getMe } from "../services/auth.js";
 import AddEditEmployeeModal from "./AddEditEmployeeModal.jsx";
 import HeaderIcons from "./HeaderIcons.jsx";
-import { BASE_URL } from "../services/api.js";
-
-const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
-
-function toAbsoluteAvatarUrl(avatarUrl) {
-  if (!avatarUrl || typeof avatarUrl !== "string") return null;
-  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
-  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
-  return `${API_ORIGIN}${path}`;
-}
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 // User Avatar
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
@@ -99,14 +91,19 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
   const [positionsList, setPositionsList] = useState([]);
   const [rolesList, setRolesList] = useState([]);
 
-  const departmentPositions = {
-    "HR": ["HR Manager"],
-    "Field Operations": ["Activity Facilitator", "Trainer", "Social Worker"],
-    "Office": ["Administrative Assistant", "Data Entry", "Office Coordinator"],
-    "Project Management": ["Project Manager", "Team Leader", "Field Supervisor"],
-    "Finance": ["Finance Manager", "Accountant", "Financial Analyst"],
-    "IT": ["System Administration"],
-  };
+  const departmentPositions = React.useMemo(() => {
+    const map = {};
+    departmentsList.forEach((d) => {
+      const name = d.name || d.title;
+      if (!name) return;
+      const positions = positionsList
+        .filter((p) => p.department_id === d.id || (p.department_name || p.department) === name)
+        .map((p) => p.title || p.name)
+        .filter(Boolean);
+      map[name] = positions.length ? positions : positionsList.map((p) => p.title || p.name).filter(Boolean);
+    });
+    return map;
+  }, [departmentsList, positionsList]);
 
   const effectiveUserRole = getEffectiveRole();
 
@@ -189,7 +186,14 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
       if (teamResult.status === "rejected") {
         const err = teamResult.reason;
         const is403 = err?.response?.status === 403;
-        if (!is403) setError(err?.response?.data?.message || err?.message || "Failed to load team members");
+        const status = err?.response?.status;
+        if (!is403) {
+          const serverMsg = err?.response?.data?.message || err?.response?.data?.error;
+          const fallback = status === 500
+            ? "الخادم غير متاح حالياً. جرّب إعادة المحاولة لاحقاً."
+            : "تعذر تحميل أعضاء الفريق. جرّب إعادة المحاولة.";
+          setError(serverMsg || err?.message || fallback);
+        }
       }
       setIsLoading(false);
     };
@@ -288,7 +292,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img src={UserAvatar} alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
                     <div>
                       <div className="flex items-center gap-[6px]">
                         <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
@@ -302,7 +306,7 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || getCurrentUser()?.email || ""}</p>
                       </div>
-                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors cursor-pointer" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors cursor-pointer" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]" />
@@ -578,13 +582,13 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
             <HeaderIcons iconSize="w-[18px] h-[18px]" />
             <div className="relative" ref={userDropdownRef}>
               <div className="flex items-center gap-[8px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
-                <img src={UserAvatar} alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                <HeaderUserAvatar alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
                 <img src={DropdownArrow} alt="" className={`w-[12px] h-[12px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
               </div>
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || getCurrentUser()?.email || ""}</p></div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]" />
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                 </div>

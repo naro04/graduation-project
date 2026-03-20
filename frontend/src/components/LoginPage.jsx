@@ -61,15 +61,15 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen w-full" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen w-full overflow-x-hidden" style={{ fontFamily: 'Inter, sans-serif' }}>
       {/* Mobile Version */}
-      <div className="lg:hidden relative min-h-screen bg-white flex flex-col items-center px-[23px] py-[43px] overflow-hidden">
+      <div className="lg:hidden relative min-h-screen min-h-[100dvh] w-full bg-white flex flex-col items-center px-5 sm:px-6 py-8 sm:py-10 overflow-hidden">
         {/* Logo */}
-        <div className="mb-[48px]">
+        <div className="mb-8 sm:mb-12 w-full flex justify-center sm:justify-start">
           <img 
             src={LogoMobile} 
             alt="Mind-Body Medicine Logo" 
-            style={{ width: '156px', height: '51px', objectFit: 'contain' }}
+            className="w-[140px] sm:w-[156px] h-auto object-contain"
           />
         </div>
 
@@ -86,7 +86,7 @@ const LoginPage = () => {
         </p>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="w-full max-w-[347px] flex flex-col gap-[14px]">
+        <form onSubmit={handleSubmit} className="w-full max-w-[min(347px,90vw)] flex flex-col gap-3 sm:gap-[14px]">
           {/* Error Message */}
           {error && (
             <div 
@@ -299,9 +299,9 @@ const LoginPage = () => {
         />
       </div>
 
-      {/* Desktop Version */}
-      <div className="hidden lg:flex h-screen max-w-[1440px] mx-auto overflow-hidden">
-        {/* Left Section - Green Background */}
+      {/* Desktop Version - مظهر الصورة الأولى: تقسيم واضح + نمط هندسي خفيف على الخلفية */}
+      <div className="hidden lg:flex h-screen w-full max-w-[1440px] mx-auto overflow-hidden">
+        {/* Left Section - Teal مع الأشكال الهندسية كخلفية ناعمة */}
         <div 
           className="relative w-[52%] h-full flex flex-col overflow-hidden"
           style={{ backgroundColor: '#00564F' }}
@@ -311,7 +311,7 @@ const LoginPage = () => {
             <img 
               src={LogoDesktop} 
               alt="Mind-Body Medicine Logo" 
-              style={{ height: '110px', width: 'auto', objectFit: 'contain', objectPosition: 'left' }}
+              className="h-[110px] w-auto object-contain object-left"
             />
           </div>
 
@@ -331,7 +331,6 @@ const LoginPage = () => {
               Manage your team's workflow and support their well-being programs.
             </p>
             
-            {/* Sign Up Button */}
             <button 
               onClick={() => navigate("/register")}
               className="w-[260px] h-[48px] rounded-[8px] text-white text-[16px] font-semibold transition-opacity hover:opacity-90"
@@ -344,61 +343,59 @@ const LoginPage = () => {
             </button>
           </div>
 
-          {/* Decorative Shapes - Using Images */}
-          {/* Rectangle 12 - Top Right Square */}
+          {/* الأشكال الهندسية - نمط خفيف على الخلفية (مثل الصورة الأولى) */}
           <img 
             src={Rectangle12}
             alt=""
-            className="absolute pointer-events-none"
+            className="absolute pointer-events-none object-contain"
             style={{
               top: '8%',
               right: '-20px',
               width: '113px',
-              height: '113px'
+              height: '113px',
+              opacity: 0.25
             }}
           />
-          
-          {/* Polygon 1 - Middle Right Triangle */}
           <img 
             src={Polygon1}
             alt=""
-            className="absolute pointer-events-none"
+            className="absolute pointer-events-none object-contain"
             style={{
               top: '40%',
               right: '-50px',
               width: '150px',
-              height: '160px'
+              height: '160px',
+              opacity: 0.25
             }}
           />
-          
-          {/* Rectangle 13 - Bottom Right Rectangle */}
           <img 
             src={Rectangle13}
             alt=""
-            className="absolute pointer-events-none"
+            className="absolute pointer-events-none object-contain"
             style={{
               bottom: '18%',
               right: '-35px',
               width: '92px',
-              height: '103px'
+              height: '103px',
+              opacity: 0.25
             }}
           />
-          
-          {/* Ellipse 1 - Bottom Left Circle */}
           <img 
             src={Ellipse1}
             alt=""
-            className="absolute pointer-events-none"
+            className="absolute pointer-events-none object-contain"
             style={{
               bottom: '-15%',
               left: '-10%',
               width: '45%',
-              height: '50%'
+              height: '50%',
+              maxWidth: '320px',
+              opacity: 0.2
             }}
           />
         </div>
 
-        {/* Right Section - White Background */}
+        {/* Right Section - أبيض مع النموذج */}
         <div className="flex-1 h-full bg-white flex flex-col items-center justify-center px-[80px]">
           <div className="w-full max-w-[420px]">
             {/* Welcome Text */}

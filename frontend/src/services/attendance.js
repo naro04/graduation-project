@@ -65,9 +65,11 @@ export async function getTeamAttendance(params = {}) {
  */
 export async function getAttendanceReports(params = {}) {
   const res = await apiClient.get(`${BASE}/reports`, { params });
-  const raw = res.data?.data ?? res.data;
+  const body = res.data;
+  if (Array.isArray(body)) return body;
+  const raw = body?.data ?? body;
   if (Array.isArray(raw)) return raw;
-  return raw?.items ?? raw?.records ?? raw?.reports ?? [];
+  return raw?.records ?? raw?.items ?? raw?.reports ?? raw?.attendance ?? [];
 }
 
 /**

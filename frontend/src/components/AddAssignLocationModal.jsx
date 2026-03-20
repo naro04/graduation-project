@@ -11,6 +11,7 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
     const [formData, setFormData] = useState({
         location: "",
         activityName: "",
+        activityType: "Workshop",
         projectName: ""
     });
     const [responsibleEmployeeId, setResponsibleEmployeeId] = useState("");
@@ -30,6 +31,7 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
             setFormData({
                 location: "",
                 activityName: "",
+                activityType: "Workshop",
                 projectName: ""
             });
             setResponsibleEmployeeId("");
@@ -94,6 +96,7 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
             }
             const extra = {
                 activityName: formData.activityName?.trim() || "",
+                activityType: formData.activityType || "Workshop",
                 projectName: formData.projectName?.trim() || "",
                 responsibleEmployeeId: responsibleEmployeeId || null,
                 activityImageUrls,
@@ -218,6 +221,35 @@ const AddAssignLocationModal = ({ isOpen, onClose, locations = [], employees = [
                                         color: '#000000'
                                     }}
                                 />
+                            </div>
+
+                            {/* Activity Type */}
+                            <div className="flex flex-col">
+                                <label className="text-[16px] font-medium text-[#181818] mb-[8px]">
+                                    Activity Type
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        value={formData.activityType}
+                                        onChange={(e) => setFormData({ ...formData, activityType: e.target.value })}
+                                        className="focus:outline-none bg-white appearance-none cursor-pointer w-full"
+                                        style={{
+                                            height: '36px',
+                                            padding: '0 12px',
+                                            paddingRight: '32px',
+                                            borderRadius: '4px',
+                                            border: '0.8px solid #939393',
+                                            fontSize: '14px',
+                                            color: '#000000'
+                                        }}
+                                    >
+                                        <option value="Workshop" style={{ color: '#727272' }}>Workshop</option>
+                                        <option value="Group Session" style={{ color: '#727272' }}>Group Session</option>
+                                    </select>
+                                    <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
                             </div>
 
                             {/* Project Name */}

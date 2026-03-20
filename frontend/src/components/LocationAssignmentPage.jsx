@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import HeaderIcons from "./HeaderIcons";
 import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import AddAssignLocationModal from "./AddAssignLocationModal";
@@ -9,9 +10,9 @@ import EditActivityModal from "./EditActivityModal";
 import ViewEmployeesModal from "./ViewEmployeesModal";
 import ViewLocationEmployeesModal from "./ViewLocationEmployeesModal";
 import { getLocationAssignments, createLocationAssignment, deleteLocationAssignment } from "../services/locationAssignments";
-import { getLocationActivities, getLocationActivityById, createLocationActivity } from "../services/locationActivities";
-import { getLocations } from "../services/locations";
-import { getLocationEmployees } from "../services/locations";
+import { getLocationActivityById, createLocationActivity, getActivityEmployees, updateLocationActivity } from "../services/locationActivities";
+import { getLocations, getLocationEmployees, getLocationActivities as getActivitiesByLocationId } from "../services/locations";
+import { getLocationTypes } from "../services/locationTypes";
 import { getEmployees, getTeamMembers } from "../services/employees";
 
 // User Avatar
@@ -59,6 +60,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [assignmentsRaw, setAssignmentsRaw] = useState([]);
   const [locationsList, setLocationsList] = useState([]);
+  const [locationTypesList, setLocationTypesList] = useState([]);
   const [employeesList, setEmployeesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -92,6 +94,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
     Promise.all([
       getLocationAssignments().catch(() => []),
       getLocations().catch(() => []),
+      getLocationTypes().catch(() => []),
       getEmployees()
         .then((r) => {
           const d = r?.data;
@@ -99,10 +102,11 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
         })
         .catch(() => [])
     ])
-      .then(([assignments, locations, employees]) => {
+      .then(([assignments, locations, types, employees]) => {
         if (cancelled) return;
         setAssignmentsRaw(Array.isArray(assignments) ? assignments : []);
         setLocationsList(Array.isArray(locations) ? locations : []);
+        setLocationTypesList(Array.isArray(types) ? types : []);
         setEmployeesList(Array.isArray(employees) ? employees : []);
       })
       .catch((err) => {
@@ -232,7 +236,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
     setActivitiesForView([]);
     if (id) {
       setActivitiesForViewLoading(true);
-      getLocationActivities({ location_id: id })
+      getActivitiesByLocationId(id)
         .then((list) => {
           const arr = Array.isArray(list) ? list : [];
           if (arr.length === 0) {
@@ -243,20 +247,29 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
             .then((details) => {
               const enriched = arr.map((a, i) => {
                 const d = details[i];
+                const listCount = Number(a.employee_count) || Number(a.employeeCount) || 0;
                 const countFromDetail = d != null ? (() => {
                   const n = d.employee_count ?? d.employeeCount ?? d.employees_count ?? d.assignee_count ?? d.participant_count;
                   if (typeof n === "number" && !Number.isNaN(n)) return n;
+                  if (typeof n === "string" && n !== "") { const parsed = parseInt(n, 10); if (!Number.isNaN(parsed)) return parsed; }
                   if (Array.isArray(d.employees)) return d.employees.length;
                   if (Array.isArray(d.employee_ids)) return d.employee_ids.length;
                   if (Array.isArray(d.employeeIds)) return d.employeeIds.length;
+                  if (Array.isArray(d.team_members)) return d.team_members.length;
                   if (Array.isArray(d.assignments)) return d.assignments.length;
                   if (Array.isArray(d.assignees)) return d.assignees.length;
                   if (Array.isArray(d.participants)) return d.participants.length;
                   if (Array.isArray(d.participant_ids)) return d.participant_ids.length;
                   return 0;
                 })() : 0;
-                const count = countFromDetail || (a.employee_count ?? a.employeeCount ?? 0);
-                return { ...a, ...(d || {}), employee_count: count, employeeCount: count };
+                const count = Math.max(listCount, countFromDetail);
+                const endDate = a.end_date ?? d?.end_date;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const end = endDate ? new Date(endDate) : null;
+                if (end) end.setHours(0, 0, 0, 0);
+                const canEdit = !end || end >= today;
+                return { ...a, ...(d || {}), employee_count: count, employeeCount: count, canEdit: !!canEdit };
               });
               setActivitiesForView(enriched);
             });
@@ -267,20 +280,25 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   };
 
   const handleEditActivity = (activity) => {
-    // Ideally, we might want to close the View modal, or keep it open.
-    // Given the request "show this page in a container", switching seems appropriate.
-    // Or we can stack them. Let's try stacking first (keeping View open behind) or closing View.
-    // Closing View is cleaner for state management usually unless specifically requested to stack.
-    // I'll close View to avoid z-index issues for now.
     setShowViewActivitiesModal(false);
-
-    // We need to pass the location name to the activity object if it's not there, 
-    // or rely on selectedLocationForView if available.
-    // The activity object from ViewActivitiesModal might not have locationName.
-    // Let's ensure we pass enough info.
-    const activityWithLocation = { ...activity, locationName: selectedLocationForView };
+    const activityWithLocation = { ...activity, locationName: activity.locationName ?? activity.location_name ?? selectedLocationForView };
     setSelectedActivityForEdit(activityWithLocation);
     setShowEditActivityModal(true);
+    if (activity?.id) {
+      getActivityEmployees(activity.id)
+        .then((list) => {
+          const ids = (Array.isArray(list) ? list : []).map((e) => e.id ?? e.employee_id).filter(Boolean);
+          setSelectedActivityForEdit((prev) => (prev ? { ...prev, employee_ids: ids } : prev));
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleSaveActivity = async (payload) => {
+    if (!selectedActivityForEdit?.id) return;
+    await updateLocationActivity(selectedActivityForEdit.id, payload);
+    setShowEditActivityModal(false);
+    setSelectedActivityForEdit(null);
   };
 
   const handleViewEmployees = (activity) => {
@@ -290,16 +308,16 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
     setActivityEmployeesForModal([]);
     if (activity?.id) {
       setActivityEmployeesLoading(true);
-      getLocationActivityById(activity.id)
-        .then((data) => {
-          const list = data?.employees ?? data?.employee_ids ?? [];
+      getActivityEmployees(activity.id)
+        .then((list) => {
           const arr = Array.isArray(list) ? list : [];
           setActivityEmployeesForModal(
             arr.map((e) => ({
               id: e?.id ?? e?.employee_id ?? e,
-              name: e?.name ?? e?.employee_name ?? e?.full_name ?? "—",
-              department: e?.department ?? "",
-              position: e?.position ?? e?.role ?? ""
+              name: e?.full_name ?? e?.employee_name ?? e?.name ?? ([e?.first_name, e?.last_name].filter(Boolean).join(" ") || "—"),
+              department: e?.department ?? e?.department_name ?? "",
+              position: e?.position ?? e?.position_title ?? e?.role ?? "",
+              avatar_url: e?.avatar_url ?? e?.profile_image ?? null
             }))
           );
         })
@@ -327,11 +345,20 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const handleRemoveEmployeeFromLocation = (employeeId) => {
     const locationId = selectedLocationIdForEmployees;
     if (!employeeId || !locationId) return;
+    // Optimistic update: remove from list immediately so UI updates
+    setEmployeesAtLocation((prev) =>
+      prev.filter((e) => (e.employee_id ?? e.id) !== employeeId)
+    );
     deleteLocationAssignment(employeeId, locationId)
       .then(() => getLocationEmployees(locationId))
       .then((list) => setEmployeesAtLocation(Array.isArray(list) ? list : []))
-      .then(refreshAssignments)
-      .catch(() => { });
+      .then(() => refreshAssignments())
+      .catch(() => {
+        // On error, refetch to restore correct list
+        getLocationEmployees(locationId)
+          .then((list) => setEmployeesAtLocation(Array.isArray(list) ? list : []));
+        refreshAssignments();
+      });
   };
 
   const handleAddAssignmentSave = (locationId, employeeIds, extra = {}) => {
@@ -347,6 +374,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
     const activityPromise = hasActivity
       ? createLocationActivity({
         name: activityName,
+        activity_type: extra.activityType || "Workshop",
         location_id: String(locationId),
         employee_ids: employeeIds.map(String),
         activity_days: extra.numberOfDays || dates.length,
@@ -372,8 +400,8 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   };
 
 
-  // Type options
-  const typeOptions = ["All Type", "Office", "Field"];
+  // Type options from API
+  const typeOptions = ["All Type", ...locationTypesList.map((t) => (t.name ?? t.type ?? t.title)).filter(Boolean)];
 
   // Status options
   const statusOptions = ["All Status", "Active", "Inactive"];
@@ -385,7 +413,9 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
   const filteredData = locationAssignmentsData.filter(assignment => {
     const matchesSearch = assignment.locationName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = selectedType === "All Type" || assignment.type === selectedType;
-    const matchesStatus = selectedStatus === "All Status" || assignment.status === selectedStatus;
+    const statusA = (assignment.status || "").toString().trim().toLowerCase();
+    const statusB = (selectedStatus || "").toString().trim().toLowerCase();
+    const matchesStatus = selectedStatus === "All Status" || statusA === statusB;
     const matchesLocation = selectedLocation === "All Locations" || assignment.locationName === selectedLocation;
     return matchesSearch && matchesType && matchesStatus && matchesLocation;
   });
@@ -507,8 +537,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -531,7 +560,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -618,7 +647,10 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                     {typeOptions.map((type) => (
                       <button
                         key={type}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedType(type);
                           setIsTypeDropdownOpen(false);
                         }}
@@ -662,7 +694,10 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                     {statusOptions.map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                         }}
@@ -706,7 +741,10 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                     {locationOptions.map((location) => (
                       <button
                         key={location}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setSelectedLocation(location);
                           setIsLocationDropdownOpen(false);
                         }}
@@ -861,8 +899,8 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                                 fontSize: '13px',
                                 lineHeight: '100%',
                                 whiteSpace: 'nowrap',
-                                color: assignment.status === 'Active' ? '#00564F' : '#4A4A4A',
-                                backgroundColor: assignment.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
+                                color: (assignment.status || '').toLowerCase() === 'active' ? '#00564F' : '#4A4A4A',
+                                backgroundColor: (assignment.status || '').toLowerCase() === 'active' ? '#68BFCCB2' : '#D2D2D2',
                                 textAlign: 'center'
                               }}
                             >
@@ -970,8 +1008,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -988,7 +1025,7 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1058,7 +1095,8 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                   {typeOptions.map((type) => (
                     <button
                       key={type}
-                      onClick={() => { setSelectedType(type); setIsTypeDropdownOpen(false); }}
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedType(type); setIsTypeDropdownOpen(false); }}
                       className={`w-full px-[16px] py-[12px] text-left text-[14px] ${selectedType === type ? 'bg-[#F3F4F6] font-semibold' : 'hover:bg-[#F9FAFB]'}`}
                     >
                       {type}
@@ -1082,7 +1120,8 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                   {statusOptions.map((status) => (
                     <button
                       key={status}
-                      onClick={() => { setSelectedStatus(status); setIsStatusDropdownOpen(false); }}
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedStatus(status); setIsStatusDropdownOpen(false); }}
                       className={`w-full px-[16px] py-[12px] text-left text-[14px] ${selectedStatus === status ? 'bg-[#F3F4F6] font-semibold' : 'hover:bg-[#F9FAFB]'}`}
                     >
                       {status}
@@ -1129,8 +1168,8 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
                   <span
                     className="inline-block px-[12px] py-[4px] rounded-[6px] text-[12px] font-medium"
                     style={{
-                      color: assignment.status === 'Active' ? '#00564F' : '#4A4A4A',
-                      backgroundColor: assignment.status === 'Active' ? '#68BFCCB2' : '#D2D2D2',
+                      color: (assignment.status || '').toLowerCase() === 'active' ? '#00564F' : '#4A4A4A',
+                      backgroundColor: (assignment.status || '').toLowerCase() === 'active' ? '#68BFCCB2' : '#D2D2D2',
                       fontFamily: 'Inter, sans-serif'
                     }}
                   >
@@ -1244,12 +1283,12 @@ const LocationAssignmentPage = ({ userRole = "superAdmin" }) => {
         isOpen={showEditActivityModal}
         onClose={() => {
           setShowEditActivityModal(false);
-          // Optionally reopen View modal if canceled? 
-          // For now, just close. User can re-open View if needed.
+          setSelectedActivityForEdit(null);
         }}
         activity={selectedActivityForEdit}
         locations={locationsList}
         employees={employeesData}
+        onSave={handleSaveActivity}
       />
 
       <ViewEmployeesModal

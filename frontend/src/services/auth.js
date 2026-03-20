@@ -259,6 +259,22 @@ const getCurrentUser = () => {
 };
 
 /**
+ * Update stored user's avatar URL (so header avatar updates on all pages after profile picture change)
+ * @param {string} avatarUrl - New avatar URL or path
+ */
+const updateStoredUserAvatar = (avatarUrl) => {
+  const user = getCurrentUser();
+  if (!user) return;
+  const next = { ...user, avatar_url: avatarUrl || user.avatar_url, avatarUrl: avatarUrl || user.avatarUrl };
+  try {
+    if (localStorage.getItem('userData')) localStorage.setItem('userData', JSON.stringify(next));
+    if (sessionStorage.getItem('userData')) sessionStorage.setItem('userData', JSON.stringify(next));
+  } catch (e) {
+    console.warn('updateStoredUserAvatar:', e);
+  }
+};
+
+/**
  * Get effective role key for menu/UI from current user (so Manager stays Manager on all pages)
  * @param {string} fallback - fallback role if no user (e.g. from route)
  * @returns {string} - role key: superAdmin | hr | manager | fieldEmployee | officer
@@ -343,4 +359,20 @@ const forgotPassword = async (email) => {
   return response;
 };
 
-export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, getCurrentUser, getEffectiveRole, getMe, forgotPassword };
+/**
+ * Reset password with token from email
+ * PATCH /auth/reset-password
+ * @param {string} token - Reset token from URL
+ * @param {string} password - New password
+ * @param {string} confirmPassword - Confirm new password
+ * @returns {Promise<object>} - { status, message }
+ */
+const resetPassword = async (token, password, confirmPassword) => {
+  const response = await apiRequest('/auth/reset-password', {
+    method: 'PATCH',
+    body: JSON.stringify({ token, password, confirmPassword }),
+  });
+  return response;
+};
+
+export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, getCurrentUser, getEffectiveRole, getMe, forgotPassword, resetPassword, updateStoredUserAvatar };

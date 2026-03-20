@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getLeaveReports } from "../services/leaves";
 import { exportToExcel, exportToPdf } from "../utils/exportReport";
@@ -17,11 +20,6 @@ const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7
 // Action icons
 const ExportIcon = new URL("../images/icons/export.png", import.meta.url).href;
 
-// Employee Photos
-const AmeerJamalPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
-const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
-
 const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
@@ -30,8 +28,12 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLeaveType, setSelectedLeaveType] = useState("All Leave Type");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
-  const [fromDate, setFromDate] = useState("2025-12-12");
-  const [toDate, setToDate] = useState("2025-12-19");
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isLeaveTypeDropdownOpen, setIsLeaveTypeDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -42,6 +44,8 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const leaveTypeDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
+  const leaveTypeDropdownRefMobile = useRef(null);
+  const statusDropdownRefMobile = useRef(null);
   const exportAllDropdownRef = useRef(null);
   const exportSelectedDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
@@ -82,7 +86,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
           return {
             id: item.id,
             employeeName: item.employee_name ?? item.employeeName ?? "—",
-            employeePhoto: item.avatar_url ?? item.employeePhoto ?? AmeerJamalPhoto,
+            employeePhoto: toAbsoluteAvatarUrl(item.avatar_url ?? item.employee_avatar) || (item.employeePhoto ?? item.avatar_url ?? null),
             leaveType: item.leave_type ?? item.leaveType ?? "—",
             dateRange: formatDateRangeDisplay(startDate, endDate, rawRange),
             totalDays: item.total_days ?? item.totalDays ?? 0,
@@ -209,15 +213,15 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
     }
   };
 
-  // Close dropdowns when clicking outside
+  // Close dropdowns when clicking outside (check both desktop and mobile refs)
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (leaveTypeDropdownRef.current && !leaveTypeDropdownRef.current.contains(event.target)) {
-        setIsLeaveTypeDropdownOpen(false);
-      }
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
-        setIsStatusDropdownOpen(false);
-      }
+      const insideLeaveType = (leaveTypeDropdownRef.current && leaveTypeDropdownRef.current.contains(event.target)) ||
+        (leaveTypeDropdownRefMobile.current && leaveTypeDropdownRefMobile.current.contains(event.target));
+      if (!insideLeaveType) setIsLeaveTypeDropdownOpen(false);
+      const insideStatus = (statusDropdownRef.current && statusDropdownRef.current.contains(event.target)) ||
+        (statusDropdownRefMobile.current && statusDropdownRefMobile.current.contains(event.target));
+      if (!insideStatus) setIsStatusDropdownOpen(false);
       if (isExportAllDropdownOpen && exportAllDropdownRef.current && !exportAllDropdownRef.current.contains(event.target)) {
         setIsExportAllDropdownOpen(false);
       }
@@ -310,8 +314,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -337,7 +340,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -712,8 +715,10 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Leave Type Dropdown */}
-              <div className="relative" ref={leaveTypeDropdownRef}>
+              <div className="relative z-[100]" ref={leaveTypeDropdownRef}>
                 <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[160px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -724,10 +729,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isLeaveTypeDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[160px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200] min-w-[160px]" onMouseDown={(e) => e.stopPropagation()}>
                     {leaveTypes.map((type) => (
                       <button
                         key={type}
+                        type="button"
                         onClick={() => {
                           setSelectedLeaveType(type);
                           setIsLeaveTypeDropdownOpen(false);
@@ -751,8 +757,10 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Status Dropdown */}
-              <div className="relative" ref={statusDropdownRef}>
+              <div className="relative z-[100]" ref={statusDropdownRef}>
                 <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -763,10 +771,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[140px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200] min-w-[140px]" onMouseDown={(e) => e.stopPropagation()}>
                     {statusOptions.map((status) => (
                       <button
                         key={status}
+                        type="button"
                         onClick={() => {
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
@@ -930,7 +939,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             <div className="flex items-center gap-[12px] min-w-0">
-                              <img
+                              <AvatarOrPlaceholder
                                 src={record.employeePhoto}
                                 alt={record.employeeName}
                                 className="w-[32px] h-[32px] rounded-full object-cover flex-shrink-0"
@@ -1071,8 +1080,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1092,7 +1100,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1350,8 +1358,10 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Leave Type Dropdown */}
-            <div className="relative" ref={leaveTypeDropdownRef}>
+            <div className="relative z-[100]" ref={leaveTypeDropdownRefMobile}>
               <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setIsLeaveTypeDropdownOpen(!isLeaveTypeDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -1361,10 +1371,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isLeaveTypeDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200]" onMouseDown={(e) => e.stopPropagation()}>
                   {leaveTypes.map((type) => (
                     <button
                       key={type}
+                      type="button"
                       onClick={() => {
                         setSelectedLeaveType(type);
                         setIsLeaveTypeDropdownOpen(false);
@@ -1381,8 +1392,10 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Status Dropdown */}
-            <div className="relative" ref={statusDropdownRef}>
+            <div className="relative z-[100]" ref={statusDropdownRefMobile}>
               <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -1392,10 +1405,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isStatusDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200]" onMouseDown={(e) => e.stopPropagation()}>
                   {statusOptions.map((status) => (
                     <button
                       key={status}
+                      type="button"
                       onClick={() => {
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
@@ -1439,7 +1453,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                 >
                   {/* Header with Employee Info */}
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#F0F0F0]">
-                    <img
+                    <AvatarOrPlaceholder
                       src={record.employeePhoto}
                       alt={record.employeeName}
                       className="w-[48px] h-[48px] rounded-full object-cover flex-shrink-0"
@@ -1530,5 +1544,4 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   );
 };
 
-export default LeaveReportsPage;
-
+export { LeaveReportsPage as default };

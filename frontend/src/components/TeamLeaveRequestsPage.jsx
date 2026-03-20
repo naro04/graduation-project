@@ -3,32 +3,23 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
 import HeaderIcons from "./HeaderIcons";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import { getLeaves, updateLeaveStatus } from "../services/leaves";
 import { getTeamMembers } from "../services/employees.js";
-import { BASE_URL } from "../services/api.js";
-
-const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
-
-function toAbsoluteAvatarUrl(avatarUrl) {
-  if (!avatarUrl || typeof avatarUrl !== "string") return null;
-  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
-  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
-  return `${API_ORIGIN}${path}`;
-}
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
 const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4c365858f.png", import.meta.url).href;
 const NotificationIcon = new URL("../images/ebf8a1610effc5cf80410fb898c4452b8d535684.png", import.meta.url).href;
 const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href;
-const PendingIcon = new URL("../images/icons/pending (2).png", import.meta.url).href;
-const ApprovedIcon = new URL("../images/icons/approved (2).png", import.meta.url).href;
+const PendingIcon = new URL("../images/icons/pending " + "(2).png", import.meta.url).href;
+const ApprovedIcon = new URL("../images/icons/approved " + "(2).png", import.meta.url).href;
 const RejectIcon = new URL("../images/icons/reject.png", import.meta.url).href;
 const ViewIcon = new URL("../images/icons/eye.png", import.meta.url).href;
-const ApproveIcon = new URL("../images/icons/approved (2).png", import.meta.url).href;
+const ApproveIcon = new URL("../images/icons/approved " + "(2).png", import.meta.url).href;
 const RejectActionIcon = new URL("../images/icons/reject.png", import.meta.url).href;
-const DefaultPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).href;
-
 const roleDisplayNames = {
   superAdmin: "Super Admin",
   hr: "HR Admin",
@@ -116,7 +107,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
       return {
         id: item.id,
         employeeName: item.employee_name ?? item.employeeName ?? "—",
-        employeePhoto: toAbsoluteAvatarUrl(item.avatar_url ?? item.employee_avatar) || item.employeePhoto || DefaultPhoto,
+        employeePhoto: toAbsoluteAvatarUrl(item.avatar_url ?? item.employee_avatar) || item.employeePhoto || null,
         leaveType: item.leave_type ?? item.leaveType ?? "—",
         dateRange: dateRangeStr,
         submittedDate: formatDateShort(submitted) || "—",
@@ -191,7 +182,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                 <HeaderIcons />
                 <div className="relative" ref={userDropdownRef}>
                   <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
-                    <img src={UserAvatar} alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
                     <div>
                       <div className="flex items-center gap-[6px]">
                         <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
@@ -203,7 +194,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => navigate("/profile")}>Edit Profile</button>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]" />
                       <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                     </div>
@@ -312,7 +303,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                             </td>
                             <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                               <div className="flex items-center gap-[12px] min-w-0">
-                                <img src={request.employeePhoto} alt={request.employeeName} className="w-[32px] h-[32px] rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = DefaultPhoto; }} />
+                                <AvatarOrPlaceholder src={request.employeePhoto} alt={request.employeeName} className="w-[32px] h-[32px] rounded-full object-cover flex-shrink-0" />
                                 <span className="text-[13px] text-[#333333] truncate" style={{ fontWeight: 600 }} title={request.employeeName}>{request.employeeName}</span>
                               </div>
                             </td>
@@ -374,13 +365,13 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
             <HeaderIcons iconSize="w-[18px] h-[18px]" />
             <div className="relative" ref={userDropdownRef}>
               <div className="flex items-center gap-[8px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
-                <img src={UserAvatar} alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                <HeaderUserAvatar alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
                 <img src={DropdownArrow} alt="" className={`w-[12px] h-[12px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
               </div>
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]" />
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                 </div>
@@ -453,7 +444,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                 {paginatedData.map((request) => (
                   <div key={request.id} className="bg-white rounded-[12px] border border-[#E0E0E0] shadow-sm p-[16px]">
                     <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#F0F0F0]">
-                      <img src={request.employeePhoto} alt={request.employeeName} className="w-[48px] h-[48px] rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = DefaultPhoto; }} />
+                      <AvatarOrPlaceholder src={request.employeePhoto} alt={request.employeeName} className="w-[48px] h-[48px] rounded-full object-cover flex-shrink-0" />
                       <div className="flex-1 min-w-0"><h3 className="text-[15px] font-semibold text-[#000000] truncate">{request.employeeName}</h3><p className="text-[12px] text-[#6B7280]">{request.leaveType}</p></div>
                     </div>
                     <div className="space-y-2 mb-4">
@@ -493,7 +484,7 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
             <h3 className="text-[18px] font-semibold text-[#333333] mb-4" style={{ fontFamily: "Inter, sans-serif" }}>Leave Request Details</h3>
             <div className="space-y-3 text-[14px]">
               <div className="flex items-center gap-3">
-                <img src={selectedRequest.employeePhoto} alt={selectedRequest.employeeName} className="w-10 h-10 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = DefaultPhoto; }} />
+                <AvatarOrPlaceholder src={selectedRequest.employeePhoto} alt={selectedRequest.employeeName} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
                 <div>
                   <p className="font-semibold text-[#333333]">{selectedRequest.employeeName}</p>
                   <p className="text-[#6B7280]">{selectedRequest.leaveType}</p>

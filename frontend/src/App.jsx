@@ -13,6 +13,7 @@ function ActivitiesOrRedirect() {
   return <ActivitiesPage userRole="superAdmin" />;
 }
 import ForgotPasswordPage from './components/ForgotPasswordPage.jsx'
+import ResetPasswordPage from './components/ResetPasswordPage.jsx'
 import DashboardPage from './components/DashboardPage.jsx'
 import ProfilePageWithSidebar from './components/ProfilePageWithSidebar.jsx'
 import EmployeesPage from './components/EmployeesPage.jsx'
@@ -55,6 +56,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         
         {/* Dashboard routes for different roles */}
         <Route path="/dashboard" element={<DashboardPage userRole="superAdmin" />} />

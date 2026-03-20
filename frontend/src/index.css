@@ -38,6 +38,15 @@ table tbody td .flex {
   max-height: none !important;
   height: auto !important;
 }
+
+/* API Keys pagination: ensure buttons are clickable and visible (no red/disabled look on valid pages) */
+.api-keys-pagination button {
+  pointer-events: auto;
+  user-select: none;
+}
+.api-keys-pagination button:not(:disabled):hover {
+  opacity: 1;
+}
 /* Prevent scrollbar on user dropdown menu */
 .user-dropdown-no-scroll {
   overflow: visible !important;

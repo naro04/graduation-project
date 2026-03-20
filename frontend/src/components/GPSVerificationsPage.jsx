@@ -1,20 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
-import { getGPSVerifications, getGPSVerificationsStats, verifyGPSCheckIn, updateGPSVerificationStatus, deleteGPSVerification } from "../services/gpsVerifications";
-import { apiClient } from "../services/apiClient";
+import { getGPSVerifications, getGPSVerificationsStats, verifyGPSCheckIn, updateGPSVerificationStatus } from "../services/gpsVerifications";
+import { deleteAttendance } from "../services/attendance";
 import { exportToExcel, exportToPdf } from "../utils/exportReport";
 import HeaderIcons from "./HeaderIcons";
-
-const API_ORIGIN = (apiClient.defaults.baseURL || "").replace(/\/api\/v1\/?$/, "");
-
-function toAbsoluteAvatarUrl(avatarUrl) {
-  if (!avatarUrl || typeof avatarUrl !== "string") return null;
-  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
-  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
-  return `${API_ORIGIN}${path}`;
-}
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 function getInitials(name) {
   if (!name || typeof name !== "string") return "?";
@@ -322,8 +315,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -347,9 +339,11 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
                       <button
-                        onClick={() => {
-                          navigate('/profile');
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setIsUserDropdownOpen(false);
+                          navigate('/profile');
                         }}
                         className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors"
                       >
@@ -1045,8 +1039,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1076,9 +1069,11 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                     </p>
                   </div>
                   <button
-                    onClick={() => {
-                      navigate('/profile');
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       setIsUserDropdownOpen(false);
+                      navigate('/profile');
                     }}
                     className="w-full px-[16px] py-[12px] text-left text-[13px] text-[#333333] hover:bg-[#F5F7FA] transition-colors"
                     style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400 }}
@@ -1536,24 +1531,20 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                 disabled={isDeleting}
                 onClick={async () => {
                   if (!employeeToDelete) return;
+                  const attendanceId = employeeToDelete.id ?? employeeToDelete.originalData?.id;
+                  if (!attendanceId) {
+                    alert("لا يمكن تحديد سجل الحضور.");
+                    return;
+                  }
                   try {
                     setIsDeleting(true);
-                    try {
-                      await deleteGPSVerification(employeeToDelete.id);
-                    } catch (delErr) {
-                      const status = delErr.response?.status;
-                      if (status === 404 || status === 405 || status === 501) {
-                        await updateGPSVerificationStatus(employeeToDelete.id, "Rejected");
-                      } else {
-                        throw delErr;
-                      }
-                    }
+                    await deleteAttendance(attendanceId);
                     await fetchGPSData();
                     setShowWarningModal(false);
                     setEmployeeToDelete(null);
                   } catch (error) {
-                    console.error("Failed to delete/reject verification:", error);
-                    alert(error.response?.data?.message ?? "Failed to delete verification");
+                    console.error("Failed to delete verification:", error);
+                    alert(error?.response?.data?.message ?? error?.message ?? "فشل حذف سجل التحقق.");
                   } finally {
                     setIsDeleting(false);
                   }
