@@ -486,20 +486,30 @@ exports.getDailyAttendance = async (req, res) => {
             cleanLocation
         ]);
 
-        // Calculate stats
-        const totalEmployeesQuery = isManager
-            ? 'SELECT COUNT(*) as total FROM employees WHERE status = $1 AND supervisor_id = $2'
-            : 'SELECT COUNT(*) as total FROM employees WHERE status = $1';
+        // 1. Calculate stats independently of specific table filters (only respect date and supervisor scoping)
+        const statsQuery = `
+            SELECT 
+                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status IN ('Present', 'Late')) as present_today,
+                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status = 'Late') as late_arrivals,
+                (
+                    SELECT COUNT(*) FROM employees 
+                    WHERE status = 'active' 
+                    AND ($2::UUID IS NULL OR supervisor_id = $2)
+                ) as total_active
+            FROM attendance
+            WHERE DATE(check_in_time) = $1
+              AND ($2::UUID IS NULL OR employee_id IN (SELECT id FROM employees WHERE supervisor_id = $2))
+        `;
 
-        const totalEmployeesParams = isManager ? ['active', managerEmployeeId] : ['active'];
-        const totalEmployeesResult = await pool.query(totalEmployeesQuery, totalEmployeesParams);
-        const totalEmployees = parseInt(totalEmployeesResult.rows[0]?.total || 0);
+        const statsResult = await pool.query(statsQuery, [targetDate, isManager ? managerEmployeeId : null]);
+        const statsData = statsResult.rows[0] || { present_today: 0, late_arrivals: 0, total_active: 0 };
 
-        const presentCount = result.rows.filter(r => r.status === 'Present' || r.status === 'Late').length;
-        const lateCount = result.rows.filter(r => r.status === 'Late').length;
-        const absentCount = Math.max(0, totalEmployees - presentCount);
+        const presentToday = parseInt(statsData.present_today || 0);
+        const lateArrivals = parseInt(statsData.late_arrivals || 0);
+        const totalActive = parseInt(statsData.total_active || 0);
+        const absentToday = Math.max(0, totalActive - presentToday);
 
-        // Format records for frontend
+        // 2. Format records for frontend table
         const records = result.rows.map(row => ({
             id: row.id,
             employeeId: row.employee_id,
@@ -519,9 +529,9 @@ exports.getDailyAttendance = async (req, res) => {
             status: 'success',
             records: records,
             stats: {
-                presentToday: presentCount,
-                absentToday: absentCount,
-                lateArrivals: lateCount
+                presentToday,
+                absentToday,
+                lateArrivals
             }
         });
     } catch (err) {

@@ -46,19 +46,19 @@ const sendEmail = async (options) => {
     throw err;
   }
 };
-
+//JWT Creation: generates the token.
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', {
     expiresIn: process.env.JWT_EXPIRES_IN || '1d'
   });
 };
-
+//jwt token creation and sending it to the client
 const createSendToken = (user, statusCode, res, rememberMe = false) => {
   const token = signToken(user.id);
 
   // Set cookie expiration: 30 days if rememberMe is true, else based on env or default 24h
   const cookieExpiresInDays = rememberMe ? 30 : (parseInt(process.env.JWT_COOKIE_EXPIRES_IN) || 24 / 24);
-
+  //The token is placed inside an `httpOnly` cookie for secure storage.
   const cookieOptions = {
     expires: new Date(
       Date.now() +
@@ -68,7 +68,7 @@ const createSendToken = (user, statusCode, res, rememberMe = false) => {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'none'
   };
-
+  // send the token to the client without the password
   res.cookie('token', token, cookieOptions);
   user.password_hash = undefined; // Hide password
   res.status(statusCode).json({
@@ -131,23 +131,26 @@ exports.register = async (req, res) => {
     if (confirm_password && password !== confirm_password) {
       return res.status(400).json({ message: 'Passwords do not match' });
     }
-
+    //check if the email already exists,Duplicate Check:
+    //Queries the database using `findUserByEmail` to ensure the email is unique.
     const existingUser = await client.query(findUserByEmail, [email]);
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ message: 'Email already exists' });
     }
-
+    //Hashes the password securely before saving
     const hashedPassword = await bcrypt.hash(password, 12);
-
+    //transaction start to ensure atomicity
     await client.query('BEGIN');
-
+    //Creates a new user record in the database using the `createUser` query.
     const newUserResult = await client.query(createUser, [
       name,
       email,
       hashedPassword
     ]);
     const newUser = newUserResult.rows[0];
-
+    //Assigns a role to the newly created user,Role Assignment: If no specific
+    //role is requested, it fetches the default 'Office Staff' role (`findRoleByName`)
+    //and inserts it into `user_roles` via the `assignRole` query.
     let targetRoleId = roleId;
     if (!targetRoleId) {
       const defaultRole = await client.query(findRoleByName, ['Office Staff']);
@@ -155,11 +158,14 @@ exports.register = async (req, res) => {
         targetRoleId = defaultRole.rows[0].id;
       }
     }
-
+    //Inserts the role assignment into the `user_roles` junction table.
     if (targetRoleId) {
       await client.query(assignRole, [newUser.id, targetRoleId]);
     }
-
+    //Creates a unique employee code for the new user.
+    //Employee Creation: Automatically creates a linked record in 
+    //the `employees` table, generating a unique `employee_code` (`EMP-{Date.now()}`)
+    //and setting the initial status to 'Inactive'.
     const employee_code = `EMP-${Date.now()}`;
     const finalFirstName = first_name || name.split(' ')[0];
     const finalLastName =
@@ -168,7 +174,7 @@ exports.register = async (req, res) => {
         ? name.split(' ').slice(1).join(' ')
         : 'User');
     const finalPhone = phone || null;
-
+    //Inserts the employee record into the `employees` table.
     const empResult = await client.query(
       `
             INSERT INTO employees (user_id, email, first_name, last_name, full_name, phone, employee_code, status)
@@ -185,16 +191,20 @@ exports.register = async (req, res) => {
         employee_code
       ]
     );
-
+    //Assigns the new employee ID to the user object.
     newUser.employee_id = empResult.rows[0].id;
+    //Commits the transaction, making all changes permanent.
     await client.query('COMMIT');
-
+    //Sends the newly created user object back to the client with a JWT token.
     createSendToken(newUser, 201, res);
   } catch (err) {
+    //Rolls back the transaction if any error occurs.
     if (client) await client.query('ROLLBACK');
     console.error('Registration error:', err);
+    //Sends an error response to the client.
     res.status(500).json({ message: 'An error occurred during registration. Please try again.' });
   } finally {
+    //Releases the client back to the pool.
     client.release();
   }
 };
@@ -227,7 +237,8 @@ exports.login = async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
-
+    // If the password matches, it queries the DB (`retrieveUserPermissions`)
+    // to get the permission slugs associated with the user's role.
     const permResult = await pool.query(retrieveUserPermissions, [user.id]);
     user.permissions = permResult.rows.map((r) => r.slug);
 
@@ -390,38 +401,40 @@ exports.logout = (req, res) => {
   });
   res.status(200).json({ status: 'success', message: 'Logged out' });
 };
-
+//Google Authentication: Handles OAuth 2.0 flow for Google Sign-In.
 const { OAuth2Client } = require('google-auth-library');
+//Creates a new OAuth2Client instance for Google authentication.
 const client_google = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
+//Handles the Google OAuth 2.0 flow for user authentication.
 exports.googleAuth = async (req, res) => {
+  //Acquires a client from the pool for database operations.
   const client = await pool.connect();
   try {
     const { googleToken } = req.body;
-
+    //Checks if the Google token is provided.
     if (!googleToken) {
       return res.status(400).json({ message: 'Google token is required' });
     }
-
+    //Fetches user information from Google's OAuth 2.0 endpoint.
     const response = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${googleToken}`);
     const payload = await response.json();
-
+    //Checks if the Google token is valid.
     if (!payload.email) {
       return res.status(400).json({ message: 'Invalid Google token' });
     }
-
+    //Extracts user information from the payload.
     const { sub: googleId, email, name, picture } = payload;
-
+    //Starts a database transaction.
     await client.query('BEGIN');
-
+    //Checks if the user already exists in the database.
     const userResult = await client.query('SELECT * FROM users WHERE email = $1', [email]);
     let user = userResult.rows[0];
-
+    //If the user does not exist, creates a new user.
     if (!user) {
       // Create new user
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const hashedPassword = await bcrypt.hash(randomPassword, 12);
-
+      //Inserts the new user into the database.
       const newUserResult = await client.query(
         'INSERT INTO users (name, email, password_hash, avatar_url) VALUES ($1, $2, $3, $4) RETURNING *',
         [name, email, hashedPassword, picture]
@@ -457,7 +470,7 @@ exports.googleAuth = async (req, res) => {
     if (client) client.release();
   }
 };
-
+//Retrieves the currently logged-in user's information.
 exports.getMe = async (req, res) => {
   // req.user is set by middleware (including role_name and permissions)
   res.status(200).json({
