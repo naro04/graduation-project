@@ -2,8 +2,34 @@ const pool = require('../database/connection');
 const activityQueries = require('../database/data/queries/locationActivities');
 const locationQueries = require('../database/data/queries/locations');
 
+// Sync implementation_status with approval_status and date:
+//   Pending   → implementation_status = 'Pending'
+//   Rejected  → implementation_status = 'Cancelled'
+//   Approved  + end_date passed  → 'Implemented'
+//   Approved  + end_date future  → 'Planned'
+const autoImplementPastActivities = async () => {
+    await pool.query(`
+        UPDATE activities
+        SET implementation_status = CASE
+                WHEN approval_status ILIKE 'rejected' THEN 'Cancelled'
+                WHEN approval_status ILIKE 'pending'  THEN 'Pending'
+                WHEN approval_status ILIKE 'approved' AND end_date < CURRENT_DATE  THEN 'Implemented'
+                WHEN approval_status ILIKE 'approved' AND end_date >= CURRENT_DATE THEN 'Planned'
+                ELSE implementation_status
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE
+            (approval_status ILIKE 'rejected' AND implementation_status != 'Cancelled')
+            OR (approval_status ILIKE 'pending'  AND implementation_status != 'Pending')
+            OR (approval_status ILIKE 'approved' AND end_date < CURRENT_DATE  AND implementation_status != 'Implemented')
+            OR (approval_status ILIKE 'approved' AND end_date >= CURRENT_DATE AND implementation_status NOT IN ('Planned', 'Implemented'))
+    `);
+};
+
 exports.getAllActivities = async (req, res) => {
     try {
+        await autoImplementPastActivities();
+        const { search, status, approval_status, date } = req.query;
         const { role_name, employee_id } = req.user;
         const isManager = role_name === 'Manager';
         const isAdmin = role_name === 'Super Admin' || role_name === 'HR Admin';
@@ -501,6 +527,7 @@ exports.rejectActivity = async (req, res) => {
  */
 exports.getTeamActivities = async (req, res) => {
     try {
+        await autoImplementPastActivities();
         const { date } = req.query;
         const userId = req.user.id;
 
