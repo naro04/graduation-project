@@ -15,20 +15,25 @@ const dashboardQueries = {
             attendanceFilter += " AND employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1)";
         } else if (scope === 'personal') {
             attendanceFilter += " AND employee_id = $1";
-            // For personal, total is always 1 if we want to show 100% or 0%
             return `
                 SELECT 
-                    (SELECT COUNT(*) FROM attendance WHERE ${attendanceFilter}) as present_count,
-                    (SELECT COUNT(*) FROM attendance WHERE ${attendanceFilter} AND check_in_time::time > '09:00:00') as late_count,
-                    1 as total_active;
+                    COUNT(*) FILTER (WHERE daily_status = 'Present') as present_count,
+                    COUNT(*) FILTER (WHERE daily_status = 'Late') as late_count,
+                    COUNT(*) as total_present,
+                    1 as total_active
+                FROM attendance 
+                WHERE ${attendanceFilter}
             `;
         }
 
         return `
             SELECT 
-                (SELECT COUNT(DISTINCT employee_id) FROM attendance WHERE ${attendanceFilter}) as present_count,
-                (SELECT COUNT(DISTINCT employee_id) FROM attendance WHERE ${attendanceFilter} AND check_in_time::time > '09:00:00') as late_count,
-                (SELECT COUNT(*) FROM employees WHERE ${employeeFilter}) as total_active;
+                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status = 'Present') as present_count,
+                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status = 'Late') as late_count,
+                COUNT(DISTINCT employee_id) as total_present,
+                (SELECT COUNT(*) FROM employees WHERE ${employeeFilter}) as total_active
+            FROM attendance 
+            WHERE ${attendanceFilter}
         `;
     },
 

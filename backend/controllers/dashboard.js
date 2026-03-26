@@ -54,10 +54,11 @@ router.get("/dashboard", protect, async (req, res) => {
         
         // Calculate Attendance Percentages
         const attendance = {
-            present_count: parseInt(attendanceRaw.present_count) || 0,
+            present_count: parseInt(attendanceRaw.present_count) || 0, // Now represents 'On-time'
             late_count: parseInt(attendanceRaw.late_count) || 0,
+            total_present: parseInt(attendanceRaw.total_present) || 0,
             total_active: totalActive,
-            present_percentage: totalActive > 0 ? Math.round((parseInt(attendanceRaw.present_count) / totalActive) * 100) : 0,
+            present_percentage: totalActive > 0 ? Math.round((parseInt(attendanceRaw.total_present) / totalActive) * 100) : 0,
             late_percentage: totalActive > 0 ? Math.round((parseInt(attendanceRaw.late_count) / totalActive) * 100) : 0
         };
 
