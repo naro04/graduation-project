@@ -4,6 +4,17 @@ const locationQueries = require('../database/data/queries/locations');
 exports.getAllLocations = async (req, res) => {
     try {
         const { status, type, search, withStats } = req.query;
+        const { role_name } = req.user;
+
+        const isEmployee = role_name === 'Officer' || role_name === 'Field Worker';
+
+        // 1. Strict RBAC: Officers/Field Workers cannot access the management list
+        if (isEmployee) {
+            return res.status(403).json({ 
+                status: 'fail', 
+                message: 'Access Denied: You do not have permission to view the full locations list.' 
+            });
+        }
 
         // Use stats query if withStats is true
         const query = withStats === 'true' ? locationQueries.getLocationsWithStatsQuery : locationQueries.getLocationsQuery;
