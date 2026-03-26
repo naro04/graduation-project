@@ -4,9 +4,11 @@ const locationQueries = require('../database/data/queries/locations');
 
 exports.getAllActivities = async (req, res) => {
     try {
-        const { search, status, approval_status, date } = req.query;
-        const isManager = req.user.role_name === 'Manager';
-        const managerEmployeeId = req.user.employee_id;
+        const { role_name, employee_id } = req.user;
+        const isManager = role_name === 'Manager';
+        const isAdmin = role_name === 'Super Admin' || role_name === 'HR Admin';
+        const isEmployee = role_name === 'Officer' || role_name === 'Field Worker';
+        const managerEmployeeId = employee_id;
 
         let queryParams = [];
         let whereClause = "WHERE a.location_id IS NOT NULL";
@@ -38,6 +40,13 @@ exports.getAllActivities = async (req, res) => {
                 JOIN employees e2 ON ae2.employee_id = e2.id 
                 WHERE ae2.activity_id = a.id AND e2.supervisor_id = $${queryParams.length}
             ))`;
+        } else if (isEmployee) {
+            // Strict scoping: Employees only see activities they are directly assigned to
+            queryParams.push(employee_id);
+            whereClause += ` AND EXISTS (
+                SELECT 1 FROM activity_employees ae3 
+                WHERE ae3.activity_id = a.id AND ae3.employee_id = $${queryParams.length}
+            )`;
         }
 
         const query = `
@@ -88,6 +97,11 @@ exports.getAllActivities = async (req, res) => {
 exports.getActivityById = async (req, res) => {
     try {
         const { activity_id } = req.params;
+        const { role_name, employee_id } = req.user;
+
+        const isManager = role_name === 'Manager';
+        const isAdmin = role_name === 'Super Admin' || role_name === 'HR Admin';
+        const isEmployee = role_name === 'Officer' || role_name === 'Field Worker';
 
         const result = await pool.query(activityQueries.getActivityByIdQuery, [activity_id]);
 
@@ -95,9 +109,35 @@ exports.getActivityById = async (req, res) => {
             return res.status(404).json({ message: 'Activity not found' });
         }
 
+        const activity = result.rows[0];
+
+        // Strict scoping check
+        if (isEmployee) {
+            const assignmentCheck = await pool.query('SELECT 1 FROM activity_employees WHERE activity_id = $1 AND employee_id = $2', [activity_id, employee_id]);
+            if (assignmentCheck.rows.length === 0) {
+                return res.status(403).json({ status: 'fail', message: 'Access Denied: You are not assigned to this activity.' });
+            }
+        }
+
+        if (isManager) {
+            // Managers see if they are responsible OR if a team member is assigned
+            const managerCheck = await pool.query(`
+                SELECT 1 FROM activities a 
+                WHERE a.id = $1 AND (a.employee_id = $2 OR EXISTS (
+                    SELECT 1 FROM activity_employees ae 
+                    JOIN employees e ON ae.employee_id = e.id 
+                    WHERE ae.activity_id = a.id AND e.supervisor_id = $2
+                ))
+            `, [activity_id, employee_id]);
+            
+            if (managerCheck.rows.length === 0) {
+                return res.status(403).json({ status: 'fail', message: 'Access Denied: You are not authorized to view this activity.' });
+            }
+        }
+
         res.status(200).json({
             status: 'success',
-            data: result.rows[0]
+            data: activity
         });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching activity', error: err.message });
