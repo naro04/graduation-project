@@ -19,8 +19,11 @@ const retrieveUserPermissions = `
   SELECT DISTINCT p.slug
   FROM permissions p
   JOIN role_permissions rp ON p.id = rp.permission_id
-  JOIN user_roles ur ON rp.role_id = ur.role_id
-  WHERE ur.user_id = $1;
+  JOIN (
+    SELECT ur.role_id AS rid FROM user_roles ur WHERE ur.user_id = $1
+    UNION
+    SELECT e.role_id AS rid FROM employees e WHERE e.user_id = $1 AND e.role_id IS NOT NULL
+  ) role_src ON rp.role_id = role_src.rid;
 `;
 
 const assignRole = `
@@ -29,19 +32,27 @@ const assignRole = `
 `;
 
 const findUserById = `
-  SELECT 
+  SELECT DISTINCT ON (u.id)
     u.id, u.name, u.email, u.avatar_url,
     e.id as employee_id,
     e.avatar_url as employee_avatar_url,
     e.status as employee_status,
-    r.name as role_name,
-    r.id as role_id
+    COALESCE(r.name, r_emp.name) AS role_name,
+    COALESCE(r.id, r_emp.id) AS role_id
   FROM users u
   LEFT JOIN employees e ON u.id = e.user_id
   LEFT JOIN user_roles ur ON u.id = ur.user_id
   LEFT JOIN roles r ON ur.role_id = r.id
+  LEFT JOIN roles r_emp ON e.role_id = r_emp.id
   WHERE u.id = $1
-  ORDER BY CASE WHEN r.name = 'Super Admin' THEN 0 ELSE 1 END;
+  ORDER BY u.id,
+    CASE COALESCE(r.name, r_emp.name)
+      WHEN 'Super Admin' THEN 0
+      WHEN 'HR Admin' THEN 1
+      WHEN 'Manager' THEN 2
+      ELSE 3
+    END,
+    COALESCE(r.name, r_emp.name) NULLS LAST;
 `;
 
 const findRoleByName = `
@@ -57,8 +68,8 @@ const getMe = `
     e.department_id, e.position_id, e.supervisor_id, e.employment_type,
     d.name as department_name,
     pos.title as position_title,
-    r.name as role_name,
-    r.id as role_id,
+    COALESCE(r.name, r_emp.name) as role_name,
+    COALESCE(r.id, r_emp.id) as role_id,
     s.full_name as supervisor_name,
     ec.name as ec_name,
     ec.relationship as ec_relationship,
@@ -72,10 +83,11 @@ const getMe = `
   LEFT JOIN positions pos ON e.position_id = pos.id
   LEFT JOIN user_roles ur ON u.id = ur.user_id
   LEFT JOIN roles r ON ur.role_id = r.id
+  LEFT JOIN roles r_emp ON e.role_id = r_emp.id
   LEFT JOIN emergency_contacts ec ON e.id = ec.employee_id
   LEFT JOIN employees s ON e.supervisor_id = s.id
   WHERE u.id = $1
-  ORDER BY CASE WHEN r.name = 'Super Admin' THEN 0 ELSE 1 END;
+  ORDER BY CASE WHEN COALESCE(r.name, r_emp.name) = 'Super Admin' THEN 0 ELSE 1 END;
 `;
 
 module.exports = {

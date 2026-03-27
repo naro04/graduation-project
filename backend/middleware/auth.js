@@ -64,12 +64,15 @@ const restrictTo = (...requiredPermissions) => {
 /**
  * Allow listed roles OR users who have any of the given permission slugs (same rules as restrictTo for Super Admin).
  */
+const normalizeRole = (name) => String(name ?? '').trim().toLowerCase();
+
 const restrictToRolesOrPermissions = (roleNames, ...requiredPermissions) => {
     return (req, res, next) => {
-        if (req.user && req.user.role_name === 'Super Admin') {
+        if (req.user && normalizeRole(req.user.role_name) === 'super admin') {
             return next();
         }
-        if (req.user && roleNames.includes(req.user.role_name)) {
+        const userRole = normalizeRole(req.user?.role_name);
+        if (userRole && roleNames.some((n) => normalizeRole(n) === userRole)) {
             return next();
         }
         return restrictTo(...requiredPermissions)(req, res, next);
