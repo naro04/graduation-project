@@ -93,15 +93,17 @@ const dashboardQueries = {
     getActivityChartData: (scope = 'system') => {
         let filter = "";
         if (scope === 'team') {
-            filter = "AND (act.id IN (SELECT activity_id FROM activity_assignments WHERE employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1)))";
+            // Team scope: Activities where any team member is assigned
+            filter = "AND (act.id IN (SELECT activity_id FROM activity_employees WHERE employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1)))";
         } else if (scope === 'personal') {
-            filter = "AND (act.id IN (SELECT activity_id FROM activity_assignments WHERE employee_id = $1))";
+            // Personal scope: Activities where the current user is assigned
+            filter = "AND (act.id IN (SELECT activity_id FROM activity_employees WHERE employee_id = $1))";
         }
 
         return `
             SELECT 
                 TO_CHAR(day_series, 'Mon DD') as day_name,
-                SUM(CASE WHEN act.implementation_status = 'Implemented' OR act.implementation_status = 'Completed' THEN 1 ELSE 0 END) as completed_count,
+                SUM(CASE WHEN act.implementation_status = 'Implemented' THEN 1 ELSE 0 END) as implemented_count,
                 SUM(CASE WHEN act.implementation_status = 'Planned' THEN 1 ELSE 0 END) as planned_count
             FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') as day_series
             LEFT JOIN activities act ON DATE(act.start_time) = day_series ${filter}
