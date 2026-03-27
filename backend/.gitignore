@@ -1,3 +1,5 @@
 .env
 node_modules
 uploads/
+*.docx.pdf
+Product Requirements Document*.pdf

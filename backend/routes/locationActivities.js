@@ -13,7 +13,7 @@ router.route('/')
 // Team activities for manager/supervisor view
 router.get('/team', activityController.getTeamActivities);
 
-router.get('/reports', restrictTo('manage_locations'), activityController.getActivityReports);
+router.get('/reports', restrictToRolesOrPermissions(['Manager'], 'manage_locations', 'manage_employees'), activityController.getActivityReports);
 
 router.post('/:activity_id/assign', restrictToRolesOrPermissions(['Manager'], 'manage_locations', 'manage_employees'), activityController.assignTeamToActivity);
 
