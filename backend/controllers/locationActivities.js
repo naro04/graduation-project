@@ -629,7 +629,7 @@ exports.getActivityReports = async (req, res) => {
     try {
         const { from, to, type, status, search } = req.query;
 
-        const isManager = req.user.role_name === 'Manager';
+        const isManager = String(req.user.role_name ?? '').trim().toLowerCase() === 'manager';
         const managerEmployeeId = req.user.employee_id;
 
         const recordsResult = await pool.query(`
@@ -664,7 +664,9 @@ exports.getActivityReports = async (req, res) => {
               AND ($3::TEXT IS NULL OR LOWER(TRIM(a.activity_type)) = LOWER(TRIM($3::TEXT)))
               AND ($4::TEXT IS NULL OR a.approval_status = $4)
               AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
-              AND ($6::UUID IS NULL OR a.employee_id = $6 OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
+              AND ($6::UUID IS NULL OR a.employee_id = $6
+                OR a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6)
+                OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
             ORDER BY a.created_at DESC;
         `, [
             from || null,
@@ -675,25 +677,36 @@ exports.getActivityReports = async (req, res) => {
             isManager ? managerEmployeeId : null
         ]);
 
-        let trendParams = [];
-        let trendWhereClause = "WHERE start_date >= date_trunc('year', CURRENT_DATE)";
-        
-        let participantsParams = [];
-        let participantsWhereClause = "WHERE implementation_status = 'Implemented'";
+        const fromD = from || null;
+        const toD = to || null;
+
+        // Same date overlap as the records query so charts match the table filters
+        let trendParams = [fromD, toD];
+        let trendWhereClause = `WHERE ($1::DATE IS NULL OR end_date >= $1::DATE)
+              AND ($2::DATE IS NULL OR start_date <= $2::DATE)`;
+
+        let participantsParams = [fromD, toD];
+        let participantsWhereClause = `WHERE implementation_status = 'Implemented'
+              AND ($1::DATE IS NULL OR end_date >= $1::DATE)
+              AND ($2::DATE IS NULL OR start_date <= $2::DATE)`;
 
         if (isManager) {
             trendParams.push(managerEmployeeId);
-            trendWhereClause += ` AND (employee_id = $1 OR EXISTS (
+            trendWhereClause += ` AND (employee_id = $3
+                OR employee_id IN (SELECT id FROM employees WHERE supervisor_id = $3)
+                OR EXISTS (
                 SELECT 1 FROM activity_employees ae2 
                 JOIN employees e2 ON ae2.employee_id = e2.id 
-                WHERE ae2.activity_id = activities.id AND e2.supervisor_id = $1
+                WHERE ae2.activity_id = activities.id AND e2.supervisor_id = $3
             ))`;
 
             participantsParams.push(managerEmployeeId);
-            participantsWhereClause += ` AND (employee_id = $1 OR EXISTS (
+            participantsWhereClause += ` AND (employee_id = $3
+                OR employee_id IN (SELECT id FROM employees WHERE supervisor_id = $3)
+                OR EXISTS (
                 SELECT 1 FROM activity_employees ae3 
                 JOIN employees e3 ON ae3.employee_id = e3.id 
-                WHERE ae3.activity_id = activities.id AND e3.supervisor_id = $1
+                WHERE ae3.activity_id = activities.id AND e3.supervisor_id = $3
             ))`;
         }
 
