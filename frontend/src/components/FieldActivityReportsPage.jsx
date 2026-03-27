@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getLocationActivityReports } from "../services/locationActivities";
 import { exportToExcel, exportToPdf } from "../utils/exportReport";
@@ -25,8 +26,12 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("All Type");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
-  const [fromDate, setFromDate] = useState("2025-12-12");
-  const [toDate, setToDate] = useState("2025-12-19");
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -88,65 +93,42 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
     return () => { cancelled = true; };
   }, [fromDate, toDate, selectedType, selectedStatus, searchQuery]);
 
-  // Normalize report rows for table (matches backend getActivityReports: id, name, type, location, responsible_employee, start_date, end_date, actual_date, attendees, status)
+  // Normalize report rows for table — الباك قد يرجع attendees أو attendees_count
   const fieldActivityData = React.useMemo(() => {
     const fmt = (d) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
-    return (reportsData || []).map((r) => ({
-      id: r.id ?? r.report_id,
-      activity: r.name ?? r.activity ?? r.activity_name ?? "",
-      type: r.type ?? r.activity_type ?? "",
-      location: r.location ?? r.location_name ?? "",
-      responsibleEmployee: r.responsible_employee ?? r.responsibleEmployee ?? r.employee_name ?? "",
-      plannedDate: r.start_date ? (r.end_date ? `${fmt(r.start_date)} - ${fmt(r.end_date)}` : fmt(r.start_date)) : (r.planned_date ?? r.plannedDate ?? ""),
-      actualDate: r.actual_date ? fmt(r.actual_date) : (r.actual_date ?? "-"),
-      attendees: r.attendees ?? r.attendees_count ?? r.attendee_count ?? "",
-      status: r.status ?? r.implementation_status ?? "",
-      approval: r.approval ?? r.approval_status ?? "",
-    }));
+    return (reportsData || []).map((r) => {
+      const att = r.attendees ?? r.attendees_count ?? r.attendee_count;
+      return {
+        id: r.id ?? r.report_id,
+        activity: r.name ?? r.activity ?? r.activity_name ?? "",
+        type: r.type ?? r.activity_type ?? "",
+        location: r.location ?? r.location_name ?? "",
+        responsibleEmployee: r.responsible_employee ?? r.responsibleEmployee ?? r.employee_name ?? "",
+        plannedDate: r.start_date ? (r.end_date ? `${fmt(r.start_date)} - ${fmt(r.end_date)}` : fmt(r.start_date)) : (r.planned_date ?? r.plannedDate ?? ""),
+        actualDate: r.actual_date ? fmt(r.actual_date) : "-",
+        attendees: (att !== undefined && att !== null) ? String(att) : "-",
+        status: r.status ?? r.implementation_status ?? "",
+        approval: r.approval ?? r.approval_status ?? "",
+      };
+    });
   }, [reportsData]);
 
-  const _sampleFieldActivityData = [
-    {
-      id: 1,
-      activity: "Workshop A",
-      type: "Workshop",
-      location: "Head Office",
-      responsibleEmployee: "Ameer Jamal",
-      plannedDate: "12/14/2025",
-      actualDate: "12/15/2025",
-      attendees: "10"
-    },
-    {
-      id: 2,
-      activity: "Group Session A",
-      type: "Group Session",
-      location: "School A",
-      responsibleEmployee: "Ameer Jamal",
-      plannedDate: "12/17/2025",
-      actualDate: "12/20/2025",
-      attendees: "15"
-    },
-    {
-      id: 3,
-      activity: "Workshop B",
-      type: "Workshop",
-      location: "Head Office",
-      responsibleEmployee: "Amal Ahmed",
-      plannedDate: "12/19/2025",
-      actualDate: "-",
-      attendees: "9"
-    },
-    {
-      id: 4,
-      activity: "Group Session B",
-      type: "Group Session",
-      location: "Head Office",
-      responsibleEmployee: "Amal Ahmed",
-      plannedDate: "12/21/2025",
-      actualDate: "-",
-      attendees: "5"
-    }
-  ];
+  const _sampleFieldActivityData = React.useMemo(() => {
+    const t = new Date();
+    const fmt = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+    const d7 = new Date(t); d7.setDate(d7.getDate() - 7);
+    const d6 = new Date(t); d6.setDate(d6.getDate() - 6);
+    const d4 = new Date(t); d4.setDate(d4.getDate() - 4);
+    const d3 = new Date(t); d3.setDate(d3.getDate() - 3);
+    const d2 = new Date(t); d2.setDate(d2.getDate() - 2);
+    const d1 = new Date(t); d1.setDate(d1.getDate() - 1);
+    return [
+      { id: 1, activity: "Workshop A", type: "Workshop", location: "Head Office", responsibleEmployee: "Ameer Jamal", plannedDate: fmt(d7), actualDate: fmt(d6), attendees: "10" },
+      { id: 2, activity: "Group Session A", type: "Group Session", location: "School A", responsibleEmployee: "Ameer Jamal", plannedDate: fmt(d4), actualDate: fmt(d3), attendees: "15" },
+      { id: 3, activity: "Workshop B", type: "Workshop", location: "Head Office", responsibleEmployee: "Amal Ahmed", plannedDate: fmt(d2), actualDate: "-", attendees: "9" },
+      { id: 4, activity: "Group Session B", type: "Group Session", location: "Head Office", responsibleEmployee: "Amal Ahmed", plannedDate: fmt(d1), actualDate: "-", attendees: "5" }
+    ];
+  }, []);
 
   // Chart 1: from API stats.completionTrend (month, planned, implemented); fill 12 months
   const MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -168,12 +150,37 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
       const monthKey = d ? MONTH_ORDER[d.getMonth()] : null;
       if (!monthKey || !byMonth[monthKey]) return;
       const type = (r.type || "").toLowerCase().replace(/\s+/g, "");
-      const attendees = Number(r.attendees) || 0;
+      // Keep chart useful even when backend stores empty attendees_count.
+      const rawAttendees = Number(r.attendees ?? r.attendees_count ?? r.attendee_count);
+      const attendees = Number.isFinite(rawAttendees) && rawAttendees > 0 ? rawAttendees : 1;
       if (type.includes("workshop")) byMonth[monthKey].workshop += attendees;
       else if (type.includes("group") || type.includes("session")) byMonth[monthKey].groupSession += attendees;
     });
     return MONTH_ORDER.map((m) => byMonth[m] || { month: m, workshop: 0, groupSession: 0 });
   }, [reportsData]);
+
+  const createAxisTicks = (maxValue) => {
+    const safeMax = Math.max(4, Number(maxValue) || 0);
+    const step = Math.max(1, Math.ceil(safeMax / 4));
+    return [step * 4, step * 3, step * 2, step, 0];
+  };
+
+  const trendMaxValue = React.useMemo(() => {
+    const maxVal = monthlyTrendData.reduce((acc, item) => (
+      Math.max(acc, Number(item.implemented) || 0, Number(item.planned) || 0)
+    ), 0);
+    return Math.max(4, maxVal);
+  }, [monthlyTrendData]);
+
+  const participantsMaxValue = React.useMemo(() => {
+    const maxVal = monthlyParticipantsData.reduce((acc, item) => (
+      Math.max(acc, Number(item.workshop) || 0, Number(item.groupSession) || 0)
+    ), 0);
+    return Math.max(4, maxVal);
+  }, [monthlyParticipantsData]);
+
+  const trendTicks = React.useMemo(() => createAxisTicks(trendMaxValue), [trendMaxValue]);
+  const participantsTicks = React.useMemo(() => createAxisTicks(participantsMaxValue), [participantsMaxValue]);
 
   // Activity types
   const activityTypes = ["All Type", "Workshop", "Group Session"];
@@ -256,9 +263,16 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
   // Pagination
   const itemsPerPage = 10;
   const actualTotalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
-  const totalPages = Math.max(3, actualTotalPages);
+  const totalPages = Math.max(3, actualTotalPages); // عرض 3 أرقام كحد أدنى (1، 2، 3)
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
+
+  // ضبط الصفحة الحالية عند تغيّر الفلتر أو نقص عدد الصفحات
+  useEffect(() => {
+    if (currentPage > actualTotalPages && actualTotalPages >= 1) {
+      setCurrentPage(actualTotalPages);
+    }
+  }, [actualTotalPages, currentPage]);
 
   // Function to convert value (0-80) to percentage height for charts
   const valueToHeight = (value, maxValue = 80) => {
@@ -311,8 +325,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -338,7 +351,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -480,7 +493,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="relative" style={{ height: '250px' }}>
                   {/* Y-axis Labels */}
                   <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
-                    {[80, 60, 40, 20, 0].map((value) => (
+                    {trendTicks.map((value) => (
                       <div
                         key={value}
                         className="text-right pr-[8px]"
@@ -501,7 +514,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                     {/* Grid Lines */}
                     <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                      {[80, 60, 40, 20, 0].map((value, index) => {
+                      {trendTicks.map((value, index) => {
                         const y = (index / 4) * 100;
                         return (
                           <line
@@ -556,7 +569,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       <polyline
                         points={monthlyTrendData.map((data, index) => {
                           const x = (index / 11) * 1000;
-                          const y = valueToY(data.implemented, 80, 200);
+                          const y = valueToY(data.implemented, trendMaxValue, 200);
                           return `${x},${y}`;
                         }).join(' ')}
                         fill="none"
@@ -570,7 +583,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       <polyline
                         points={monthlyTrendData.map((data, index) => {
                           const x = (index / 11) * 1000;
-                          const y = valueToY(data.planned, 80, 200);
+                          const y = valueToY(data.planned, trendMaxValue, 200);
                           return `${x},${y}`;
                         }).join(' ')}
                         fill="none"
@@ -640,7 +653,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="relative" style={{ height: '250px' }}>
                   {/* Y-axis Labels */}
                   <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
-                    {[80, 60, 40, 20, 0].map((value) => (
+                    {participantsTicks.map((value) => (
                       <div
                         key={value}
                         className="text-right pr-[8px]"
@@ -661,7 +674,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                     {/* Grid Lines */}
                     <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                      {[80, 60, 40, 20, 0].map((value, index) => {
+                      {participantsTicks.map((value, index) => {
                         const y = (index / 4) * 100;
                         return (
                           <line
@@ -691,7 +704,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                               <div
                                 style={{
                                   width: 'calc(45% - 1px)',
-                                  height: `${valueToHeight(data.workshop, 80)}%`,
+                                  height: `${valueToHeight(data.workshop, participantsMaxValue)}%`,
                                   backgroundColor: '#00564F',
                                   borderRadius: '2px 2px 0 0',
                                   minHeight: data.workshop > 0 ? '2px' : '0'
@@ -703,7 +716,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                               <div
                                 style={{
                                   width: 'calc(45% - 1px)',
-                                  height: `${valueToHeight(data.groupSession, 80)}%`,
+                                  height: `${valueToHeight(data.groupSession, participantsMaxValue)}%`,
                                   backgroundColor: '#53A7A0',
                                   borderRadius: '2px 2px 0 0',
                                   minHeight: data.groupSession > 0 ? '2px' : '0'
@@ -815,7 +828,9 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     {activityTypes.map((type) => (
                       <button
                         key={type}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
                           setSelectedType(type);
                           setIsTypeDropdownOpen(false);
                           setCurrentPage(1);
@@ -854,7 +869,9 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     {statusOptions.map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                           setCurrentPage(1);
@@ -1046,12 +1063,12 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                              {record.actualDate}
+                              {record.actualDate ?? "-"}
                             </span>
                           </td>
                           <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <span className="text-[13px] text-[#333333]" style={{ fontWeight: 600 }}>
-                              {record.attendees}
+                              {record.attendees ?? "-"}
                             </span>
                           </td>
                         </tr>
@@ -1073,13 +1090,14 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
             {filteredData.length > 0 && (
               <div className="flex items-center justify-center gap-[8px] mt-[24px]">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  type="button"
+                  aria-disabled={currentPage === 1}
+                  onClick={() => { if (currentPage > 1) setCurrentPage(prev => prev - 1); }}
                   className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
                   style={{
                     opacity: currentPage === 1 ? 0.5 : 1,
-                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                    cursor: currentPage === 1 ? 'default' : 'pointer'
                   }}
-                  disabled={currentPage === 1}
                 >
                   <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1088,33 +1106,31 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                   <button
                     key={page}
-                    onClick={() => {
-                      if (page <= actualTotalPages) {
-                        setCurrentPage(page);
-                      }
-                    }}
+                    type="button"
+                    aria-disabled={page > actualTotalPages}
+                    onClick={() => { if (page <= actualTotalPages) setCurrentPage(page); }}
                     className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
                     style={{
                       fontFamily: 'Inter, sans-serif',
                       fontWeight: currentPage === page ? 600 : 400,
                       color: currentPage === page ? '#474747' : page > actualTotalPages ? '#9CA3AF' : '#827F7F',
                       fontSize: '14px',
-                      cursor: page > actualTotalPages ? 'not-allowed' : 'pointer',
+                      cursor: page > actualTotalPages ? 'default' : 'pointer',
                       opacity: page > actualTotalPages ? 0.5 : 1
                     }}
-                    disabled={page > actualTotalPages}
                   >
                     {page}
                   </button>
                 ))}
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                  type="button"
+                  aria-disabled={currentPage >= actualTotalPages}
+                  onClick={() => { if (currentPage < actualTotalPages) setCurrentPage(prev => prev + 1); }}
                   className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
                   style={{
                     opacity: currentPage >= actualTotalPages ? 0.5 : 1,
-                    cursor: currentPage >= actualTotalPages ? 'not-allowed' : 'pointer'
+                    cursor: currentPage >= actualTotalPages ? 'default' : 'pointer'
                   }}
-                  disabled={currentPage >= actualTotalPages}
                 >
                   <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1151,8 +1167,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1172,7 +1187,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1225,7 +1240,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
               <div className="relative" style={{ height: '200px' }}>
                 {/* Y-axis Labels */}
                 <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '25px' }}>
-                  {[80, 60, 40, 20, 0].map((value) => (
+                  {trendTicks.map((value) => (
                     <div
                       key={value}
                       className="text-right pr-[4px]"
@@ -1245,7 +1260,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="ml-[30px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                   {/* Grid Lines */}
                   <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                    {[80, 60, 40, 20, 0].map((value, index) => {
+                    {trendTicks.map((value, index) => {
                       const y = (index / 4) * 100;
                       return (
                         <line
@@ -1291,7 +1306,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     <polyline
                       points={monthlyTrendData.map((data, index) => {
                         const x = (index / 11) * 1000;
-                        const y = valueToY(data.implemented, 80, 200);
+                        const y = valueToY(data.implemented, trendMaxValue, 200);
                         return `${x},${y}`;
                       }).join(' ')}
                       fill="none"
@@ -1305,7 +1320,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     <polyline
                       points={monthlyTrendData.map((data, index) => {
                         const x = (index / 11) * 1000;
-                        const y = valueToY(data.planned, 80, 200);
+                        const y = valueToY(data.planned, trendMaxValue, 200);
                         return `${x},${y}`;
                       }).join(' ')}
                       fill="none"
@@ -1360,7 +1375,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
               <div className="relative" style={{ height: '200px' }}>
                 {/* Y-axis Labels */}
                 <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '25px' }}>
-                  {[80, 60, 40, 20, 0].map((value) => (
+                  {participantsTicks.map((value) => (
                     <div
                       key={value}
                       className="text-right pr-[4px]"
@@ -1380,7 +1395,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="ml-[30px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                   {/* Grid Lines */}
                   <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                    {[80, 60, 40, 20, 0].map((value, index) => {
+                    {participantsTicks.map((value, index) => {
                       const y = (index / 4) * 100;
                       return (
                         <line
@@ -1405,7 +1420,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                             <div
                               style={{
                                 width: 'calc(45% - 0.5px)',
-                                height: `${valueToHeight(data.workshop, 80)}%`,
+                                height: `${valueToHeight(data.workshop, participantsMaxValue)}%`,
                                 backgroundColor: '#00564F',
                                 borderRadius: '2px 2px 0 0',
                                 minHeight: data.workshop > 0 ? '2px' : '0'
@@ -1416,7 +1431,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                             <div
                               style={{
                                 width: 'calc(45% - 0.5px)',
-                                height: `${valueToHeight(data.groupSession, 80)}%`,
+                                height: `${valueToHeight(data.groupSession, participantsMaxValue)}%`,
                                 backgroundColor: '#53A7A0',
                                 borderRadius: '2px 2px 0 0',
                                 minHeight: data.groupSession > 0 ? '2px' : '0'
@@ -1510,7 +1525,9 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   {activityTypes.map((type) => (
                     <button
                       key={type}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         setSelectedType(type);
                         setIsTypeDropdownOpen(false);
                         setCurrentPage(1);
@@ -1541,7 +1558,9 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   {statusOptions.map((status) => (
                     <button
                       key={status}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
                         setCurrentPage(1);
@@ -1606,11 +1625,11 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[12px] text-[#6B7280]">Actual Date:</span>
-                      <span className="text-[13px] font-semibold text-[#000000]">{record.actualDate}</span>
+                      <span className="text-[13px] font-semibold text-[#000000]">{record.actualDate ?? "-"}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[12px] text-[#6B7280]">Attendees:</span>
-                      <span className="text-[13px] font-semibold text-[#000000] bg-[#F3F4F6] px-3 py-1 rounded-[6px]">{record.attendees}</span>
+                      <span className="text-[13px] font-semibold text-[#000000] bg-[#F3F4F6] px-3 py-1 rounded-[6px]">{record.attendees ?? "-"}</span>
                     </div>
                   </div>
                 </div>
@@ -1626,32 +1645,38 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
           {filteredData.length > 0 && (
             <div className="flex items-center justify-center gap-[8px] mt-8">
               <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                type="button"
+                aria-disabled={currentPage === 1}
+                onClick={() => { if (currentPage > 1) setCurrentPage(prev => prev - 1); }}
                 className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
-                disabled={currentPage === 1}
-                style={{ opacity: currentPage === 1 ? 0.5 : 1 }}
+                style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'default' : 'pointer' }}
               >
                 <svg className="w-[16px] h-[16px] text-[#000000]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18L9 12L15 6" /></svg>
               </button>
-              {Array.from({ length: Math.min(totalPages, actualTotalPages) }, (_, i) => i + 1).map((page) => (
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                 <button
                   key={page}
-                  onClick={() => setCurrentPage(page)}
+                  type="button"
+                  aria-disabled={page > actualTotalPages}
+                  onClick={() => { if (page <= actualTotalPages) setCurrentPage(page); }}
                   className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page ? 'font-semibold' : ''}`}
                   style={{
                     fontFamily: 'Inter, sans-serif',
                     fontWeight: currentPage === page ? 600 : 400,
-                    color: currentPage === page ? '#474747' : '#827F7F'
+                    color: currentPage === page ? '#474747' : page > actualTotalPages ? '#9CA3AF' : '#827F7F',
+                    cursor: page > actualTotalPages ? 'default' : 'pointer',
+                    opacity: page > actualTotalPages ? 0.5 : 1
                   }}
                 >
                   {page}
                 </button>
               ))}
               <button
-                onClick={() => setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                type="button"
+                aria-disabled={currentPage >= actualTotalPages}
+                onClick={() => { if (currentPage < actualTotalPages) setCurrentPage(prev => prev + 1); }}
                 className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
-                disabled={currentPage >= actualTotalPages}
-                style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1 }}
+                style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1, cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
               >
                 <svg className="w-[16px] h-[16px] text-[#000000]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18L15 12L9 6" /></svg>
               </button>

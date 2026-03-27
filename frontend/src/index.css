@@ -12,6 +12,61 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* Sidebar scrolling style (visible vertical only, no horizontal) */
+.sidebar-shell {
+  overflow-x: hidden;
+}
+
+.sidebar-scroll {
+  overflow-x: hidden !important;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 0;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.62);
+}
+
+/* Desktop app layout:
+   - Sidebar has its own scroll (handled in Sidebar.jsx)
+   - Main area stays fixed height
+   - Sub-header stays visible
+   - Only page content area scrolls
+*/
+@media (min-width: 1024px) {
+  .hidden.lg\:flex.min-h-screen > main {
+    height: 100vh;
+    overflow: hidden !important;
+  }
+
+  .hidden.lg\:flex.min-h-screen > main > header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    flex-shrink: 0;
+  }
+
+  .hidden.lg\:flex.min-h-screen > main > .flex-1 {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 /* الجداول: خط Inter ومحاذاة موحدة */
 table th,
 table td,
@@ -37,6 +92,15 @@ table tbody td .flex {
   overflow-x: visible !important;
   max-height: none !important;
   height: auto !important;
+}
+
+/* API Keys pagination: ensure buttons are clickable and visible (no red/disabled look on valid pages) */
+.api-keys-pagination button {
+  pointer-events: auto;
+  user-select: none;
+}
+.api-keys-pagination button:not(:disabled):hover {
+  opacity: 1;
 }
 /* Prevent scrollbar on user dropdown menu */
 .user-dropdown-no-scroll {

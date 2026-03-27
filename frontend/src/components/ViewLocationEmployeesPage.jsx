@@ -1,24 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getLocations, getLocationEmployees } from "../services/locations";
 import HeaderIcons from "./HeaderIcons";
-
-// User Avatar
-const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 // Header icons
 const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4b2785c.png", import.meta.url).href;
 const NotificationIcon = new URL("../images/ebf8a1610effc5cf80410fb898c4452b8d535684.png", import.meta.url).href;
 const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href;
-
-// Employee Photos
-const MohamedAliPhoto = new URL("../images/Mohamed Ali.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
-const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).href;
-const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
-const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
 
 const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
@@ -29,6 +22,18 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const userDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) setIsUserDropdownOpen(false);
+    };
+    if (isUserDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isUserDropdownOpen]);
 
   const decodedLocationName = locationName ? decodeURIComponent(locationName) : "";
 
@@ -102,19 +107,25 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
               
               <div className="flex items-center gap-[16px] flex-shrink-0">
                 <HeaderIcons />
-                <div className="flex items-center gap-[12px] cursor-pointer">
-                  <img 
-                    src={UserAvatar}
-                    alt="User"
-                    className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
-                  />
-                  <div>
-                    <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
-                      <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
+                <div className="relative" ref={userDropdownRef}>
+                  <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <div>
+                      <div className="flex items-center gap-[6px]">
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
+                        <img src={DropdownArrow} alt="" className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
+                      </div>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
+                  {isUserDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
+                      <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                      <div className="h-[1px] bg-[#DC2626] my-[4px]" />
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); window.location.href = "/login"; }}>Log Out</button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -220,7 +231,7 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                   const name = employee.name ?? employee.full_name ?? employee.employee_name ?? "";
                   const department = employee.department ?? employee.department_name ?? "";
                   const position = employee.position ?? employee.position_name ?? "";
-                  const photo = employee.photo ?? employee.avatar_url ?? employee.profile_image ?? MohamedAliPhoto;
+                  const photo = toAbsoluteAvatarUrl(employee.avatar_url ?? employee.profile_image) || (employee.photo ?? employee.avatar_url ?? null);
                   return (
                   <div 
                     key={employee.id ?? index}
@@ -235,11 +246,10 @@ const ViewLocationEmployeesPage = ({ userRole = "superAdmin" }) => {
                         borderRight: '1px solid #E0E0E0'
                       }}
                     >
-                      <img 
+                      <AvatarOrPlaceholder 
                         src={photo} 
                         alt={name}
                         className="w-[40px] h-[40px] rounded-full object-cover"
-                        onError={(e) => { e.target.src = MohamedAliPhoto; }}
                       />
                       <span 
                         className="text-[14px] text-left"

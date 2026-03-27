@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import HeaderIcons from "./HeaderIcons";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { createLeave } from "../services/leaves";
 import { getProfileMe } from "../services/profile";
@@ -20,11 +21,14 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const effectiveRole = getEffectiveRole();
   const location = useLocation();
+  const currentUser = getCurrentUser();
   const [activeMenu, setActiveMenu] = useState("6-1");
   const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
   const [isLeaveTypeDropdownOpen, setIsLeaveTypeDropdownOpen] = useState(false);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const leaveTypeDropdownRef = useRef(null);
   const employeeDropdownRef = useRef(null);
+  const userDropdownRef = useRef(null);
 
   // Check if viewing rejected request details
   const [viewingRejectedRequest, setViewingRejectedRequest] = useState(false);
@@ -69,17 +73,23 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
     if (status === 'rejected' || location.state?.status === 'rejected') {
       setViewingRejectedRequest(true);
       // Mock rejected request data - in real app, fetch from API
-      setRejectedRequestData({
-        id: requestId || 1,
-        leaveType: location.state?.leaveType || "Sick Leave",
-        status: "Rejected",
-        startDate: location.state?.startDate || "12/24/2025",
-        endDate: location.state?.endDate || "12/29/2025",
-        totalDays: location.state?.totalDays || "6",
-        reason: location.state?.reason || "Catch cold",
-        adminNotes: location.state?.adminNotes || "Denied - critical client meetings scheduled",
-        submittedDate: location.state?.submittedDate || "12/18/2025"
-      });
+      const today = new Date();
+        const fmt = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+        const end = new Date(today);
+        end.setDate(end.getDate() + 5);
+        const submitted = new Date(today);
+        submitted.setDate(submitted.getDate() - 1);
+        setRejectedRequestData({
+          id: requestId || 1,
+          leaveType: location.state?.leaveType || "Sick Leave",
+          status: "Rejected",
+          startDate: location.state?.startDate || fmt(today),
+          endDate: location.state?.endDate || fmt(end),
+          totalDays: location.state?.totalDays || "6",
+          reason: location.state?.reason || "Catch cold",
+          adminNotes: location.state?.adminNotes || "Denied - critical client meetings scheduled",
+          submittedDate: location.state?.submittedDate || fmt(submitted)
+        });
     }
   }, [location]);
 
@@ -126,6 +136,9 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
       }
       if (employeeDropdownRef.current && !employeeDropdownRef.current.contains(event.target)) {
         setIsEmployeeDropdownOpen(false);
+      }
+      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target)) {
+        setIsUserDropdownOpen(false);
       }
     };
 
@@ -225,19 +238,25 @@ const RequestLeavePage = ({ userRole = "superAdmin" }) => {
               
               <div className="flex items-center gap-[16px] flex-shrink-0">
                 <HeaderIcons />
-                <div className="flex items-center gap-[12px] cursor-pointer">
-                  <img 
-                    src={UserAvatar}
-                    alt="User"
-                    className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
-                  />
-                  <div>
-                    <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
-                      <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
+                <div className="relative" ref={userDropdownRef}>
+                  <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <div>
+                      <div className="flex items-center gap-[6px]">
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
+                        <img src={DropdownArrow} alt="" className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
+                      </div>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
+                  {isUserDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
+                      <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                      <div className="h-[1px] bg-[#DC2626] my-[4px]" />
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); window.location.href = "/login"; }}>Log Out</button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

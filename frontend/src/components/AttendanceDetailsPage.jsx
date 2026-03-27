@@ -15,7 +15,7 @@ const AttendanceDetailsPage = ({ userRole = "superAdmin" }) => {
   const currentUser = getCurrentUser();
   const effectiveRole = getEffectiveRole();
   const employee = location.state?.employee;
-  const selectedDate = location.state?.date || new Date(2025, 11, 7);
+  const selectedDate = location.state?.date || new Date();
   const [showWarningModal, setShowWarningModal] = useState(false);
 
   // Format date

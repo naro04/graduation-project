@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import HeaderIcons from "./HeaderIcons";
 
@@ -13,7 +14,7 @@ const NotificationIcon = new URL("../images/ebf8a1610effc5cf80410fb898c4452b8d53
 const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href;
 
 // Support icons
-const EmailIcon = new URL("../images/icons/email (2).png", import.meta.url).href;
+const EmailIcon = new URL("../images/icons/email " + "(2).png", import.meta.url).href;
 const MessageSupportIcon = new URL("../images/icons/message.png", import.meta.url).href;
 const HelpIcon = new URL("../images/icons/help.png", import.meta.url).href;
 
@@ -153,7 +154,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
       const status = err.response?.status;
       const friendlyMessage =
         status === 404
-          ? "خدمة الدعم غير متاحة حالياً. يرجى المحاولة لاحقاً أو التواصل مع المسؤول."
+          ? "Support is temporarily unavailable. Please try again later or contact an administrator."
           : err.response?.data?.message || err.message || "Failed to submit ticket.";
       setSubmitError(friendlyMessage);
     } finally {
@@ -213,8 +214,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsDesktopDropdownOpen(!isDesktopDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -240,7 +240,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1062,8 +1062,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                 className="flex items-center gap-2"
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1079,7 +1078,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-4 py-2">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-4 py-2 text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-4 py-2 text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-1"></div>

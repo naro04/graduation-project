@@ -70,6 +70,23 @@ export const updatePersonalInfo = async (personalData) => {
 };
 
 /**
+ * Update avatar image directly through profile endpoint.
+ * Uses multipart/form-data with `avatar` field (handled by backend upload middleware).
+ * @param {File} file
+ * @returns {Promise<object>}
+ */
+export const updatePersonalAvatar = async (file) => {
+  try {
+    const formData = new FormData();
+    formData.append("avatar", file);
+    const response = await apiClient.put("/profile/personal-info", formData);
+    return response.data?.data ?? response.data;
+  } catch (error) {
+    handleApiError(error, "Failed to update profile picture. Please try again.");
+  }
+};
+
+/**
  * Get job information
  * GET http://localhost:5000/api/v1/profile/job-info
  * @returns {Promise<object>} - Job info (department, position, etc.)

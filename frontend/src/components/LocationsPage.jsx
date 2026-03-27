@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import { getLocations, createLocation, updateLocation, deleteLocation, getLocationEmployees, getLocationActivities } from "../services/locations";
 import { getLocationTypes } from "../services/locationTypes";
@@ -18,7 +19,6 @@ const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7
 // Action icons
 const EditIcon = new URL("../images/icons/update.png", import.meta.url).href;
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
-const ViewIcon = new URL("../images/icons/eye.png", import.meta.url).href;
 
 const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).href;
 
@@ -125,7 +125,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
     const unique = [...new Set(names)].sort((a, b) => String(a).localeCompare(String(b)));
     return ["All Type", ...unique];
   }, [locationTypesList]);
-  const typeOptionsWithFallback = typeOptions.length > 1 ? typeOptions : ["All Type", "Office", "Field"];
+  const typeOptionsWithFallback = typeOptions;
   const statusOptions = ["All Status", "Active", "Inactive"];
 
   // Map type_id -> name for display when API returns only type_id (support number and string keys)
@@ -179,19 +179,21 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
 
-  // Reset form when opening Add Location page
+  // Reset form when opening Add Location page (نوع الموقع من أول عنصر في القائمة من الـ API)
   useEffect(() => {
     if (showAddLocationPage) {
+      const firstType = locationTypesList[0];
+      const defaultType = firstType ? (firstType.name || firstType.type || firstType.title) : "";
       setFormData({
         name: "",
-        type: "Office",
+        type: defaultType || "",
         status: "Active",
         latitude: "",
         longitude: ""
       });
       setFormError(null);
     }
-  }, [showAddLocationPage]);
+  }, [showAddLocationPage, locationTypesList]);
 
   // Set form data when opening Edit Location page
   useEffect(() => {
@@ -412,8 +414,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -436,7 +437,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -752,14 +753,6 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                           <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
                             <div className="flex items-center justify-center gap-0">
                               <button
-                                onClick={() => openLocationDetails(location)}
-                                className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70 transition-opacity"
-                                title="View employees & activities"
-                              >
-                                <img src={ViewIcon} alt="View" className="w-full h-full object-contain" />
-                              </button>
-                              <div className="w-[1px] h-[22px] bg-[#E0E0E0] mx-[8px]"></div>
-                              <button
                                 onClick={() => {
                                   setEditingLocation(location);
                                   setShowEditLocationPage(true);
@@ -865,8 +858,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[32px] h-[32px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -884,7 +876,7 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                     <p className="text-[14px] font-semibold text-[#333333]">{currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[8px]"></div>
@@ -1022,13 +1014,6 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => openLocationDetails(location)}
-                      className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors"
-                      title="View employees & activities"
-                    >
-                      <img src={ViewIcon} alt="View" className="w-[16px] h-[16px] object-contain" />
-                    </button>
                     <button
                       onClick={() => {
                         setEditingLocation(location);
@@ -1244,8 +1229,10 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                         className="w-full h-[42px] pl-3 pr-9 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] appearance-none cursor-pointer bg-white"
                         style={{ fontFamily: 'Inter, sans-serif' }}
                       >
-                        <option value="Office">Office</option>
-                        <option value="Field">Field</option>
+                        {locationTypesList.map((t) => {
+                          const name = t.name || t.type || t.title;
+                          return name ? <option key={t.id || name} value={name}>{name}</option> : null;
+                        })}
                       </select>
                       <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M19 9l-7 7-7-7" /></svg>
                     </div>
@@ -1371,8 +1358,10 @@ const LocationsPage = ({ userRole = "superAdmin" }) => {
                         className="w-full h-[42px] pl-3 pr-9 rounded-[8px] border border-[#E0E0E0] focus:border-[#003934] outline-none text-[14px] appearance-none cursor-pointer bg-white"
                         style={{ fontFamily: 'Inter, sans-serif' }}
                       >
-                        <option value="Office">Office</option>
-                        <option value="Field">Field</option>
+                        {locationTypesList.map((t) => {
+                          const name = t.name || t.type || t.title;
+                          return name ? <option key={t.id || name} value={name}>{name}</option> : null;
+                        })}
                       </select>
                       <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B7280] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M19 9l-7 7-7-7" /></svg>
                     </div>

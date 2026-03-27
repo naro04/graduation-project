@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
@@ -14,7 +15,7 @@ const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7
 // Icons
 const EyeIcon = new URL("../images/icons/eye.png", import.meta.url).href;
 const BlindIcon = new URL("../images/icons/blind.png", import.meta.url).href;
-const WarningIcon = new URL("../images/icons/warnning (2).png", import.meta.url).href;
+const WarningIcon = new URL("../images/icons/warnning " + "(2).png", import.meta.url).href;
 const ReloadIcon = new URL("../images/icons/reload.png", import.meta.url).href;
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
 
@@ -106,7 +107,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
 
   const maskApiKey = (key) => {
     if (key.length <= 12) return key;
-    return key.substring(0, 12) + "•".repeat(12);
+    return key.substring(0, 12) + ".".repeat(12);
   };
 
   const handleDelete = async (id) => {
@@ -223,8 +224,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsDesktopDropdownOpen(!isDesktopDropdownOpen)}
                   >
-                <img 
-                  src={UserAvatar}
+<HeaderUserAvatar
                   alt="User"
                   className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -250,7 +250,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -525,7 +525,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                                 color: '#333333'
                               }}
                             >
-                              {key.apiKey ? (visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)) : "••••••••"}
+                              {key.apiKey ? (visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)) : "............"}
                             </span>
                             <button
                               onClick={() => toggleKeyVisibility(key.id)}
@@ -614,54 +614,50 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
-            {/* Pagination */}
+            {/* Pagination - only show pages that exist; buttons always clickable when enabled */}
             {apiKeys.length > 0 && (
-              <div className="flex items-center justify-center gap-[8px] mt-[24px]">
+              <div className="flex items-center justify-center gap-[8px] mt-[24px] api-keys-pagination" style={{ minHeight: '32px' }}>
                 <button
+                  type="button"
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
-                  style={{
-                    opacity: currentPage === 1 ? 0.5 : 1,
-                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-                  }}
+                  className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#E5E7EB] hover:border-[#D1D5DB] disabled:opacity-50 disabled:hover:bg-white disabled:cursor-default"
+                  style={{ cursor: currentPage === 1 ? 'default' : 'pointer' }}
                   disabled={currentPage === 1}
+                  aria-label="Previous page"
                 >
-                  <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <svg className="w-[16px] h-[16px] text-[#374151]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                   <button
+                    type="button"
                     key={page}
-                    onClick={() => {
-                      if (page <= actualTotalPages) {
-                        setCurrentPage(page);
-                      }
-                    }}
-                    className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
+                    onClick={() => { if (page <= actualTotalPages) setCurrentPage(page); }}
+                    className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white"
                     style={{
                       fontFamily: 'Inter, sans-serif',
                       fontWeight: currentPage === page ? 600 : 400,
                       color: currentPage === page ? '#474747' : page > actualTotalPages ? '#9CA3AF' : '#827F7F',
                       fontSize: '14px',
-                      cursor: page > actualTotalPages ? 'not-allowed' : 'pointer',
-                      opacity: page > actualTotalPages ? 0.5 : 1
+                      cursor: page > actualTotalPages ? 'default' : 'pointer'
                     }}
                     disabled={page > actualTotalPages}
+                    aria-label={`Page ${page}`}
+                    aria-current={currentPage === page ? 'page' : undefined}
                   >
                     {page}
                   </button>
                 ))}
                 <button
+                  type="button"
                   onClick={() => setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
-                  className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
-                  style={{
-                    opacity: currentPage >= actualTotalPages ? 0.5 : 1,
-                    cursor: currentPage >= actualTotalPages ? 'not-allowed' : 'pointer'
-                  }}
+                  className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#E5E7EB] hover:border-[#D1D5DB] disabled:opacity-50 disabled:hover:bg-white disabled:cursor-default"
+                  style={{ cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
                   disabled={currentPage >= actualTotalPages}
+                  aria-label="Next page"
                 >
-                  <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <svg className="w-[16px] h-[16px] text-[#374151]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
@@ -695,8 +691,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -716,7 +711,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -915,7 +910,7 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
                         color: '#333333'
                       }}
                     >
-                      {key.apiKey ? (visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)) : "••••••••"}
+                      {key.apiKey ? (visibleKeys[key.id] ? key.apiKey : maskApiKey(key.apiKey)) : "............"}
                     </span>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
@@ -994,52 +989,48 @@ const APIKeysPage = ({ userRole = "superAdmin" }) => {
 
           {/* Pagination - Mobile */}
           {apiKeys.length > 0 && (
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2 api-keys-pagination" style={{ minHeight: '32px' }}>
               <button
+                type="button"
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
-                style={{
-                  opacity: currentPage === 1 ? 0.5 : 1,
-                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-                }}
+                className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#E5E7EB] disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white"
+                style={{ cursor: currentPage === 1 ? 'default' : 'pointer' }}
                 disabled={currentPage === 1}
+                aria-label="Previous page"
               >
-                <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg className="w-[16px] h-[16px] text-[#374151]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                 <button
+                  type="button"
                   key={page}
-                  onClick={() => {
-                    if (page <= actualTotalPages) {
-                      setCurrentPage(page);
-                    }
-                  }}
-                  className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
+                  onClick={() => { if (page <= actualTotalPages) setCurrentPage(page); }}
+                  className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white"
                   style={{
                     fontFamily: 'Inter, sans-serif',
                     fontWeight: currentPage === page ? 600 : 400,
                     color: currentPage === page ? '#474747' : page > actualTotalPages ? '#9CA3AF' : '#827F7F',
                     fontSize: '12px',
-                    cursor: page > actualTotalPages ? 'not-allowed' : 'pointer',
-                    opacity: page > actualTotalPages ? 0.5 : 1
+                    cursor: page > actualTotalPages ? 'default' : 'pointer'
                   }}
                   disabled={page > actualTotalPages}
+                  aria-label={`Page ${page}`}
+                  aria-current={currentPage === page ? 'page' : undefined}
                 >
                   {page}
                 </button>
               ))}
               <button
+                type="button"
                 onClick={() => setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
-                className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
-                style={{
-                  opacity: currentPage >= actualTotalPages ? 0.5 : 1,
-                  cursor: currentPage >= actualTotalPages ? 'not-allowed' : 'pointer'
-                }}
+                className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#E5E7EB] disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white"
+                style={{ cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
                 disabled={currentPage >= actualTotalPages}
+                aria-label="Next page"
               >
-                <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg className="w-[16px] h-[16px] text-[#374151]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>

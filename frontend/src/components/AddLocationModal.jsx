@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import LocationMapPicker from "./LocationMapPicker";
 
-const AddLocationModal = ({ onClose, onSave }) => {
+const AddLocationModal = ({ onClose, onSave, locationTypes = [] }) => {
+    const firstType = locationTypes[0];
+    const defaultType = firstType ? (firstType.name || firstType.type || firstType.title) : "";
     const [formData, setFormData] = useState({
         name: "",
-        type: "Office",
+        type: defaultType,
         status: "Active",
         latitude: "",
         longitude: ""
@@ -67,8 +69,10 @@ const AddLocationModal = ({ onClose, onSave }) => {
                                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                 className="w-full h-[36px] px-[12px] border border-[#E0E0E0] rounded-[4px] text-[14px] focus:outline-none focus:border-[#00564F] appearance-none bg-white cursor-pointer"
                             >
-                                <option value="Office">Office</option>
-                                <option value="Field">Field</option>
+                                {locationTypes.map((t) => {
+                                    const name = t.name || t.type || t.title;
+                                    return name ? <option key={t.id || name} value={name}>{name}</option> : null;
+                                })}
                             </select>
                             <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#6B7280] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
@@ -118,7 +122,7 @@ const AddLocationModal = ({ onClose, onSave }) => {
 
                     {/* Map: click to set latitude & longitude */}
                     <div className="mt-[8px]">
-                        <label className="block text-[14px] font-medium text-[#181818] mb-[8px]">اختر الموقع على الخريطة (انقر لتحديد خط العرض والطول)</label>
+                        <label className="block text-[14px] font-medium text-[#181818] mb-[8px]">Pick a point on the map (click to set latitude and longitude)</label>
                         <LocationMapPicker
                             latitude={formData.latitude}
                             longitude={formData.longitude}

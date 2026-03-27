@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getNotificationSettings, updateNotificationSettings } from "../services/notifications";
 
@@ -171,7 +172,7 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
     };
   };
 
-  // Fetch notification settings from API
+  // Fetch notification settings from API (GET /api/v1/notifications/settings)
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -184,7 +185,16 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
         setActivityNotifications(transformedState.activityNotifications);
       } catch (err) {
         console.error('Failed to fetch notification settings:', err);
-        setError(err.response?.data?.message ?? err.message ?? 'Failed to load notification settings. Using defaults.');
+        const is404 = err.response?.status === 404;
+        const defaults = transformApiToState({});
+        setAttendanceNotifications(defaults.attendanceNotifications);
+        setLeaveNotifications(defaults.leaveNotifications);
+        setActivityNotifications(defaults.activityNotifications);
+        if (is404) {
+          setError('Notification settings API not found (404). Using defaults. Deploy the latest backend so GET /api/v1/notifications/settings is available.');
+        } else {
+          setError(err.response?.data?.message ?? err.message ?? 'Failed to load notification settings. Using defaults.');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -212,7 +222,12 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save notification settings:', err);
-      setError(err.response?.data?.message ?? err.message ?? 'Failed to save settings. Please try again.');
+      const is404 = err.response?.status === 404;
+      if (is404) {
+        setError('Save failed (404). The backend does not expose PUT /api/v1/notifications/settings. Deploy the latest backend that includes routes/notificationSettings.js.');
+      } else {
+        setError(err.response?.data?.message ?? err.message ?? 'Failed to save settings. Please try again.');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -520,8 +535,7 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsDesktopDropdownOpen(!isDesktopDropdownOpen)}
                   >
-                <img 
-                  src={UserAvatar}
+<HeaderUserAvatar
                   alt="User"
                   className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -547,7 +561,7 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -706,8 +720,7 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -727,7 +740,7 @@ const NotificationsSettingsPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>

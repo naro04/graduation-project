@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getLocations } from "../services/locations";
 import { getEmployees } from "../services/employees";
@@ -31,8 +32,11 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 
 const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
   const effectiveRole = getEffectiveRole();
   const { locationName } = useParams();
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const userDropdownRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState("5-3");
   const [showEditPage, setShowEditPage] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
@@ -70,6 +74,16 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
     fieldEmployee: "Field Employee",
     officer: "Officer",
   };
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) setIsUserDropdownOpen(false);
+    };
+    if (isUserDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isUserDropdownOpen]);
 
   // Fetch activities for this location from API
   useEffect(() => {
@@ -231,19 +245,25 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
               
               <div className="flex items-center gap-[16px]">
                 <HeaderIcons />
-                <div className="flex items-center gap-[12px] cursor-pointer">
-                  <img 
-                    src={UserAvatar}
-                    alt="User"
-                    className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
-                  />
-                  <div>
-                    <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
-                      <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
+                <div className="relative" ref={userDropdownRef}>
+                  <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <div>
+                      <div className="flex items-center gap-[6px]">
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
+                        <img src={DropdownArrow} alt="" className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
+                      </div>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
+                  {isUserDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
+                      <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                      <div className="h-[1px] bg-[#DC2626] my-[4px]" />
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); window.location.href = "/login"; }}>Log Out</button>
+                    </div>
+                  )}
                 </div>
               </div>
             </header>
@@ -796,19 +816,25 @@ const LocationActivitiesPage = ({ userRole = "superAdmin" }) => {
               
               <div className="flex items-center gap-[16px] flex-shrink-0">
                 <HeaderIcons />
-                <div className="flex items-center gap-[12px] cursor-pointer">
-                  <img 
-                    src={UserAvatar}
-                    alt="User"
-                    className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
-                  />
-                  <div>
-                    <div className="flex items-center gap-[6px]">
-                      <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
-                      <img src={DropdownArrow} alt="" className="w-[14px] h-[14px] object-contain" />
+                <div className="relative" ref={userDropdownRef}>
+                  <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <div>
+                      <div className="flex items-center gap-[6px]">
+                        <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
+                        <img src={DropdownArrow} alt="" className={`w-[14px] h-[14px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
+                      </div>
+                      <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                     </div>
-                    <p className="text-[12px] font-normal text-[#6B7280]">{roleDisplayNames[effectiveRole]}</p>
                   </div>
+                  {isUserDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
+                      <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                      <div className="h-[1px] bg-[#DC2626] my-[4px]" />
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors" onClick={() => { setIsUserDropdownOpen(false); window.location.href = "/login"; }}>Log Out</button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

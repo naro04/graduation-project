@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getMenuByRole } from "../config/menuConfig";
-import { getEffectiveRole } from "../services/auth.js";
+import { getCurrentUser, getEffectiveRole, getMe, hasAnyPermission, logout } from "../services/auth.js";
 
 // Logo
 const LogoDesktop = new URL("../images/LogoDesktop.png", import.meta.url).href;
@@ -26,7 +26,104 @@ const Sidebar = ({ userRole, activeMenu, setActiveMenu, isMobile = false, onClos
   const location = useLocation();
   // دور المستخدم المسجّل من الـ auth (مش من الـ route) عشان المنجر وغيره يشوفوا سايدبارهم
   const effectiveRole = getEffectiveRole();
-  const menu = getMenuByRole(effectiveRole);
+  const currentUser = getCurrentUser();
+  const [permissionsSeed, setPermissionsSeed] = useState(() => (currentUser?.permissions || []).join("|"));
+
+  // Pull latest permissions so role updates reflect in sidebar without re-login.
+  useEffect(() => {
+    let cancelled = false;
+    getMe()
+      .then(() => {
+        if (cancelled) return;
+        const updated = getCurrentUser();
+        setPermissionsSeed((updated?.permissions || []).join("|"));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const pathPermissionsMap = {
+    "/dashboard": ["dashboard:dashboard"],
+    "/user-management/employees": ["user_management:employees"],
+    "/user-management/roles": ["user_management:roles_permissions", "user_management:roles_&_permissions"],
+    "/user-management/departments": ["user_management:departments"],
+    "/attendance/daily": ["attendance:daily_attendance"],
+    "/attendance/gps": ["attendance:gps_verification"],
+    "/attendance/my": ["attendance:my_attendance"],
+    "/activities": ["activities:all_activities"],
+    "/activities/log": ["activities:log_activity"],
+    "/activities/my": ["activities:my_activities"],
+    "/approvals/activities": ["activities:activity_approval"],
+    "/my-team/members": ["my_team:team_members"],
+    "/my-team/attendance": ["my_team:team_attendance"],
+    "/my-team/activities": ["my_team:team_activities", "my_team:team_activites"],
+    "/my-team/leave": ["my_team:team_leave_requests", "my_team:team_leave_reaquest"],
+    "/locations/all": ["locations_management:locations"],
+    "/locations/types": ["locations_management:location_type"],
+    "/locations/assignment": ["locations_management:location_assignment"],
+    "/leave/requests": ["leave_management:leave_requests"],
+    "/leave/request": ["leave_management:request_leave"],
+    "/leave/my": ["leave_management:my_leave"],
+    "/reports/attendance": [
+      "reports:attendance_reports",
+      "reports:attendance_report",
+      "reports:attendence_reports",
+      "reports_actions:view/export_attendance,_leave_reports",
+      "reports_actions:view_export_attendance_leave_reports",
+    ],
+    "/reports/activities": ["reports:field_activity_reports"],
+    "/reports/leave": ["reports:leave_reports"],
+    "/reports/hr": ["reports:hr_reports"],
+    "/reports/team": ["reports:team_reports"],
+    "/more/profile": ["more:my_profile"],
+    "/more/config": ["more:system_configuration"],
+    "/more/notifications": ["more:notifications_settings"],
+    "/more/api-keys": ["more:api_keys"],
+    "/more/help": ["more:help_center"],
+    "/more/support": ["more:support"],
+  };
+
+  const canAccessPath = (path) => {
+    if (!path) return true;
+    if (path === "/dashboard") return true;
+    const userPermissions = getCurrentUser()?.permissions;
+    const hasPermissionPayload = Array.isArray(userPermissions) && userPermissions.length > 0;
+    // Keep base role menu visible when permissions payload is missing/incomplete.
+    // Exception: sensitive API keys stays permission-gated.
+    if (!hasPermissionPayload) return path !== "/more/api-keys";
+    const required = pathPermissionsMap[path];
+    if (!required) return true;
+    return hasAnyPermission(required);
+  };
+
+  const menu = useMemo(() => {
+    const base = getMenuByRole(effectiveRole);
+    const items = (base?.items || []).map((item) => ({
+      ...item,
+      subItems: Array.isArray(item.subItems) ? [...item.subItems] : item.subItems,
+    }));
+
+    // If role now has API Keys permission, show it under More even if not in base role config.
+    if (canAccessPath("/more/api-keys")) {
+      const moreItem = items.find((i) => i.name === "More" && Array.isArray(i.subItems));
+      if (moreItem && !moreItem.subItems.some((s) => s.path === "/more/api-keys")) {
+        moreItem.subItems.push({ id: `${moreItem.id}-api`, name: "API Keys", path: "/more/api-keys" });
+      }
+    }
+
+    const filteredItems = items
+      .map((item) => {
+        if (item.hasSubmenu && Array.isArray(item.subItems)) {
+          const allowedSubItems = item.subItems.filter((sub) => canAccessPath(sub.path));
+          if (allowedSubItems.length === 0 && !canAccessPath(item.path)) return null;
+          return { ...item, subItems: allowedSubItems };
+        }
+        return canAccessPath(item.path) ? item : null;
+      })
+      .filter(Boolean);
+
+    return { ...(base || {}), items: filteredItems };
+  }, [effectiveRole, permissionsSeed]);
 
   const getParentIdFromActiveMenu = () => {
     if (activeMenu == null) return null;
@@ -106,9 +203,19 @@ const Sidebar = ({ userRole, activeMenu, setActiveMenu, isMobile = false, onClos
     if (isMobile && onClose) onClose();
   };
 
+  const handleLogoutClick = async (e) => {
+    e.stopPropagation();
+    if (onLogoutClick) {
+      onLogoutClick();
+      return;
+    }
+    await logout();
+    navigate("/login", { replace: true });
+  };
+
   return (
     <aside
-      className={`w-[265px] flex flex-col flex-shrink-0 ${isMobile ? "h-full overflow-y-auto" : "min-h-screen"}`}
+      className={`sidebar-shell w-[265px] flex flex-col flex-shrink-0 ${isMobile ? "h-full overflow-y-auto overflow-x-hidden" : "sticky top-0 h-screen overflow-hidden"}`}
       style={{ backgroundColor: "#004D40", contain: "layout" }}
     >
       {/* Close Button - Mobile Only */}
@@ -140,7 +247,7 @@ const Sidebar = ({ userRole, activeMenu, setActiveMenu, isMobile = false, onClos
       </div>
 
       {/* Menu Items */}
-      <nav className="px-[12px]">
+      <nav className="sidebar-scroll px-[12px] flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <ul className="flex flex-col gap-[8px]">
           {menu.items.map((item) => {
             const isActiveSection = activeMenu === item.id && !item.hasSubmenu;
@@ -233,14 +340,7 @@ const Sidebar = ({ userRole, activeMenu, setActiveMenu, isMobile = false, onClos
       <div className="px-[12px] pb-[16px]">
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onLogoutClick) {
-              onLogoutClick();
-            } else {
-              navigate("/login");
-            }
-          }}
+          onClick={handleLogoutClick}
           className="w-full h-[41px] flex items-center gap-[10px] px-[12px] rounded-[8px] hover:bg-white/10 transition-colors duration-150"
         >
           <img

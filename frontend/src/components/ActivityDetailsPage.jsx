@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { getCurrentUser, getEffectiveRole } from "../services/auth.js";
+import { getLocationActivityById, approveLocationActivity, rejectLocationActivity } from "../services/locationActivities";
 
 // Action icons
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
@@ -10,9 +11,22 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 // Activity images
 const ActivityImage1 = new URL("../images/p3.jpg", import.meta.url).href;
 const ActivityImage2 = new URL("../images/p1.jpg", import.meta.url).href;
-const ActivityImage3 = new URL("../images/p2 (2).jpg", import.meta.url).href;
+const ActivityImage3 = new URL("../images/p2 " + "(2).jpg", import.meta.url).href;
 
 const roleDisplayNames = { superAdmin: "Super Admin", hr: "HR Admin", manager: "Manager", fieldEmployee: "Field Employee", officer: "Officer" };
+
+function getStatusLabel(api) {
+  const approval = (api?.approval_status ?? api?.approval ?? "").toString().trim().toLowerCase();
+  const impl = (api?.implementation_status ?? api?.status ?? "").toString().trim();
+  const implLower = impl.toLowerCase();
+  if (approval === "pending") return "Pending";
+  if (implLower === "planned") return "Planned";
+  if (implLower === "implemented") return "Implemented";
+  if (implLower === "overdue") return "Overdue";
+  if (implLower === "canceled" || implLower === "cancelled") return "Canceled";
+  if (implLower === "on_hold" || implLower === "on hold") return "On Hold";
+  return impl || "—";
+}
 
 const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
@@ -21,14 +35,57 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
   const effectiveRole = getEffectiveRole();
   const activity = location.state?.activity;
   const [showWarningModal, setShowWarningModal] = useState(false);
+  const [detailsFromApi, setDetailsFromApi] = useState(null);
+  const [loading, setLoading] = useState(!!activity?.id);
+  const [error, setError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Format date
+  useEffect(() => {
+    if (!activity?.id) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getLocationActivityById(activity.id)
+      .then((data) => {
+        if (cancelled) return;
+        const impl = (data?.implementation_status ?? data?.status ?? "").toString().trim().toLowerCase();
+        setDetailsFromApi({
+          location: data.location_name ?? data.location ?? activity.location ?? "—",
+          coordinates: {
+            lat: data.latitude ?? data.location_latitude ?? data.coordinates?.lat ?? activity.coordinates?.lat ?? "—",
+            lng: data.longitude ?? data.location_longitude ?? data.coordinates?.lng ?? activity.coordinates?.lng ?? "—",
+          },
+          date: data.start_date ?? data.startDate ?? data.date ?? activity.date,
+          duration: data.duration ?? data.duration_hours ?? data.activity_days != null ? `${data.activity_days} hr` : activity.duration ?? "—",
+          responsibleEmployee: data.responsible_employee_name ?? data.responsible_employee ?? activity.responsibleEmployee ?? "—",
+          team: Array.isArray(data.team_members) ? data.team_members.join(", ") : data.team_members ?? activity.team ?? "—",
+          status: getStatusLabel(data),
+          description: data.description ?? activity.description ?? "—",
+          approvalStatus: (data.approval_status ?? data.approval ?? "").toString().trim().toLowerCase(),
+          isImplemented: impl === "implemented",
+          actualStartDate: data.actual_start_date ?? data.start_date ?? data.startDate ?? data.date ?? activity.date,
+          actualEndDate: data.actual_end_date ?? data.actual_date ?? data.end_date ?? data.endDate ?? activity.end_date,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.message ?? "Failed to load activity details.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activity?.id]);
+
+  // Format date (accepts Date or date string)
   const formatDate = (date) => {
+    if (!date) return "—";
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return "—";
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const day = date.getDate();
-    const month = months[date.getMonth()];
-    const year = date.getFullYear();
-    return `${day} ${month} ${year}`;
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
   };
 
   if (!activity) {
@@ -39,16 +96,23 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
     );
   }
 
-  // Activity details data
-  const activityDetails = {
+  const approvalStatus = detailsFromApi?.approvalStatus ?? (activity.approval_status ?? activity.approval ?? "").toString().trim().toLowerCase();
+  const isPending = approvalStatus === "pending";
+
+  // Activity details: from API or fallback from location.state
+  const activityDetails = detailsFromApi ?? {
     location: activity.location || "Hattin School",
-    coordinates: { lat: "31.50090", lng: "34.46710" },
-    date: activity.date || new Date(2025, 11, 7),
+    coordinates: { lat: activity.coordinates?.lat ?? "31.50090", lng: activity.coordinates?.lng ?? "34.46710" },
+    date: activity.date || new Date(),
     duration: activity.duration || "2 hr",
     responsibleEmployee: activity.responsibleEmployee || "Ameer Jamal",
     team: activity.team || "Hasan Jaber, Rania Abed",
-    status: activity.status || "Implemented",
-    description: activity.description || "A planned workshop was implemented at Hattin School, targeting students through interactive and participatory methods. The activity was conducted as scheduled and achieved its intended objectives, with active engagement from participants."
+    status: getStatusLabel(activity) || activity.status || "Implemented",
+    description: activity.description || "A planned workshop was implemented at Hattin School, targeting students through interactive and participatory methods. The activity was conducted as scheduled and achieved its intended objectives, with active engagement from participants.",
+    approvalStatus,
+    isImplemented: (activity.implementation_status ?? activity.status ?? "").toString().trim().toLowerCase() === "implemented",
+    actualStartDate: activity.actual_start_date ?? activity.start_date ?? activity.date,
+    actualEndDate: activity.actual_end_date ?? activity.actual_date ?? activity.end_date,
   };
 
   return (
@@ -168,7 +232,19 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
                 />
               </div>
 
+              {loading && (
+                <div className="mb-[24px]" style={{ marginLeft: '20px' }}>
+                  <p className="text-[14px] text-[#6B7280]">Loading activity details…</p>
+                </div>
+              )}
+              {error && !loading && (
+                <div className="mb-4 p-3 rounded bg-red-50 text-red-700 text-[14px]" style={{ marginLeft: '20px' }}>
+                  {error}
+                </div>
+              )}
               {/* Activity Info */}
+              {!loading && (
+              <>
               <div className="text-left space-y-[12px] mb-[24px]" style={{ marginLeft: '20px' }}>
                 <p
                   className="text-[14px]"
@@ -200,6 +276,16 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
                 >
                   <span style={{ fontWeight: 500, color: '#2E2E2E' }}>Date:</span> {formatDate(activityDetails.date)}
                 </p>
+                {activityDetails.isImplemented && (
+                  <>
+                    <p className="text-[14px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, color: '#4E4E4E' }}>
+                      <span style={{ fontWeight: 500, color: '#2E2E2E' }}>Start Date:</span> {formatDate(activityDetails.actualStartDate)}
+                    </p>
+                    <p className="text-[14px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, color: '#4E4E4E' }}>
+                      <span style={{ fontWeight: 500, color: '#2E2E2E' }}>End Date:</span> {formatDate(activityDetails.actualEndDate)}
+                    </p>
+                  </>
+                )}
                 <p
                   className="text-[14px]"
                   style={{
@@ -278,10 +364,71 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex justify-center gap-[16px] mb-[40px]">
+              <div className="flex justify-center gap-[16px] mb-[40px] flex-wrap">
+                {isPending && (
+                  <>
+                    <button
+                      disabled={actionLoading}
+                      onClick={async () => {
+                        setActionLoading(true);
+                        try {
+                          await rejectLocationActivity(activity.id);
+                          navigate('/activities');
+                        } catch (e) {
+                          setError(e?.response?.data?.message ?? e?.message ?? "Failed to reject.");
+                        } finally {
+                          setActionLoading(false);
+                        }
+                      }}
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 500,
+                        fontSize: '14px',
+                        backgroundColor: '#FFFFFF',
+                        color: '#B70B0B',
+                        border: '1px solid #B70B0B',
+                        width: '180px',
+                        height: '40px',
+                        textAlign: 'center'
+                      }}
+                      className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-red-50 transition-colors disabled:opacity-60"
+                    >
+                      Reject Activity
+                    </button>
+                    <button
+                      disabled={actionLoading}
+                      onClick={async () => {
+                        setActionLoading(true);
+                        try {
+                          await approveLocationActivity(activity.id);
+                          navigate('/activities');
+                        } catch (e) {
+                          setError(e?.response?.data?.message ?? e?.message ?? "Failed to approve.");
+                        } finally {
+                          setActionLoading(false);
+                        }
+                      }}
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 500,
+                        fontSize: '14px',
+                        backgroundColor: '#FFFFFF',
+                        color: '#00564F',
+                        border: '1px solid #00564F',
+                        width: '180px',
+                        height: '40px',
+                        textAlign: 'center'
+                      }}
+                      className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-[#E8F5E9] transition-colors disabled:opacity-60"
+                    >
+                      Accept Activity
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => setShowWarningModal(true)}
-                  className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-red-50 transition-colors"
+                  disabled={actionLoading}
+                  className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-red-50 transition-colors disabled:opacity-60"
                   style={{
                     fontFamily: 'Inter, sans-serif',
                     fontWeight: 500,
@@ -298,7 +445,8 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
                 </button>
                 <button
                   onClick={() => navigate('/activities')}
-                  className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-gray-50 transition-colors"
+                  disabled={actionLoading}
+                  className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-60"
                   style={{
                     fontFamily: 'Inter, sans-serif',
                     fontWeight: 500,
@@ -314,6 +462,8 @@ const ActivityDetailsPage = ({ userRole = "superAdmin" }) => {
                   Cancel
                 </button>
               </div>
+              </>
+              )}
             </div>
           </div>
         </main>

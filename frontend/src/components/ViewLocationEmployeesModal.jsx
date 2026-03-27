@@ -1,22 +1,9 @@
 import React from 'react';
-
-// Employee Photos
-const MohamedAliPhoto = new URL("../images/Mohamed Ali.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
-const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).href;
-const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
-const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
+import { AvatarOrPlaceholder } from './HeaderUserAvatar.jsx';
+import { toAbsoluteAvatarUrl } from '../utils/avatarUrl.js';
 
 const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, locationId, employees = [], employeesLoading = false, onRemove }) => {
     if (!isOpen) return null;
-
-    const photoMap = {
-        "Mohamed Ali": MohamedAliPhoto,
-        "Amal Ahmed": AmalAhmedPhoto,
-        "Amjad Saeed": AmjadSaeedPhoto,
-        "Jana Hassan": JanaHassanPhoto,
-        "Hasan Jaber": HasanJaberPhoto
-    };
 
     return (
         <div
@@ -106,7 +93,7 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, locationId,
                                     const name = employee.employee_name ?? employee.name ?? '';
                                     const department = employee.department_name ?? employee.department ?? '';
                                     const position = employee.position_name ?? employee.position ?? '';
-                                    const photo = employee.avatar_url ?? employee.photo ?? photoMap[name] ?? MohamedAliPhoto;
+                                    const photo = toAbsoluteAvatarUrl(employee.avatar_url ?? employee.profile_image) || (employee.photo ?? employee.avatar_url ?? null);
                                     return (
                                     <div
                                         key={empId || index}
@@ -120,11 +107,10 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, locationId,
                                                 borderRight: '1px solid #E0E0E0'
                                             }}
                                         >
-                                            <img
+                                            <AvatarOrPlaceholder
                                                 src={photo}
                                                 alt={name}
                                                 className="w-[40px] h-[40px] rounded-full object-cover"
-                                                onError={(e) => { e.target.src = MohamedAliPhoto; }}
                                             />
                                             <span className="text-[14px]" style={{ color: '#000000' }}>
                                                 {name}
@@ -173,18 +159,17 @@ const ViewLocationEmployeesModal = ({ isOpen, onClose, locationName, locationId,
                                     const name = employee.employee_name ?? employee.name ?? '';
                                     const department = employee.department_name ?? employee.department ?? '';
                                     const position = employee.position_name ?? employee.position ?? '';
-                                    const photo = employee.avatar_url ?? employee.photo ?? photoMap[name] ?? MohamedAliPhoto;
+                                    const photo = toAbsoluteAvatarUrl(employee.avatar_url ?? employee.profile_image) || (employee.photo ?? employee.avatar_url ?? null);
                                     return (
                                     <div
                                         key={empId || index}
                                         className="bg-white border border-[#E0E0E0] rounded-[8px] p-4"
                                     >
                                         <div className="flex items-center gap-3 mb-3">
-                                            <img
+                                            <AvatarOrPlaceholder
                                                 src={photo}
                                                 alt={name}
                                                 className="w-[48px] h-[48px] rounded-full object-cover"
-                                                onError={(e) => { e.target.src = MohamedAliPhoto; }}
                                             />
                                             <div className="flex-1">
                                                 <h3 className="text-[15px] font-semibold text-[#000000] mb-1">
