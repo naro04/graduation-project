@@ -68,8 +68,9 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   const [teamReportApi, setTeamReportApi] = useState(null);
   const [teamMetricsLoading, setTeamMetricsLoading] = useState(false);
   const [teamAttendanceFromApi, setTeamAttendanceFromApi] = useState([]);
-  const [teamSelectedTypes, setTeamSelectedTypes] = useState([]); // multi-select for Type (checkboxes)
+  const [teamSelectedType, setTeamSelectedType] = useState("All Type");
   const [teamSelectedStatus, setTeamSelectedStatus] = useState("All Status");
+  const [teamSearchDebounced, setTeamSearchDebounced] = useState("");
   const [isTeamTypeDropdownOpen, setIsTeamTypeDropdownOpen] = useState(false);
   const [isTeamStatusDropdownOpen, setIsTeamStatusDropdownOpen] = useState(false);
   const [teamActivityReports, setTeamActivityReports] = useState({ records: [], stats: { completionTrend: [], participantsByType: [] } });
@@ -121,17 +122,29 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
   }, [fromDate, toDate, selectedLocation, selectedStatus, searchQuery]);
 
   useEffect(() => {
+    if (!isTeamReportPage) {
+      setTeamSearchDebounced("");
+      return;
+    }
+    const id = setTimeout(() => setTeamSearchDebounced(searchQuery.trim()), 400);
+    return () => clearTimeout(id);
+  }, [searchQuery, isTeamReportPage]);
+
+  useEffect(() => {
     if (!isTeamReportPage) return;
     let cancelled = false;
     setTeamMetricsLoading(true);
     setTeamReportApi(null);
     setTeamAttendanceFromApi([]);
+    const reportParams = { from: fromDate, to: toDate };
+    if (teamSelectedType && teamSelectedType !== "All Type") reportParams.type = teamSelectedType;
+    if (teamSearchDebounced) reportParams.search = teamSearchDebounced;
     Promise.all([
       getTeamReports({ from: fromDate, to: toDate }).catch(() => null),
       getTeamMembers().catch(() => []),
       getLocationActivities({}).catch(() => []),
       getTeamAttendance({ from: fromDate, to: toDate }).catch(() => []),
-      getLocationActivityReports({ from: fromDate, to: toDate }).catch(() => ({ records: [], stats: { completionTrend: [], participantsByType: [] } })),
+      getLocationActivityReports(reportParams).catch(() => ({ records: [], stats: { completionTrend: [], participantsByType: [] } })),
     ]).then(([report, members, activities, teamAtt, activityReports]) => {
       if (cancelled) return;
       setTeamReportApi(report && typeof report === "object" ? report : null);
@@ -143,7 +156,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       if (!cancelled) setTeamMetricsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [isTeamReportPage, fromDate, toDate]);
+  }, [isTeamReportPage, fromDate, toDate, teamSelectedType, teamSearchDebounced]);
 
   // Format date-time to single line for table (no scroll: compact)
   const formatDateTimeShort = (val) => {
@@ -267,6 +280,7 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
       actualDate: r.actual_date ? fmt(r.actual_date) : (r.actual_date ?? "-"),
       attendees: r.attendees ?? r.attendees_count ?? r.attendee_count ?? "",
       status: r.status ?? r.implementation_status ?? "",
+      approval: r.approval_status ?? r.approval ?? "",
     }));
   }, [teamActivityReports]);
   const teamMonthlyTrendData = React.useMemo(() => {
@@ -292,16 +306,21 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     return MONTH_ORDER.map((m) => byMonth[m] || { month: m, workshop: 0, groupSession: 0 });
   }, [teamActivityReports?.records]);
   const teamActivityTypes = ["All Type", "Workshop", "Group Session"];
-  const teamActivityTypeOptions = ["Workshop", "Group Session"]; // options for Type checkboxes (multi-select)
   const teamActivityStatusOptions = ["All Status", "Completed", "In Progress", "Pending"];
   const teamFilteredData = React.useMemo(() => {
-    return teamActivityTableData.filter((row) => {
-      const matchesType = teamSelectedTypes.length === 0 || (row.type && teamSelectedTypes.includes(row.type));
-      const matchesStatus = teamSelectedStatus === "All Status" || (row.status || "").toLowerCase() === (teamSelectedStatus || "").toLowerCase().replace(/\s+/g, "");
-      const matchesSearch = !searchQuery.trim() || (row.activity || "").toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesType && matchesStatus && matchesSearch;
-    });
-  }, [teamActivityTableData, teamSelectedTypes, teamSelectedStatus, searchQuery]);
+    const statusMatches = (row) => {
+      if (teamSelectedStatus === "All Status") return true;
+      const impl = (row.status || "").toString().trim().toLowerCase();
+      const appr = (row.approval || "").toString().trim().toLowerCase();
+      if (teamSelectedStatus === "Completed") return impl === "implemented";
+      if (teamSelectedStatus === "Pending") return appr === "pending";
+      if (teamSelectedStatus === "In Progress") {
+        return impl !== "implemented" && impl !== "cancelled" && !impl.includes("cancel");
+      }
+      return false;
+    };
+    return teamActivityTableData.filter((row) => statusMatches(row));
+  }, [teamActivityTableData, teamSelectedStatus]);
   const teamItemsPerPage = 10;
   const teamTotalPages = Math.max(1, Math.ceil(teamFilteredData.length / teamItemsPerPage));
   const teamPaginatedData = teamFilteredData.slice((currentPage - 1) * teamItemsPerPage, currentPage * teamItemsPerPage);
@@ -781,25 +800,26 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white focus:outline-none focus:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', minWidth: '160px' }} />
               <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} min={fromDate} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white focus:outline-none focus:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', minWidth: '160px' }} />
               <div className="relative" ref={teamTypeDropdownRef}>
-                <button onClick={() => setIsTeamTypeDropdownOpen(!isTeamTypeDropdownOpen)} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}>
-                  <span>{teamSelectedTypes.length === 0 ? "All Type" : teamSelectedTypes.join(", ")}</span>
+                <button type="button" onClick={() => setIsTeamTypeDropdownOpen(!isTeamTypeDropdownOpen)} className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40]" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}>
+                  <span>{teamSelectedType}</span>
                   <svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                 </button>
                 {isTeamTypeDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[180px] py-[8px]">
-                    {teamActivityTypeOptions.map((type) => (
-                      <label key={type} className="flex items-center gap-[10px] px-[16px] py-[10px] hover:bg-[#F5F7FA] cursor-pointer" style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#000000' }}>
-                        <input
-                          type="checkbox"
-                          checked={teamSelectedTypes.includes(type)}
-                          onChange={() => {
-                            setTeamSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
-                            setCurrentPage(1);
-                          }}
-                          className="w-[16px] h-[16px] rounded border-[#E0E0E0]"
-                        />
-                        <span>{type}</span>
-                      </label>
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[180px]">
+                    {teamActivityTypes.map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          setTeamSelectedType(type);
+                          setIsTeamTypeDropdownOpen(false);
+                          setCurrentPage(1);
+                        }}
+                        className={`w-full px-[16px] py-[10px] text-left text-[14px] ${teamSelectedType === type ? "bg-[#E5E7EB]" : "hover:bg-[#F5F7FA]"}`}
+                        style={{ fontFamily: "Inter, sans-serif" }}
+                      >
+                        {type}
+                      </button>
                     ))}
                   </div>
                 )}
@@ -1668,14 +1688,22 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
               <div><label className="block mb-1 text-[12px] text-[#6B7280]">To</label><input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} min={fromDate} className="w-full px-3 py-2 rounded-[5px] border border-[#E0E0E0] bg-white text-[13px]" /></div>
             </div>
             <div className="relative" ref={teamTypeDropdownRef}>
-              <button onClick={() => setIsTeamTypeDropdownOpen(!isTeamTypeDropdownOpen)} className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"><span>{teamSelectedTypes.length === 0 ? "All Type" : teamSelectedTypes.join(", ")}</span><svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
+              <button type="button" onClick={() => setIsTeamTypeDropdownOpen(!isTeamTypeDropdownOpen)} className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"><span>{teamSelectedType}</span><svg className="w-[14px] h-[14px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
               {isTeamTypeDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 py-[8px]">
-                  {teamActivityTypeOptions.map((type) => (
-                    <label key={type} className="flex items-center gap-[10px] px-[16px] py-[10px] hover:bg-[#F5F7FA] cursor-pointer text-[14px] text-[#000000]">
-                      <input type="checkbox" checked={teamSelectedTypes.includes(type)} onChange={() => { setTeamSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]); setCurrentPage(1); }} className="w-[16px] h-[16px] rounded border-[#E0E0E0]" />
-                      <span>{type}</span>
-                    </label>
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                  {teamActivityTypes.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => {
+                        setTeamSelectedType(type);
+                        setIsTeamTypeDropdownOpen(false);
+                        setCurrentPage(1);
+                      }}
+                      className={`w-full px-[16px] py-[10px] text-left text-[14px] ${teamSelectedType === type ? "bg-[#E5E7EB]" : "hover:bg-[#F5F7FA]"}`}
+                    >
+                      {type}
+                    </button>
                   ))}
                 </div>
               )}
