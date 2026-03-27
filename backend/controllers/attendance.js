@@ -486,10 +486,10 @@ exports.getDailyAttendance = async (req, res) => {
             cleanLocation
         ]);
 
-        // 1. Calculate stats independently of specific table filters (only respect date and supervisor scoping)
+        // 1. Stats: any check-in today counts as present; late uses stored daily_status
         const statsQuery = `
             SELECT 
-                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status IN ('Present', 'Late')) as present_today,
+                COUNT(DISTINCT employee_id) as present_today,
                 COUNT(DISTINCT employee_id) FILTER (WHERE daily_status = 'Late') as late_arrivals,
                 (
                     SELECT COUNT(*) FROM employees 
@@ -889,7 +889,7 @@ exports.getTeamAttendance = async (req, res) => {
         // 1. Calculate stats independently of specific table filters (only respect date and supervisor scoping)
         const statsQuery = `
             SELECT 
-                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status IN ('Present', 'Late')) as present_today,
+                COUNT(DISTINCT employee_id) as present_today,
                 COUNT(DISTINCT employee_id) FILTER (WHERE daily_status = 'Late') as late_arrivals,
                 (
                     SELECT COUNT(*) FROM employees 

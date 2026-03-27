@@ -587,9 +587,19 @@ const DashboardPage = () => {
     // Attendance (today) already comes from /attendance/team -> should be team-only
     const presentToday = teamAttendance.filter((r) => {
       const s = (r.status ?? r.daily_status ?? "").toString().toLowerCase();
-      return s.includes("present") || s.includes("late") || s.includes("in progress");
+      if (s.includes("absent")) return false;
+      return (
+        s.includes("present") ||
+        s.includes("late") ||
+        s.includes("in progress") ||
+        s.includes("missing check-out") ||
+        s.includes("early leave")
+      );
     }).length;
-    const lateToday = teamAttendance.filter((r) => (r.status ?? r.daily_status ?? "").toString().toLowerCase().includes("late")).length;
+    const lateToday = teamAttendance.filter((r) => {
+      const s = (r.status ?? r.daily_status ?? "").toString().toLowerCase();
+      return s.includes("late") && !s.includes("early leave");
+    }).length;
 
     // Leaves: backend call is org-wide, so filter to team members (same approach as TeamLeaveRequestsPage)
     const teamLeaves = teamLeavesRaw.filter((item) => {
@@ -670,7 +680,14 @@ const DashboardPage = () => {
       const dateStr = toDateOnly(r.date ?? r.check_in_date ?? r.attendance_date ?? r.check_in_time ?? r.checkInAt);
       if (!dateStr || presentByDay[dateStr] == null) continue;
       const s = (r.status ?? r.daily_status ?? "").toString().toLowerCase();
-      if (s.includes("present") || s.includes("late") || s.includes("in progress")) {
+      if (s.includes("absent")) continue;
+      if (
+        s.includes("present") ||
+        s.includes("late") ||
+        s.includes("in progress") ||
+        s.includes("missing check-out") ||
+        s.includes("early leave")
+      ) {
         presentByDay[dateStr] += 1;
       }
     }
@@ -738,7 +755,16 @@ const DashboardPage = () => {
       const dateStr = toDateOnly(r.date ?? r.check_in_date ?? r.attendance_date ?? r.check_in_time ?? r.checkInAt);
       if (!dateStr || dateStr < startStr || dateStr > todayStr) continue;
       const s = (r.status ?? r.daily_status ?? r.dailyStatus ?? "").toString().toLowerCase();
-      if (s.includes("present") || s.includes("late") || s.includes("in progress")) presentDays.add(dateStr);
+      if (s.includes("absent")) continue;
+      if (
+        s.includes("present") ||
+        s.includes("late") ||
+        s.includes("in progress") ||
+        s.includes("missing check-out") ||
+        s.includes("early leave")
+      ) {
+        presentDays.add(dateStr);
+      }
     }
     return Math.round((presentDays.size / 7) * 100);
   }, [isManager, managerData.myAttendance]);

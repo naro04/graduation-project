@@ -148,10 +148,24 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
 
   const summaryStats = React.useMemo(() => {
     const list = attendanceData;
+    const norm = (s) => (s || "").toLowerCase().trim();
     return {
-      present: list.filter((e) => (e.status || "").toLowerCase() === "present").length,
-      absent: list.filter((e) => (e.status || "").toLowerCase() === "absent").length,
-      lateArrivals: list.filter((e) => (e.status || "").toLowerCase() === "late").length,
+      present: list.filter((e) => {
+        const st = norm(e.status);
+        if (st === "absent") return false;
+        return (
+          st === "present" ||
+          st === "late" ||
+          st.includes("in progress") ||
+          st.includes("missing check-out") ||
+          st.includes("early leave")
+        );
+      }).length,
+      absent: list.filter((e) => norm(e.status) === "absent").length,
+      lateArrivals: list.filter((e) => {
+        const st = norm(e.status);
+        return st === "late" || (st.includes("late") && !st.includes("early leave"));
+      }).length,
     };
   }, [attendanceData]);
 
