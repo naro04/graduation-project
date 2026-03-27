@@ -252,7 +252,8 @@ INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, reaso
 ((SELECT id FROM employees WHERE employee_code = 'EMP003'), 'Annual Leave', '2025-12-24', '2025-12-29', 'Family vacation during holidays', 'pending', '2025-12-14', NULL),
 ((SELECT id FROM employees WHERE employee_code = 'EMP002'), 'Sick Leave', '2025-12-19', '2025-12-21', 'Catch cold', 'rejected', '2025-12-18', 'Denied - critical client meetings scheduled'),
 ((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Annual Leave', '2025-12-17', '2025-12-19', 'Personal matters', 'approved', '2025-12-09', 'Approved - adequate coverage available'),
-((SELECT id FROM employees WHERE employee_code = 'EMP005'), 'Compensatory Time Off', '2026-01-01', '2026-01-05', 'Project completion bonus days', 'pending', '2026-01-01', NULL)
+((SELECT id FROM employees WHERE employee_code = 'EMP005'), 'Compensatory Time Off', '2026-01-01', '2026-01-05', 'Project completion bonus days', 'pending', '2026-01-01', NULL),
+((SELECT id FROM employees WHERE employee_code = 'EMP004'), 'Sick Leave', '2026-03-10', '2026-03-12', 'Seasonal flu', 'approved', '2026-03-02', NULL)
 ON CONFLICT DO NOTHING;
 
 -- 13. LEAVE BALANCES

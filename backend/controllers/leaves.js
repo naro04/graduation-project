@@ -2,6 +2,8 @@ const pool = require('../database/connection');
 const leaveQueries = require('../database/data/queries/leaves');
 const notificationController = require('./notifications');
 
+const isManagerUser = (user) => String(user?.role_name ?? '').trim().toLowerCase() === 'manager';
+
 /**
  * Get all leave requests with stats
  */
@@ -9,7 +11,7 @@ exports.getLeaves = async (req, res) => {
     try {
         const { search, type, status } = req.query;
 
-        const isManager = req.user.role_name === 'Manager';
+        const isManager = isManagerUser(req.user);
         const managerEmployeeId = req.user.employee_id;
 
         // Scoping query for leaves with descriptive fields
@@ -133,7 +135,7 @@ exports.updateLeaveStatus = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Admin notes are required for rejection' });
         }
 
-        const isManager = req.user.role_name === 'Manager';
+        const isManager = isManagerUser(req.user);
         const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
 
         // Authorization check
@@ -216,7 +218,7 @@ exports.bulkDeleteLeaves = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid or empty IDs array' });
         }
 
-        const isManager = req.user.role_name === 'Manager';
+        const isManager = isManagerUser(req.user);
         const managerEmployeeId = req.user.employee_id;
 
         let result;
@@ -350,8 +352,10 @@ exports.getTeamLeaves = async (req, res) => {
  */
 exports.getLeaveReports = async (req, res) => {
     try {
-        const { dateFrom, dateTo, type, status, search } = req.query;
-        const isManager = req.user.role_name === 'Manager';
+        const dateFrom = req.query.dateFrom || req.query.from_date || req.query.from || null;
+        const dateTo = req.query.dateTo || req.query.to_date || req.query.to || null;
+        const { type, status, search } = req.query;
+        const isManager = isManagerUser(req.user);
         const managerEmployeeId = isManager ? req.user.employee_id : null;
 
         const [distributionRes, trendRes, recordsRes] = await Promise.all([

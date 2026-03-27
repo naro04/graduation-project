@@ -34,10 +34,10 @@ const getDetailedLeaveReportQuery = `
     lr.status
   FROM leave_requests lr
   JOIN employees e ON lr.employee_id = e.id
-  WHERE ($1::DATE IS NULL OR lr.start_date >= $1::DATE)
-    AND ($2::DATE IS NULL OR lr.end_date <= $2::DATE)
-    AND ($3::TEXT IS NULL OR lr.leave_type = $3::TEXT)
-    AND ($4::TEXT IS NULL OR lr.status = $4::TEXT)
+  WHERE ($1::DATE IS NULL OR lr.end_date >= $1::DATE)
+    AND ($2::DATE IS NULL OR lr.start_date <= $2::DATE)
+    AND ($3::TEXT IS NULL OR LOWER(TRIM(lr.leave_type::text)) = LOWER(TRIM($3::TEXT)))
+    AND ($4::TEXT IS NULL OR LOWER(TRIM(lr.status::text)) = LOWER(TRIM($4::TEXT)))
     AND ($5::TEXT IS NULL OR e.full_name ILIKE '%' || $5::TEXT || '%')
     AND ($6::UUID IS NULL OR e.supervisor_id = $6)
   ORDER BY lr.created_at DESC;
