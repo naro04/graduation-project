@@ -751,6 +751,7 @@ exports.assignTeamToActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
         const { employee_ids } = req.body;
+        const { role_name, employee_id: managerEmployeeId } = req.user;
 
         if (!employee_ids || !Array.isArray(employee_ids) || employee_ids.length === 0) {
             return res.status(400).json({ message: 'employee_ids must be a non-empty array' });
@@ -760,6 +761,26 @@ exports.assignTeamToActivity = async (req, res) => {
         const activityRes = await client.query('SELECT id FROM activities WHERE id = $1', [activity_id]);
         if (activityRes.rowCount === 0) {
             return res.status(404).json({ message: 'Activity not found' });
+        }
+
+        // Managers may only assign their direct reports
+        if (role_name === 'Manager') {
+            if (!managerEmployeeId) {
+                return res.status(403).json({ message: 'Manager employee record required' });
+            }
+            const ids = employee_ids.map((id) => Number(id)).filter((n) => !Number.isNaN(n));
+            if (ids.length !== employee_ids.length) {
+                return res.status(400).json({ message: 'Invalid employee_ids' });
+            }
+            const teamCheck = await client.query(
+                `SELECT COUNT(*)::int AS cnt FROM employees
+                 WHERE id = ANY($1::int[]) AND supervisor_id = $2`,
+                [ids, managerEmployeeId]
+            );
+            const ok = (teamCheck.rows[0]?.cnt ?? 0) === ids.length;
+            if (!ok) {
+                return res.status(403).json({ message: 'You can only assign employees in your team' });
+            }
         }
 
         await client.query('BEGIN');

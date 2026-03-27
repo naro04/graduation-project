@@ -45,7 +45,9 @@ const ManagerAssignActivityModal = ({ isOpen, onClose, teamMembers = [], onSucce
         setSelectedActivityId(id);
         setStep(STEP_SELECT_ACTIVITY);
       })
-      .catch((err) => setError(err?.message || "Failed to load activities"))
+      .catch((err) =>
+        setError(err?.response?.data?.message || err?.message || "Failed to load activities")
+      )
       .finally(() => setLoadingActivities(false));
   };
 

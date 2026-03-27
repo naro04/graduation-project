@@ -62,6 +62,21 @@ const restrictTo = (...requiredPermissions) => {
 };
 
 /**
+ * Allow listed roles OR users who have any of the given permission slugs (same rules as restrictTo for Super Admin).
+ */
+const restrictToRolesOrPermissions = (roleNames, ...requiredPermissions) => {
+    return (req, res, next) => {
+        if (req.user && req.user.role_name === 'Super Admin') {
+            return next();
+        }
+        if (req.user && roleNames.includes(req.user.role_name)) {
+            return next();
+        }
+        return restrictTo(...requiredPermissions)(req, res, next);
+    };
+};
+
+/**
  * Middleware to check if employee is active
  * Inactive employees can only access dashboard and profile endpoints
  * This middleware should be applied to routes that require active status
@@ -100,4 +115,4 @@ const requireActiveStatus = (req, res, next) => {
     next();
 };
 
-module.exports = { protect, restrictTo, requireActiveStatus };
+module.exports = { protect, restrictTo, restrictToRolesOrPermissions, requireActiveStatus };
