@@ -9,7 +9,9 @@ const {
     getActiveLocations,
     getAttendanceChartData,
     getActivityChartData,
-    getUserMetrics
+    getUserMetrics,
+    getAttendanceWeekPercentage,
+    getActivityMetrics
 } = require("../database/data/queries/dashboardQueries");
 
 // Dashboard is accessible to all authenticated users (including inactive)
@@ -33,7 +35,9 @@ router.get("/dashboard", protect, async (req, res) => {
             pool.query(getLeaveRequestMetrics(scope), queryId ? [queryId] : []),
             pool.query(getActiveLocations(scope), queryId ? [queryId] : []),
             pool.query(getAttendanceChartData(scope), queryId ? [queryId] : []),
-            pool.query(getActivityChartData(scope), queryId ? [queryId] : [])
+            pool.query(getActivityChartData(scope), queryId ? [queryId] : []),
+            pool.query(getAttendanceWeekPercentage(scope), queryId ? [queryId] : []),
+            pool.query(getActivityMetrics(scope), queryId ? [queryId] : [])
         ];
 
         // Add Admin-only and Manager-only queries
@@ -71,16 +75,18 @@ router.get("/dashboard", protect, async (req, res) => {
             charts: {
                 attendance: results[3].rows,
                 activities: results[4].rows
-            }
+            },
+            weekly_attendance_percentage: parseInt(results[5].rows[0]?.weekly_percentage) || 0,
+            activity_metrics: results[6].rows[0] || { approved_count: 0, pending_count: 0, total_count: 0 }
         };
 
         // Conditional fields
         if (!isEmployee) {
-            responseData.totalEmployees = parseInt(results[5].rows[0]?.total) || 0;
+            responseData.totalEmployees = parseInt(results[7].rows[0]?.total) || 0;
         }
 
         if (isAdmin) {
-            responseData.userMetrics = results[6]?.rows[0] || null;
+            responseData.userMetrics = results[8]?.rows[0] || null;
         }
 
         res.status(200).json(responseData);

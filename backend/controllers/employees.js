@@ -250,6 +250,15 @@ exports.updateEmployee = async (req, res) => {
 exports.deleteEmployee = async (req, res) => {
     try {
         const { id } = req.params;
+        const { employee_id } = req.user;
+
+        // Prevent self-deletion
+        if (id === employee_id) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Access Denied: You cannot delete your own account.'
+            });
+        }
 
         // 1. Authorization Check
         const currentEmployeeResult = await pool.query('SELECT supervisor_id FROM employees WHERE id = $1', [id]);

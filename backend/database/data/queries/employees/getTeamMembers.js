@@ -23,6 +23,7 @@ const getTeamMembersQuery = `
   LEFT JOIN positions p ON e.position_id = p.id
   LEFT JOIN roles r ON e.role_id = r.id
   WHERE e.supervisor_id = $1
+    AND e.id <> $1
     AND ($2::UUID IS NULL OR e.department_id = $2)
     AND ($3::UUID IS NULL OR e.role_id = $3)
     AND ($4::TEXT IS NULL OR e.status = $4)
