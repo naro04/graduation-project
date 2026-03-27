@@ -763,18 +763,21 @@ exports.assignTeamToActivity = async (req, res) => {
             return res.status(404).json({ message: 'Activity not found' });
         }
 
+        // Employee primary keys are UUIDs (not integers)
+        const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const ids = employee_ids.map((id) => String(id ?? '').trim()).filter((id) => uuidRe.test(id));
+        if (ids.length !== employee_ids.length) {
+            return res.status(400).json({ message: 'Invalid employee_ids' });
+        }
+
         // Managers may only assign their direct reports
         if (role_name === 'Manager') {
             if (!managerEmployeeId) {
                 return res.status(403).json({ message: 'Manager employee record required' });
             }
-            const ids = employee_ids.map((id) => Number(id)).filter((n) => !Number.isNaN(n));
-            if (ids.length !== employee_ids.length) {
-                return res.status(400).json({ message: 'Invalid employee_ids' });
-            }
             const teamCheck = await client.query(
                 `SELECT COUNT(*)::int AS cnt FROM employees
-                 WHERE id = ANY($1::int[]) AND supervisor_id = $2`,
+                 WHERE id = ANY($1::uuid[]) AND supervisor_id = $2::uuid`,
                 [ids, managerEmployeeId]
             );
             const ok = (teamCheck.rows[0]?.cnt ?? 0) === ids.length;
@@ -786,7 +789,7 @@ exports.assignTeamToActivity = async (req, res) => {
         await client.query('BEGIN');
 
         // 2. Assign employees
-        for (const employee_id of employee_ids) {
+        for (const employee_id of ids) {
             await client.query(activityQueries.assignEmployeesToActivityQuery, [activity_id, employee_id]);
         }
 
@@ -794,7 +797,7 @@ exports.assignTeamToActivity = async (req, res) => {
 
         res.status(200).json({
             status: 'success',
-            message: `Successfully assigned ${employee_ids.length} employee(s) to activity`
+            message: `Successfully assigned ${ids.length} employee(s) to activity`
         });
 
     } catch (err) {
