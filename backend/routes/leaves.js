@@ -1,9 +1,9 @@
 const router = require('express').Router();
 const leaveController = require('../controllers/leaves');
-const auth = require('../middleware/auth');
+const { protect, restrictToRolesOrPermissions } = require('../middleware/auth');
 
 // All leave routes require authentication
-router.use(auth.protect);
+router.use(protect);
 
 const path = require('path');
 const multer = require('multer');
@@ -18,7 +18,11 @@ router.get('/', leaveController.getLeaves);
 router.get('/team', leaveController.getTeamLeaves);
 
 // GET /api/v1/leaves/reports - Get leave reports
-router.get('/reports', auth.restrictTo('reports:leave_reports', 'manage_employees'), leaveController.getLeaveReports);
+router.get(
+  '/reports',
+  restrictToRolesOrPermissions(['Manager', 'HR Admin'], 'reports:leave_reports', 'manage_employees'),
+  leaveController.getLeaveReports
+);
 
 // POST /api/v1/leaves - Create a new leave request (with optional document)
 router.post('/', leaveUpload.single('supporting_document'), leaveController.createLeave);
