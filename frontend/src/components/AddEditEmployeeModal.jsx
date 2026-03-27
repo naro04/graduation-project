@@ -36,7 +36,14 @@ const AddEditEmployeeModal = ({
   const fileInputRef = useRef(null);
 
   const departmentOptions = departmentsList.map((d) => d.name || d.title).filter(Boolean);
-  const roleOptions = rolesList.map((r) => r.name).filter(Boolean);
+  const roleOptions = Array.from(
+    new Set(
+      [
+        ...rolesList.map((r) => r.name).filter(Boolean),
+        formData.role && formData.role !== "Select Role" ? formData.role : null,
+      ].filter(Boolean)
+    )
+  );
 
   const getAvailablePositions = () => {
     if (!formData.department || formData.department === "" || formData.department === "Select Department") return [];

@@ -5,20 +5,29 @@ const activityQueries = require('../database/data/queries/locationActivities'); 
 exports.getAllEmployees = async (req, res) => {
     try {
         const { departmentId, roleId, status, search } = req.query;
+        const { role_name, employee_id } = req.user;
+
+        const isManager = role_name === 'Manager';
+        const isAdmin = role_name === 'Super Admin' || role_name === 'HR Admin';
+        const isEmployee = role_name === 'Officer' || role_name === 'Field Worker';
+
+        // 1. Strict RBAC: Officers/Field Workers cannot list employees
+        if (isEmployee) {
+            return res.status(403).json({ 
+                status: 'fail', 
+                message: 'Access Denied: You do not have permission to view employee lists.' 
+            });
+        }
 
         console.log('📋 Fetching employees with filters:', { departmentId, roleId, status, search });
 
-        const isManager = req.user.role_name === 'Manager';
-        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
-
-        // departmentId and roleId should be mapped to the query parameters
-        // We pass them to the query in order: [departmentId, roleId, status, search, supervisorId]
+        // 2. Scoping: Managers only see their team
         const result = await pool.query(employeeQueries.getEmployeesQuery, [
             departmentId || null,
             roleId || null,
             status || null,
             search || null,
-            isManager ? req.user.employee_id : null
+            isManager ? employee_id : null
         ]);
 
         console.log(`✅ Found ${result.rows.length} employees`);
@@ -37,6 +46,20 @@ exports.getAllEmployees = async (req, res) => {
 exports.getEmployeeById = async (req, res) => {
     try {
         const { id } = req.params;
+        const { role_name, employee_id } = req.user;
+
+        const isManager = role_name === 'Manager';
+        const isAdmin = role_name === 'Super Admin' || role_name === 'HR Admin';
+        const isEmployee = role_name === 'Officer' || role_name === 'Field Worker';
+
+        // 1. Strict RBAC: Officers/Field Workers can only view THEIR OWN profile
+        if (isEmployee && id !== employee_id) {
+            return res.status(403).json({ 
+                status: 'fail', 
+                message: 'Access Denied: You are not authorized to view this employee profile.' 
+            });
+        }
+
         const result = await pool.query(employeeQueries.getEmployeeByIdQuery, [id]);
 
         if (result.rows.length === 0) {
@@ -44,11 +67,9 @@ exports.getEmployeeById = async (req, res) => {
         }
 
         const employee = result.rows[0];
-        const isManager = req.user.role_name === 'Manager';
-        const isAdmin = req.user.role_name === 'Super Admin' || req.user.role_name === 'HR Admin';
 
-        // Scoping check for Managers
-        if (isManager && employee.supervisor_id !== req.user.employee_id) {
+        // 2. Scoping check for Managers: Can only view team members
+        if (isManager && employee.supervisor_id !== employee_id && employee.id !== employee_id) {
             return res.status(403).json({
                 status: 'fail',
                 message: 'Access Denied: You can only view employees assigned to you.'
@@ -229,6 +250,15 @@ exports.updateEmployee = async (req, res) => {
 exports.deleteEmployee = async (req, res) => {
     try {
         const { id } = req.params;
+        const { employee_id } = req.user;
+
+        // Prevent self-deletion
+        if (id === employee_id) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Access Denied: You cannot delete your own account.'
+            });
+        }
 
         // 1. Authorization Check
         const currentEmployeeResult = await pool.query('SELECT supervisor_id FROM employees WHERE id = $1', [id]);
@@ -320,6 +350,89 @@ exports.getTeamMembers = async (req, res) => {
     } catch (err) {
         console.error('Error fetching team members:', err);
         res.status(500).json({ message: 'An error occurred while fetching team members. Please try again.' });
+    }
+};
+
+exports.getTeamAssignableCandidates = async (req, res) => {
+    try {
+        if (req.user.role_name !== 'Manager') {
+            return res.status(403).json({ message: 'You do not have permission to perform this action' });
+        }
+
+        const managerEmployeeId = req.user.employee_id;
+        if (!managerEmployeeId) {
+            return res.status(404).json({ message: 'Manager employee record not found' });
+        }
+
+        const result = await pool.query(
+            `
+            SELECT
+                e.id,
+                e.employee_code,
+                e.first_name,
+                e.last_name,
+                e.full_name,
+                e.status,
+                e.department_id,
+                e.position_id,
+                d.name AS department_name,
+                p.title AS position_title,
+                r.name AS role_name
+            FROM employees e
+            LEFT JOIN departments d ON e.department_id = d.id
+            LEFT JOIN positions p ON e.position_id = p.id
+            LEFT JOIN roles r ON e.role_id = r.id
+            WHERE e.id <> $1
+              AND (e.supervisor_id IS NULL OR e.supervisor_id <> $1)
+            ORDER BY e.created_at DESC
+            `,
+            [managerEmployeeId]
+        );
+
+        res.status(200).json({
+            status: 'success',
+            results: result.rows.length,
+            data: result.rows
+        });
+    } catch (err) {
+        console.error('Error fetching assignable candidates:', err);
+        res.status(500).json({ message: 'An error occurred while fetching assignable employees. Please try again.' });
+    }
+};
+
+exports.assignEmployeeToMyTeam = async (req, res) => {
+    try {
+        if (req.user.role_name !== 'Manager') {
+            return res.status(403).json({ message: 'You do not have permission to perform this action' });
+        }
+
+        const managerEmployeeId = req.user.employee_id;
+        const { employee_id } = req.body;
+
+        if (!managerEmployeeId) {
+            return res.status(404).json({ message: 'Manager employee record not found' });
+        }
+        if (!employee_id) {
+            return res.status(400).json({ message: 'employee_id is required' });
+        }
+        if (String(employee_id) === String(managerEmployeeId)) {
+            return res.status(400).json({ message: 'You cannot assign yourself' });
+        }
+
+        const exists = await pool.query('SELECT id FROM employees WHERE id = $1', [employee_id]);
+        if (exists.rows.length === 0) {
+            return res.status(404).json({ message: 'Employee not found' });
+        }
+
+        const result = await pool.query(
+            `UPDATE employees SET supervisor_id = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+            [managerEmployeeId, employee_id]
+        );
+
+        res.status(200).json({ status: 'success', data: result.rows[0] });
+    } catch (err) {
+        console.error('Error assigning employee to team:', err);
+        res.status(500).json({ message: 'An error occurred while assigning employee. Please try again.' });
     }
 };
 

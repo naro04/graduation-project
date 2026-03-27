@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
-import { getTeamMembers, deleteEmployee, updateEmployee, createEmployee } from "../services/employees.js";
+import { getTeamMembers, getTeamAssignableCandidates, assignEmployeeToMyTeam, deleteEmployee, updateEmployee } from "../services/employees.js";
 import { getDepartments } from "../services/departments.js";
 import { getPositions } from "../services/positions.js";
 import { getRoles } from "../services/rbac.js";
@@ -90,6 +90,11 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
   const [departmentsList, setDepartmentsList] = useState([]);
   const [positionsList, setPositionsList] = useState([]);
   const [rolesList, setRolesList] = useState([]);
+  const [showAssignExistingModal, setShowAssignExistingModal] = useState(false);
+  const [availableEmployees, setAvailableEmployees] = useState([]);
+  const [selectedExistingEmployeeId, setSelectedExistingEmployeeId] = useState("");
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignError, setAssignError] = useState(null);
 
   const departmentPositions = React.useMemo(() => {
     const map = {};
@@ -257,6 +262,38 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
     },
   ];
 
+  const openAssignExistingModal = async () => {
+    setShowAssignExistingModal(true);
+    setSelectedExistingEmployeeId("");
+    setAssignError(null);
+    setAssignLoading(true);
+    try {
+      const list = await getTeamAssignableCandidates();
+      setAvailableEmployees(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setAvailableEmployees([]);
+      setAssignError(err?.response?.data?.message ?? err?.message ?? "Failed to load employees.");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const handleAssignExisting = async () => {
+    if (!selectedExistingEmployeeId) return;
+    setAssignError(null);
+    setAssignLoading(true);
+    try {
+      await assignEmployeeToMyTeam(selectedExistingEmployeeId);
+      setShowAssignExistingModal(false);
+      setSelectedExistingEmployeeId("");
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setAssignError(err?.response?.data?.message ?? err?.message ?? "Failed to assign employee.");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full bg-[#F5F7FA]" style={{ fontFamily: "Inter, sans-serif", overflowX: "hidden" }}>
       <div className="hidden lg:flex min-h-screen" style={{ overflowX: "hidden" }}>
@@ -355,14 +392,14 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
               </div>
               <button
                 type="button"
-                onClick={() => setEmployeeModalMode("add")}
+                onClick={openAssignExistingModal}
                 className="px-[20px] py-[12px] text-white rounded-[5px] hover:opacity-90 transition-opacity flex items-center justify-center gap-[8px] border border-[#B5B1B1]"
                 style={{ fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: "14px", backgroundColor: "#0C8DFE", height: "46px", width: "205px" }}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
-                Add Employee
+                Assign Employee
               </button>
             </div>
 
@@ -606,14 +643,14 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
             <p className="text-[12px] text-[#6B7280] mb-3" style={{ fontFamily: "Inter, sans-serif" }}>Overview of your assigned team members</p>
             <button
               type="button"
-              onClick={() => setEmployeeModalMode("add")}
+              onClick={openAssignExistingModal}
               className="w-full mb-[16px] px-[20px] py-[12px] text-white rounded-[10px] hover:opacity-90 transition-opacity flex items-center justify-center gap-[8px]"
               style={{ fontFamily: "Inter, sans-serif", fontWeight: 500, fontSize: "14px", backgroundColor: "#0C8DFE" }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
-              Add Employee
+              Assign Employee
             </button>
           </div>
           {/* Summary Cards - Mobile */}
@@ -699,24 +736,71 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
       </div>
 
       <AddEditEmployeeModal
-        isOpen={employeeModalMode === "add" || employeeModalMode === "edit"}
+        isOpen={employeeModalMode === "edit"}
         onClose={() => { setEmployeeModalMode(null); setSelectedMember(null); }}
-        mode={employeeModalMode === "edit" ? "edit" : "add"}
-        initialData={employeeModalMode === "edit" ? selectedMember : null}
+        mode="edit"
+        initialData={selectedMember}
         departmentsList={departmentsList}
         positionsList={positionsList}
         rolesList={rolesList}
         departmentPositions={departmentPositions}
-        supervisorId={employeeModalMode === "add" ? myEmployeeId : null}
+        supervisorId={null}
         onSave={async (payload) => {
-          if (employeeModalMode === "edit" && selectedMember?.id) {
+          if (selectedMember?.id) {
             await updateEmployee(selectedMember.id, payload);
-          } else {
-            await createEmployee(payload);
           }
           setRefreshKey((k) => k + 1);
         }}
       />
+
+      {showAssignExistingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !assignLoading && setShowAssignExistingModal(false)}>
+          <div className="bg-white rounded-[10px] w-full max-w-[500px] mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[24px] font-semibold text-[#003934]" style={{ fontFamily: "Inter, sans-serif" }}>Assign Existing Employee</h3>
+              <button type="button" onClick={() => !assignLoading && setShowAssignExistingModal(false)} className="w-[32px] h-[32px] rounded-full bg-[#F3F4F6] hover:bg-[#E5E7EB] flex items-center justify-center">
+                <svg className="w-[16px] h-[16px] text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-[14px] text-[#6B7280] mb-3">Select an existing employee to add under your team.</p>
+            <select
+              value={selectedExistingEmployeeId}
+              onChange={(e) => setSelectedExistingEmployeeId(e.target.value)}
+              disabled={assignLoading}
+              className="w-full h-[44px] px-[14px] rounded-[8px] border border-[#D1D5DB] text-[14px] focus:outline-none focus:border-[#027066]"
+            >
+              <option value="">Select Employee</option>
+              {availableEmployees.map((emp) => {
+                const name = emp.full_name || [emp.first_name, emp.last_name].filter(Boolean).join(" ") || "Employee";
+                const code = emp.employee_code ? ` (${emp.employee_code})` : "";
+                return (
+                  <option key={emp.id} value={emp.id}>
+                    {name}{code}
+                  </option>
+                );
+              })}
+            </select>
+            {assignLoading && <p className="text-[13px] text-[#6B7280] mt-2">Loading...</p>}
+            {!assignLoading && availableEmployees.length === 0 && <p className="text-[13px] text-[#6B7280] mt-2">No available employees.</p>}
+            {assignError && <p className="text-[13px] text-red-600 mt-2">{assignError}</p>}
+            <div className="flex items-center justify-end gap-3 mt-5">
+              <button type="button" onClick={() => !assignLoading && setShowAssignExistingModal(false)} className="px-5 h-[40px] rounded-[8px] border border-[#D1D5DB] text-[#4B5563] hover:bg-[#F9FAFB]">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAssignExisting}
+                disabled={!selectedExistingEmployeeId || assignLoading}
+                className="px-5 h-[40px] rounded-[8px] text-white bg-[#027066] disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+              >
+                Assign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete member warning modal */}
       {showDeleteModal && memberToDelete && (

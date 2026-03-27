@@ -18,7 +18,7 @@ exports.getLeaves = async (req, res) => {
                 lr.*, 
                 e.full_name as employee_name, 
                 e.avatar_url as employee_avatar,
-                p.name as position,
+                p.title as position,
                 d.name as department,
                 (lr.end_date - lr.start_date + 1) as total_days
             FROM leave_requests lr
@@ -351,16 +351,19 @@ exports.getTeamLeaves = async (req, res) => {
 exports.getLeaveReports = async (req, res) => {
     try {
         const { dateFrom, dateTo, type, status, search } = req.query;
+        const isManager = req.user.role_name === 'Manager';
+        const managerEmployeeId = isManager ? req.user.employee_id : null;
 
         const [distributionRes, trendRes, recordsRes] = await Promise.all([
-            pool.query(leaveQueries.getLeaveDistributionQuery),
-            pool.query(leaveQueries.getLeaveTrendQuery),
+            pool.query(leaveQueries.getLeaveDistributionQuery, [managerEmployeeId]),
+            pool.query(leaveQueries.getLeaveTrendQuery, [managerEmployeeId]),
             pool.query(leaveQueries.getDetailedLeaveReportQuery, [
                 dateFrom || null,
                 dateTo || null,
                 type && type !== 'All Leave Type' ? type : null,
                 status && status !== 'All Status' ? status : null,
-                search || null
+                search || null,
+                managerEmployeeId
             ])
         ]);
 

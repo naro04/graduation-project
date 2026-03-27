@@ -892,8 +892,13 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, fontSize: '14px', minWidth: 0 }}>
                         Date Range
                       </th>
-                      <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
-                        Submitted Date
+                      <th
+                        className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-[#6B7280]"
+                        style={{ fontWeight: 500, fontSize: '14px', textAlign: 'center', verticalAlign: 'middle' }}
+                      >
+                        <div className="flex w-full min-w-0 items-center justify-center">
+                          <span style={{ whiteSpace: 'nowrap' }}>Submitted Date</span>
+                        </div>
                       </th>
                       <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: 'nowrap', fontSize: '14px' }}>
                         Status

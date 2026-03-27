@@ -9,10 +9,8 @@
     "db:build": "node database/data/build_schema.js",
     "db:seed": "node database/data/seed_data.js",
     "db:migrate": "node database/migrations/run_migration.js",
-    "db:setup:railway": "node database/setup_railway.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "db:setup:railway": "node database/setup_railway.js"
+
   },
   "keywords": [],
   "author": "",
@@ -30,14 +28,11 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^1.4.5-lts.1",
     "multer-storage-cloudinary": "^4.0.0",
-    "nodemailer": "^7.0.13",
     "pg": "^8.16.3",
     "resend": "^6.9.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "supertest": "^6.3.3"
   }
 }

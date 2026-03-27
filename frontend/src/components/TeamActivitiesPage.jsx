@@ -9,6 +9,7 @@ import { getLocationActivities, deleteLocationActivity } from "../services/locat
 import { getTeamMembers } from "../services/employees.js";
 import ManagerAssignActivityModal from "./ManagerAssignActivityModal";
 import ManagerChooseActivityModal from "./ManagerChooseActivityModal";
+import ActivityDetailsModal from "./ActivityDetailsModal";
 
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
 const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4c365858f.png", import.meta.url).href;
@@ -57,7 +58,6 @@ const TeamActivitiesPage = ({ userRole = "manager" }) => {
   const [error, setError] = useState(null);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState(null);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedActivityForDetails, setSelectedActivityForDetails] = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showChooseActivityModal, setShowChooseActivityModal] = useState(false);
@@ -87,47 +87,66 @@ const TeamActivitiesPage = ({ userRole = "manager" }) => {
     return () => { cancelled = true; };
   }, [refreshKey]);
 
-  const teamIds = useMemo(() => (teamMembers || []).map((m) => m.id), [teamMembers]);
-  const teamNamesSet = useMemo(() => {
-    const set = new Set();
-    (teamMembers || []).forEach((m) => {
-      const name = (m.full_name || [m.first_name, m.last_name].filter(Boolean).join(" ")).trim().toLowerCase();
-      if (name) set.add(name);
-    });
-    return set;
-  }, [teamMembers]);
+  const getActivityCoordinates = (a) => {
+    const lat = a.coordinates?.lat ?? a.latitude ?? a.location_latitude ?? a.assigned_latitude ?? a.location?.latitude ?? "";
+    const lng = a.coordinates?.lng ?? a.longitude ?? a.location_longitude ?? a.assigned_longitude ?? a.location?.longitude ?? "";
+    const latStr = lat != null && String(lat).trim() !== "" ? String(lat) : "";
+    const lngStr = lng != null && String(lng).trim() !== "" ? String(lng) : "";
+    return { lat: latStr, lng: lngStr };
+  };
 
   const activitiesData = useMemo(() => {
-    const raw = (activitiesFromApi || []).filter((a) => {
-      const empId = a.employee_id ?? a.employeeId;
-      const name = (a.responsible_employee ?? a.responsibleEmployee ?? "").toString().trim().toLowerCase();
-      return (empId && teamIds.includes(empId)) || (name && teamNamesSet.has(name));
-    });
+    // GET /location-activities للمدير يصفّي من السيرفر: مسؤول النشاط = المدير، أو وجود موظف
+    // في activity_employees مشرفه هو المدير. تصفية إضافية حسب "فريقي" كانت تخفي تلك الصفوف
+    // (مثلاً عندما المسؤول هو المدير نفسه أو الاسم لا يطابق أسماء الفقط).
+    const raw = activitiesFromApi || [];
     return raw.map((a) => {
       const approvalRaw = (a.approval_status ?? a.approvalStatus ?? "").toString();
       const approval = approvalRaw ? approvalRaw.charAt(0).toUpperCase() + approvalRaw.slice(1).toLowerCase() : "";
-      const statusRaw = (a.status ?? a.implementation_status ?? "").toString();
-      const status = statusRaw === "Implemented" || statusRaw === "Planned" ? statusRaw : (statusRaw || "Planned");
+      const approvalNorm = approvalRaw.trim().toLowerCase();
+      const implNorm = (a.implementation_status ?? "").toString().trim().toLowerCase();
+      const legacyStatusNorm = (a.status ?? "").toString().trim().toLowerCase();
+      const effectiveImpl = implNorm || legacyStatusNorm;
+      // للمدير: الموافقة المعتمدة = منفّذ في الكاردات؛ المعلّق = تخطيط
+      let status;
+      if (approvalNorm === "pending") status = "Planning";
+      else if (approvalNorm === "approved") status = "Implemented";
+      else if (approvalNorm === "rejected") status = "Rejected";
+      else if (effectiveImpl.includes("cancel")) status = "Cancelled";
+      else if (effectiveImpl.includes("implemented")) status = "Implemented";
+      else status = "Planned";
+      const startDate = a.date ?? a.start_date ?? a.startDate ?? "";
+      const teamVal = a.team;
+      const team =
+        Array.isArray(teamVal) ? teamVal.filter(Boolean).join(", ") : (teamVal != null && String(teamVal).trim() ? String(teamVal) : "—");
       return {
         id: a.id,
         activity: a.name ?? a.activity_name ?? "",
         type: a.type ?? a.activity_type ?? "—",
-        project: a.project ?? "—",
+        project: a.project ?? a.project_name ?? "—",
         responsibleEmployee: a.responsible_employee ?? a.responsibleEmployee ?? "—",
         status,
         approval: approval === "Approved" || approval === "Rejected" || approval === "Pending" ? approval : (approval || "—"),
+        location: a.location_name ?? a.location ?? "—",
+        coordinates: getActivityCoordinates(a),
+        date: startDate ? new Date(startDate) : new Date(),
+        duration: a.duration ?? a.activity_days ?? "—",
+        team,
+        description: a.description ?? "",
+        approval_status: a.approval_status ?? a.approval ?? "",
+        implementation_status: a.implementation_status ?? a.status ?? "",
       };
     });
-  }, [activitiesFromApi, teamIds, teamNamesSet]);
+  }, [activitiesFromApi]);
 
   const summaryStats = useMemo(() => ({
-    planned: activitiesData.filter((a) => a.status === "Planned").length,
-    implemented: activitiesData.filter((a) => a.status === "Implemented").length,
+    planning: activitiesData.filter((a) => a.approval === "Pending").length,
+    implemented: activitiesData.filter((a) => a.approval === "Approved").length,
     approved: activitiesData.filter((a) => a.approval === "Approved").length,
     pending: activitiesData.filter((a) => a.approval === "Pending").length,
   }), [activitiesData]);
 
-  const statusOptions = ["All Status", "Planned", "Implemented"];
+  const statusOptions = ["All Status", "Planning", "Planned", "Implemented", "Rejected", "Cancelled"];
   const approvalStatusOptions = ["All Approval Status", "Approved", "Rejected", "Pending"];
 
   const filteredData = activitiesData.filter((activity) => {
@@ -244,7 +263,7 @@ const TeamActivitiesPage = ({ userRole = "manager" }) => {
             {/* Summary Cards */}
             <div className="flex justify-center items-center gap-[16px] mt-[48px] mb-[48px] flex-wrap">
               {[
-                { value: summaryStats.planned, label: "Planned Activities", icon: PlannedIcon },
+                { value: summaryStats.planning, label: "Planning Activities", icon: PlannedIcon },
                 { value: summaryStats.implemented, label: "Implemented Activities", icon: CalendarIcon },
                 { value: summaryStats.approved, label: "Approved Activities", icon: ApprovedIcon },
                 { value: summaryStats.pending, label: "Pending Activities", icon: PendingIcon },
@@ -336,7 +355,7 @@ const TeamActivitiesPage = ({ userRole = "manager" }) => {
                             </td>
                             <td className="px-3 py-3 text-center">
                               <div className="flex items-center justify-center gap-0">
-                                <button type="button" onClick={() => { setSelectedActivityForDetails(activity); setShowDetailsModal(true); }} className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70" title="View"><img src={ViewIcon} alt="View" className="w-full h-full object-contain" /></button>
+                                <button type="button" onClick={() => setSelectedActivityForDetails(activity)} className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70" title="View"><img src={ViewIcon} alt="View" className="w-full h-full object-contain" /></button>
                                 <div className="w-px h-[22px] bg-[#E0E0E0] mx-2" />
                                 <button type="button" onClick={() => { setActivityToDelete(activity); setShowWarningModal(true); }} className="w-[22px] h-[22px] flex items-center justify-center hover:opacity-70" title="Delete"><img src={DeleteIcon} alt="Delete" className="w-full h-full object-contain" /></button>
                               </div>
@@ -420,7 +439,7 @@ const TeamActivitiesPage = ({ userRole = "manager" }) => {
           <div className="flex flex-col gap-[12px] mb-[16px]">
             <div className="bg-white rounded-[10px] border border-[#E0E0E0] p-[16px] flex items-center gap-[12px]">
               <div className="w-[48px] h-[48px] min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#7AC1BB" }}><img src={PlannedIcon} alt="Planned" className="w-[24px] h-[24px] object-contain" /></div>
-              <div><p className="text-[14px] font-semibold text-[#00675E]">{summaryStats.planned}</p><p className="text-[12px] text-[#3F817C] font-medium">Planned Activities</p></div>
+              <div><p className="text-[14px] font-semibold text-[#00675E]">{summaryStats.planning}</p><p className="text-[12px] text-[#3F817C] font-medium">Planning Activities</p></div>
             </div>
             <div className="bg-white rounded-[10px] border border-[#E0E0E0] p-[16px] flex items-center gap-[12px]">
               <div className="w-[48px] h-[48px] min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#7AC1BB" }}><img src={CalendarIcon} alt="Implemented" className="w-[24px] h-[24px] object-contain" /></div>
@@ -481,7 +500,7 @@ const TeamActivitiesPage = ({ userRole = "manager" }) => {
                         <div><p className="text-[14px] font-medium text-[#111827] mb-[2px]">{activity.activity}</p><p className="text-[12px] text-[#6B7280]">{activity.project}</p></div>
                       </div>
                       <div className="flex items-center gap-[8px]">
-                        <button type="button" onClick={() => { setSelectedActivityForDetails(activity); setShowDetailsModal(true); }} className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors" title="View"><img src={ViewIcon} alt="View" className="w-[16px] h-[16px] object-contain" /></button>
+                        <button type="button" onClick={() => setSelectedActivityForDetails(activity)} className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors" title="View"><img src={ViewIcon} alt="View" className="w-[16px] h-[16px] object-contain" /></button>
                         <button type="button" onClick={() => { setActivityToDelete(activity); setShowWarningModal(true); }} className="w-[32px] h-[32px] rounded-[8px] bg-[#F3F4F6] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors" title="Delete"><img src={DeleteIcon} alt="Delete" className="w-[16px] h-[16px] object-contain" /></button>
                       </div>
                     </div>
@@ -509,24 +528,16 @@ const TeamActivitiesPage = ({ userRole = "manager" }) => {
         </div>
       </div>
 
-      {/* Activity details modal */}
-      {showDetailsModal && selectedActivityForDetails && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setShowDetailsModal(false); setSelectedActivityForDetails(null); }}>
-          <div className="bg-white rounded-[10px] shadow-lg w-full max-w-[400px] mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-[18px] font-semibold text-[#003934] mb-4" style={{ fontFamily: "Inter, sans-serif" }}>Activity Details</h3>
-            <div className="space-y-2 text-[14px]">
-              <p><span className="text-[#6B7280]">Activity:</span> <span className="font-medium">{selectedActivityForDetails.activity}</span></p>
-              <p><span className="text-[#6B7280]">Type:</span> <span className="font-medium">{selectedActivityForDetails.type}</span></p>
-              <p><span className="text-[#6B7280]">Project:</span> <span className="font-medium">{selectedActivityForDetails.project}</span></p>
-              <p><span className="text-[#6B7280]">Responsible:</span> <span className="font-medium">{selectedActivityForDetails.responsibleEmployee}</span></p>
-              <p><span className="text-[#6B7280]">Status:</span> <span className="font-medium">{selectedActivityForDetails.status}</span></p>
-              <p><span className="text-[#6B7280]">Approval:</span> <span className="font-medium">{selectedActivityForDetails.approval}</span></p>
-            </div>
-            <div className="mt-6 flex justify-end">
-              <button type="button" onClick={() => { setShowDetailsModal(false); setSelectedActivityForDetails(null); }} className="px-4 py-2 rounded-[8px] border border-[#E0E0E0] bg-white text-[14px] font-medium text-[#333333] hover:bg-[#F5F7FA]">Close</button>
-            </div>
-          </div>
-        </div>
+      {selectedActivityForDetails && (
+        <ActivityDetailsModal
+          activity={selectedActivityForDetails}
+          onClose={() => setSelectedActivityForDetails(null)}
+          onDelete={(activity) => {
+            setActivityToDelete(activity);
+            setShowWarningModal(true);
+          }}
+          onApprovalChange={() => setRefreshKey((k) => k + 1)}
+        />
       )}
 
       {/* Delete activity warning modal */}

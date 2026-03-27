@@ -287,7 +287,11 @@ const TeamLeaveRequestsPage = ({ userRole = "manager" }) => {
                         <th className="px-[12px] py-[12px] text-left text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", fontSize: "14px", minWidth: "140px" }}>Employee name</th>
                         <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", fontSize: "14px", minWidth: "140px" }}>Leave Type</th>
                         <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", fontSize: "14px", minWidth: "160px" }}>Date Range</th>
-                        <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", fontSize: "14px", minWidth: "120px" }}>Submitted Date</th>
+                        <th className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-[#6B7280]" style={{ fontWeight: 500, fontSize: "14px", minWidth: "120px", textAlign: "center", verticalAlign: "middle" }}>
+                          <div className="flex w-full min-w-0 items-center justify-center">
+                            <span style={{ whiteSpace: "nowrap" }}>Submitted Date</span>
+                          </div>
+                        </th>
                         <th className="px-[12px] py-[12px] text-center text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", fontSize: "14px", minWidth: "90px" }}>Status</th>
                         <th className="px-[8px] py-[12px] text-center text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: "nowrap", fontSize: "14px", width: "120px" }}>Action</th>
                       </tr>

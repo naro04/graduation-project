@@ -1,0 +1,146 @@
+const pool = require('../database/connection');
+const locationQueries = require('../database/data/queries/locations');
+
+exports.getAllLocations = async (req, res) => {
+    try {
+        const { status, type, search, withStats } = req.query;
+        const { role_name } = req.user;
+
+        const isEmployee = role_name === 'Officer' || role_name === 'Field Worker';
+
+        // 1. Strict RBAC: Officers/Field Workers cannot access the management list
+        if (isEmployee) {
+            return res.status(403).json({ 
+                status: 'fail', 
+                message: 'Access Denied: You do not have permission to view the full locations list.' 
+            });
+        }
+
+        // Use stats query if withStats is true
+        const query = withStats === 'true' ? locationQueries.getLocationsWithStatsQuery : locationQueries.getLocationsQuery;
+
+        const result = await pool.query(query, [
+            status || null,
+            type || null,
+            search || null
+        ]);
+
+        res.status(200).json({
+            status: 'success',
+            data: result.rows
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching locations', error: err.message });
+    }
+};
+
+exports.createLocation = async (req, res) => {
+    try {
+        const { name, address, latitude, longitude, location_type, type, status } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ message: 'Name is required' });
+        }
+
+        // Handle both location_type and type (from frontend)
+        const finalType = location_type || type || null;
+        // Normalize status to lowercase
+        const finalStatus = (status || 'active').toLowerCase();
+
+        const result = await pool.query(locationQueries.createLocationQuery, [
+            name,
+            address || null,
+            latitude || null,
+            longitude || null,
+            finalType,
+            finalStatus
+        ]);
+
+        res.status(201).json({
+            status: 'success',
+            data: result.rows[0]
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error creating location', error: err.message });
+    }
+};
+
+exports.updateLocation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, address, latitude, longitude, location_type, type, status } = req.body;
+
+        // Handle both location_type and type (from frontend)
+        const finalType = location_type || type || null;
+        // Normalize status to lowercase
+        const finalStatus = (status || 'active').toLowerCase();
+
+        const result = await pool.query(locationQueries.updateLocationQuery, [
+            name,
+            address || null,
+            latitude || null,
+            longitude || null,
+            finalType,
+            finalStatus,
+            id
+        ]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Location not found' });
+        }
+
+        res.status(200).json({
+            status: 'success',
+            data: result.rows[0]
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error updating location', error: err.message });
+    }
+};
+
+exports.deleteLocation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(locationQueries.deleteLocationQuery, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Location not found' });
+        }
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Location deleted successfully'
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error deleting location', error: err.message });
+    }
+};
+
+exports.getLocationEmployees = async (req, res) => {
+    try {
+        const { location_id } = req.params;
+        const result = await pool.query(locationQueries.getLocationEmployeesQuery, [location_id]);
+
+        res.status(200).json({
+            status: 'success',
+            data: result.rows
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching location employees', error: err.message });
+    }
+};
+
+exports.getLocationActivities = async (req, res) => {
+    try {
+        const { location_id } = req.params;
+        const result = await pool.query(locationQueries.getLocationActivitiesQuery, [location_id]);
+
+        res.status(200).json({
+            status: 'success',
+            data: result.rows
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching location activities', error: err.message });
+    }
+};
+

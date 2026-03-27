@@ -212,6 +212,8 @@ const DashboardPage = () => {
   };
 
   const quickActions = quickActionsByRole[effectiveUserRole] || [];
+  // Manager: إخفاء اختصارات Team Members / Leave / Activities من داشبورد الموبايل فقط (القائمة الجانبية تبقى)
+  const quickActionsMobile = effectiveUserRole === "manager" ? [] : quickActions;
 
   // Get greeting based on time of day
   const getGreeting = () => {
@@ -587,9 +589,19 @@ const DashboardPage = () => {
     // Attendance (today) already comes from /attendance/team -> should be team-only
     const presentToday = teamAttendance.filter((r) => {
       const s = (r.status ?? r.daily_status ?? "").toString().toLowerCase();
-      return s.includes("present") || s.includes("late") || s.includes("in progress");
+      if (s.includes("absent")) return false;
+      return (
+        s.includes("present") ||
+        s.includes("late") ||
+        s.includes("in progress") ||
+        s.includes("missing check-out") ||
+        s.includes("early leave")
+      );
     }).length;
-    const lateToday = teamAttendance.filter((r) => (r.status ?? r.daily_status ?? "").toString().toLowerCase().includes("late")).length;
+    const lateToday = teamAttendance.filter((r) => {
+      const s = (r.status ?? r.daily_status ?? "").toString().toLowerCase();
+      return s.includes("late") && !s.includes("early leave");
+    }).length;
 
     // Leaves: backend call is org-wide, so filter to team members (same approach as TeamLeaveRequestsPage)
     const teamLeaves = teamLeavesRaw.filter((item) => {
@@ -601,22 +613,11 @@ const DashboardPage = () => {
     const leavesPending = teamLeaves.filter((l) => (l.status ?? "").toString().toLowerCase() === "pending").length;
     const leavesApproved = teamLeaves.filter((l) => (l.status ?? "").toString().toLowerCase() === "approved").length;
 
-    // Activities: backend call may be org-wide, filter same way as TeamActivitiesPage
-    const teamActivities = teamActivitiesRaw.filter((a) => {
-      const empId = a.employee_id ?? a.employeeId ?? a.responsible_employee_id ?? a.responsibleEmployeeId ?? a.user_id ?? a.userId;
-      const empIdStr = empId != null ? String(empId) : "";
-      const name = normalizeName(
-        a.responsible_employee
-        ?? a.responsibleEmployee
-        ?? a.employee_name
-        ?? a.employeeName
-        ?? a.full_name
-        ?? a.fullName
-      );
-      return (empIdStr && teamIds.has(empIdStr)) || (name && teamNames.has(name));
-    });
-    const pendingActivities = teamActivities.filter((a) => (a.approval ?? a.approval_status ?? a.approvalStatus ?? "").toString().toLowerCase() === "pending").length;
-    const approvedActivities = teamActivities.filter((a) => (a.approval ?? a.approval_status ?? a.approvalStatus ?? "").toString().toLowerCase() === "approved").length;
+    // Activities: الموافقة المعتمدة = يُعرض كـ Implemented؛ المعلّق = Planning
+    const approvalOf = (a) => (a.approval ?? a.approval_status ?? a.approvalStatus ?? "").toString().trim().toLowerCase();
+
+    const activitiesImplemented = teamActivitiesRaw.filter((a) => approvalOf(a) === "approved").length;
+    const activitiesPlanning = teamActivitiesRaw.filter((a) => approvalOf(a) === "pending").length;
 
     return {
       teamSize: teamMembers.length,
@@ -624,29 +625,15 @@ const DashboardPage = () => {
       lateToday,
       leavesPending,
       leavesApproved,
-      activitiesPending: pendingActivities,
-      activitiesApproved: approvedActivities,
+      activitiesPending: activitiesPlanning,
+      activitiesImplemented,
     };
   }, [isManager, managerData]);
 
   const managerCharts = React.useMemo(() => {
     if (!isManager) return null;
-    const teamMembers = Array.isArray(managerData.teamMembers) ? managerData.teamMembers : [];
     const teamAttendanceWeek = Array.isArray(managerData.teamAttendanceWeek) ? managerData.teamAttendanceWeek : [];
     const teamActivitiesRaw = Array.isArray(managerData.teamActivities) ? managerData.teamActivities : [];
-
-    const normalizeName = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-    const teamIds = new Set(
-      teamMembers
-        .flatMap((m) => [m.id, m.employee_id, m.employeeId, m.user_id, m.userId])
-        .filter((v) => v != null && String(v).trim() !== "")
-        .map((v) => String(v))
-    );
-    const teamNames = new Set(
-      teamMembers
-        .map((m) => normalizeName(m.full_name || m.employee_name || [m.first_name, m.last_name].filter(Boolean).join(" ")))
-        .filter(Boolean)
-    );
 
     const toDateOnly = (val) => {
       if (!val) return "";
@@ -670,32 +657,26 @@ const DashboardPage = () => {
       const dateStr = toDateOnly(r.date ?? r.check_in_date ?? r.attendance_date ?? r.check_in_time ?? r.checkInAt);
       if (!dateStr || presentByDay[dateStr] == null) continue;
       const s = (r.status ?? r.daily_status ?? "").toString().toLowerCase();
-      if (s.includes("present") || s.includes("late") || s.includes("in progress")) {
+      if (s.includes("absent")) continue;
+      if (
+        s.includes("present") ||
+        s.includes("late") ||
+        s.includes("in progress") ||
+        s.includes("missing check-out") ||
+        s.includes("early leave")
+      ) {
         presentByDay[dateStr] += 1;
       }
     }
     const attendanceSeries = days.map((d) => ({ date: d, present_count: presentByDay[d] }));
 
-    // Activities last 7 days: filter to team then group by day (Implemented/Planned)
-    const teamActivities = teamActivitiesRaw.filter((a) => {
-      const empId = a.employee_id ?? a.employeeId ?? a.responsible_employee_id ?? a.responsibleEmployeeId ?? a.user_id ?? a.userId;
-      const empIdStr = empId != null ? String(empId) : "";
-      const name = normalizeName(
-        a.responsible_employee
-        ?? a.responsibleEmployee
-        ?? a.employee_name
-        ?? a.employeeName
-        ?? a.full_name
-        ?? a.fullName
-      );
-      return (empIdStr && teamIds.has(empIdStr)) || (name && teamNames.has(name));
-    });
+    // Activities last 7 days: approved = implemented؛ غير ذلك (معلّق/مرفوض…) = planned
+    const approvalOf = (a) => (a.approval ?? a.approval_status ?? a.approvalStatus ?? "").toString().trim().toLowerCase();
     const implByDay = Object.fromEntries(days.map((d) => [d, { implemented: 0, planned: 0 }]));
-    for (const a of teamActivities) {
+    for (const a of teamActivitiesRaw) {
       const dateStr = toDateOnly(a.start_date ?? a.startDate ?? a.start_time ?? a.startTime ?? a.created_at);
       if (!dateStr || implByDay[dateStr] == null) continue;
-      const impl = (a.implementation_status ?? a.status ?? "").toString().toLowerCase();
-      if (impl.includes("implemented")) implByDay[dateStr].implemented += 1;
+      if (approvalOf(a) === "approved") implByDay[dateStr].implemented += 1;
       else implByDay[dateStr].planned += 1;
     }
     const activitySeries = days.map((d) => ({
@@ -738,7 +719,16 @@ const DashboardPage = () => {
       const dateStr = toDateOnly(r.date ?? r.check_in_date ?? r.attendance_date ?? r.check_in_time ?? r.checkInAt);
       if (!dateStr || dateStr < startStr || dateStr > todayStr) continue;
       const s = (r.status ?? r.daily_status ?? r.dailyStatus ?? "").toString().toLowerCase();
-      if (s.includes("present") || s.includes("late") || s.includes("in progress")) presentDays.add(dateStr);
+      if (s.includes("absent")) continue;
+      if (
+        s.includes("present") ||
+        s.includes("late") ||
+        s.includes("in progress") ||
+        s.includes("missing check-out") ||
+        s.includes("early leave")
+      ) {
+        presentDays.add(dateStr);
+      }
     }
     return Math.round((presentDays.size / 7) * 100);
   }, [isManager, managerData.myAttendance]);
@@ -814,11 +804,11 @@ const DashboardPage = () => {
     {
       id: 4,
       title: "Team Activities",
-      value: String(managerStats?.activitiesApproved ?? 0),
-      subtitle: "Approved",
+      value: String(managerStats?.activitiesImplemented ?? 0),
+      subtitle: "Implemented",
       value2: String(managerStats?.activitiesPending ?? 0),
-      subtitle2: "Pending",
-      message: "Approvals for your team",
+      subtitle2: "Planning",
+      message: "Implemented vs awaiting approval",
       bgColor: "bg-white",
     },
   ] : (dashboardData ? [
@@ -1020,7 +1010,7 @@ const DashboardPage = () => {
                     >
                       {stat.title}
                     </p>
-                    <div className={`flex items-baseline gap-[4px] ${stat.id === 3 ? 'justify-center' : ''}`}>
+                    <div className="flex flex-wrap items-baseline gap-[4px] justify-start">
                       <p className="text-[24px] font-bold text-[#000000] flex-shrink-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, lineHeight: '100%' }}>
                         {stat.value}
                       </p>
@@ -1053,7 +1043,7 @@ const DashboardPage = () => {
                       borderBottomRightRadius: '10px'
                     }}
                   >
-                    <p className="text-[10px] font-medium" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%', textAlign: stat.id === 1 || stat.id === 3 || stat.id === 4 ? 'left' : 'center' }}>
+                    <p className="text-[10px] font-medium text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
                       <span style={{ color: '#4F7875' }}>{stat.message}</span>
                     </p>
                   </div>
@@ -1806,7 +1796,7 @@ const DashboardPage = () => {
                   <p className="text-[13px] font-medium text-[#939393] mb-[28px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>
                     {stat.title}
                   </p>
-                  <div className={`flex items-baseline gap-[4px] ${stat.id === 3 ? 'justify-center' : ''}`}>
+                  <div className="flex flex-wrap items-baseline gap-[4px] justify-start">
                     <p className="text-[24px] font-bold text-[#000000] flex-shrink-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, lineHeight: '100%' }}>
                       {stat.value}
                     </p>
@@ -1839,7 +1829,7 @@ const DashboardPage = () => {
                     borderBottomRightRadius: '10px'
                   }}
                 >
-                  <p className="text-[10px] font-medium" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%', textAlign: 'left' }}>
+                  <p className="text-[10px] font-medium text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '130%' }}>
                     {stat.id === 1 ? (
                       <>
                         <span style={{ color: '#4F7875' }}>You're part of a </span>
@@ -1847,18 +1837,18 @@ const DashboardPage = () => {
                       </>
                     ) : stat.id === 2 ? (
                       <>
-                        <span style={{ color: '#4F7875' }}>You're attendance this month is looking </span>
+                        <span style={{ color: '#4F7875' }}>Your attendance this month is looking </span>
                         <span style={{ color: '#00564F', fontWeight: 700 }}>solid</span>
                       </>
                     ) : stat.id === 3 ? (
-                      <span style={{ whiteSpace: 'nowrap' }}>
-                        <span style={{ color: '#4F7875' }}>You're submitted </span>
+                      <span>
+                        <span style={{ color: '#4F7875' }}>You've submitted </span>
                         <span style={{ color: '#00564F', fontWeight: 700 }}>2 leave requests</span>
                         <span style={{ color: '#4F7875' }}> this month</span>
                       </span>
                     ) : stat.id === 4 ? (
                       <>
-                        <span style={{ color: '#4F7875' }}>You're team has </span>
+                        <span style={{ color: '#4F7875' }}>Your team has </span>
                         <span style={{ color: '#00564F', fontWeight: 700 }}>37 new applicants</span>
                       </>
                     ) : (
@@ -1980,6 +1970,220 @@ const DashboardPage = () => {
                 ))}
               </div>
             </div>
+
+            {/* Manager: team charts + quick actions (desktop had these; mobile had none) */}
+            {isManager && (
+              <>
+                <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[16px]">
+                  <h3 className="text-[16px] font-semibold text-[#000000] mb-[16px] text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
+                    Team Attendance (Last 7 days)
+                  </h3>
+                  <div className="relative" style={{ height: '200px' }}>
+                    <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
+                      {[100, 70, 50, 25, 0].map((value) => (
+                        <div
+                          key={value}
+                          className="text-right pr-[4px]"
+                          style={{
+                            fontFamily: 'Inter, sans-serif',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            lineHeight: '100%',
+                            color: '#727272'
+                          }}
+                        >
+                          {value}%
+                        </div>
+                      ))}
+                    </div>
+                    <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
+                      <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
+                        {[0, 25, 50, 70, 100].map((value) => {
+                          const y = ((100 - value) / 100) * 100;
+                          return (
+                            <line
+                              key={value}
+                              x1="0"
+                              y1={`${y}%`}
+                              x2="100%"
+                              y2={`${y}%`}
+                              stroke="#E0E0E0"
+                              strokeWidth="1"
+                              style={value === 0 ? { opacity: 1 } : {}}
+                            />
+                          );
+                        })}
+                      </svg>
+                      <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} viewBox="0 0 600 200" preserveAspectRatio="none">
+                        <defs>
+                          <marker id="arrowhead-manager-mobile" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                            <polygon points="0 0, 8 4, 0 8" fill="#00564F" />
+                          </marker>
+                        </defs>
+                        {(() => {
+                          const chartPoints = getAttendanceChartData(managerCharts?.attendanceSeries);
+                          const pointsString = chartPoints.map((p) => `${p.x},${p.y}`).join(' ');
+                          return (
+                            <polyline
+                              points={pointsString}
+                              fill="none"
+                              stroke="#00564F"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              markerEnd="url(#arrowhead-manager-mobile)"
+                            />
+                          );
+                        })()}
+                      </svg>
+                      <div className="absolute bottom-0 left-0 right-0 flex justify-between" style={{ height: '30px' }}>
+                        {['-6', '-5', '-4', '-3', '-2', '-1', 'Today'].map((day) => (
+                          <div
+                            key={day}
+                            className="text-center flex items-center justify-center"
+                            style={{
+                              fontFamily: 'Inter, sans-serif',
+                              fontSize: '10px',
+                              fontWeight: 500,
+                              lineHeight: '100%',
+                              color: '#827F7F',
+                              width: `${100 / 7}%`
+                            }}
+                          >
+                            {day}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[10px] shadow-sm border border-[#E0E0E0] p-[16px]">
+                  <h3 className="text-[16px] font-semibold text-[#000000] mb-[16px] text-left" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%' }}>
+                    Team Activity Statistics (Last 7 days)
+                  </h3>
+                  <div className="relative" style={{ height: '200px' }}>
+                    <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '26px' }}>
+                      {[15, 12, 9, 6, 0].map((value) => (
+                        <div
+                          key={value}
+                          className="text-right pr-[2px]"
+                          style={{
+                            fontFamily: 'Inter, sans-serif',
+                            fontSize: '10px',
+                            fontWeight: 500,
+                            lineHeight: '100%',
+                            color: '#727272'
+                          }}
+                        >
+                          {value}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="ml-[30px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
+                      <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
+                        {[15, 12, 9, 6, 0].map((value, index) => {
+                          const y = (index / 4) * 100;
+                          return <line key={value} x1="0" y1={`${y}%`} x2="100%" y2={`${y}%`} stroke="#E0E0E0" strokeWidth="1" />;
+                        })}
+                      </svg>
+                      <div className="absolute inset-0 flex items-end justify-start" style={{ height: 'calc(100% - 30px)', paddingLeft: '4px', paddingRight: '4px', gap: '4px' }}>
+                        {getActivityChartData(managerCharts?.activitySeries).map((values, dayIndex) => {
+                          const availableWidth = 'calc(100% - 8px)';
+                          const gapTotal = 4 * 6;
+                          const dayWidth = `calc((${availableWidth} - ${gapTotal}px) / 7)`;
+                          const valueToHeight = (value) => {
+                            if (value === 0) return 100;
+                            if (value === 6) return 75;
+                            if (value === 9) return 50;
+                            if (value === 12) return 25;
+                            if (value === 15) return 0;
+                            if (value > 12 && value < 15) return 25 - ((value - 12) / 3) * 25;
+                            if (value > 9 && value < 12) return 50 - ((value - 9) / 3) * 25;
+                            if (value > 6 && value < 9) return 75 - ((value - 6) / 3) * 25;
+                            if (value > 0 && value < 6) return 100 - (value / 6) * 25;
+                            if (value > 15) return 0;
+                            return 100;
+                          };
+                          return (
+                            <div key={dayIndex} className="flex items-end justify-center gap-[1px]" style={{ width: dayWidth, height: '100%', flexShrink: 0 }}>
+                              {values[0] > 0 && (
+                                <div
+                                  style={{
+                                    width: 'calc(35% - 0.5px)',
+                                    height: `${valueToHeight(values[0])}%`,
+                                    backgroundColor: '#00564F',
+                                    borderRadius: '2px 2px 0 0',
+                                    minHeight: values[0] > 0 ? '2px' : '0'
+                                  }}
+                                />
+                              )}
+                              {values[1] > 0 && (
+                                <div
+                                  style={{
+                                    width: 'calc(35% - 0.5px)',
+                                    height: `${valueToHeight(values[1])}%`,
+                                    backgroundColor: '#02706680',
+                                    borderRadius: '2px 2px 0 0',
+                                    minHeight: values[1] > 0 ? '2px' : '0'
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 flex justify-between" style={{ height: '30px' }}>
+                        {['-6', '-5', '-4', '-3', '-2', '-1', 'Today'].map((day) => (
+                          <div
+                            key={day}
+                            className="text-center flex items-center justify-center"
+                            style={{
+                              fontFamily: 'Inter, sans-serif',
+                              fontSize: '10px',
+                              fontWeight: 500,
+                              lineHeight: '100%',
+                              color: '#827F7F',
+                              width: `${100 / 7}%`
+                            }}
+                          >
+                            {day}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-[8px] mt-[12px]" style={{ marginLeft: '8px' }}>
+                    <div className="flex items-center gap-[6px]">
+                      <div className="rounded-full flex-shrink-0" style={{ width: '12px', height: '12px', backgroundColor: '#00564F' }} />
+                      <p className="text-[12px] font-medium text-[#000000]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>Implemented</p>
+                    </div>
+                    <div className="flex items-center gap-[6px]">
+                      <div className="rounded-full flex-shrink-0" style={{ width: '12px', height: '12px', backgroundColor: '#02706680' }} />
+                      <p className="text-[12px] font-medium text-[#000000]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, lineHeight: '100%' }}>Planned</p>
+                    </div>
+                  </div>
+                </div>
+
+                {quickActionsMobile.length > 0 && (
+                <div className="flex flex-col gap-[8px]">
+                  {quickActionsMobile.map((action) => (
+                    <button
+                      key={action.key}
+                      type="button"
+                      onClick={action.onClick}
+                      className="bg-white rounded-[8px] shadow-sm border border-[#E0E0E0] p-[12px] flex items-center gap-[10px] cursor-pointer min-w-0 w-full text-left"
+                    >
+                      <img src={action.icon} alt="" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
+                      <p className="text-[14px] font-semibold truncate" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, lineHeight: '100%', color: '#00564F' }}>
+                        {action.label}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+                )}
+              </>
+            )}
 
             {/* Organization-wide Attendance Chart - Mobile */}
             {!(isPersonalRole || isManager) && (

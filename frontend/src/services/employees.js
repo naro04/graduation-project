@@ -36,6 +36,26 @@ export async function getTeamMembers(params = {}) {
 }
 
 /**
+ * GET /employees/team/assignable-candidates
+ * موظفون يمكن للمدير إضافتهم لفريقه (ليسوا تحت إشرافه حاليًا)
+ */
+export async function getTeamAssignableCandidates() {
+  const res = await apiClient.get(`${BASE}/team/assignable-candidates`);
+  const raw = res.data?.data ?? res.data;
+  const list = Array.isArray(raw) ? raw : raw?.items ?? raw?.records ?? [];
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * POST /employees/team/assign
+ * ربط موظف موجود بفريق المدير الحالي
+ */
+export async function assignEmployeeToMyTeam(employeeId) {
+  const res = await apiClient.post(`${BASE}/team/assign`, { employee_id: employeeId });
+  return res.data?.data ?? res.data;
+}
+
+/**
  * GET http://localhost:5000/api/v1/employees/reports
  * تقارير HR
  */

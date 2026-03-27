@@ -76,6 +76,7 @@ table td span {
 }
 table thead th {
   text-align: center;
+  color: #6b7280; /* avoid browser default “link” blue on header cells */
 }
 table tbody td {
   text-align: center;
