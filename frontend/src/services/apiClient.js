@@ -1,19 +1,28 @@
 import axios from "axios";
+import { API_BASE_URL } from "../config/api.js";
+import { clearClientSession } from "./auth.js";
 
-// الباكند المرفوع على Railway – يُستخدم لوكل ودومين
-const baseURL = "https://graduation-project-production-b02b.up.railway.app/api/v1";
 export const apiClient = axios.create({
-  baseURL,
+  baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
 });
 
-// لو في توكن:
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("authToken"); // تغيير من "token" إلى "authToken" ليتوافق مع api.js
+  const token = localStorage.getItem("authToken");
   if (token) config.headers.Authorization = `Bearer ${token}`;
-  // عند إرسال FormData لا نستخدم application/json حتى يضيف المتصفح multipart/form-data مع boundary
   if (config.data instanceof FormData) {
     delete config.headers["Content-Type"];
   }
   return config;
 });
+
+// Align client session with API when the server rejects the JWT
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      clearClientSession();
+    }
+    return Promise.reject(error);
+  }
+);

@@ -214,12 +214,12 @@ export const menuConfig = {
           { id: "3-2", name: "My Attendance", path: "/attendance/my" },
         ]
       },
-      // Activities: للمنجر بدون منيو — عنصر واحد مباشر (زي التصميم)، يفتح صفحة الموافقة
+      // Activities: للمنجر بدون منيو — عنصر واحد مباشر (زي التصميم)، يفتح صفحة أنشطة الفريق
       { 
         id: 4, 
         name: "Activities", 
         icon: "Activities.png", 
-        path: "/approvals/activities", 
+        path: "/my-team/activities", 
         hasSubmenu: false 
       },
       { 

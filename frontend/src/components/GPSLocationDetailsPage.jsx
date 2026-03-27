@@ -400,7 +400,7 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
                 onClick={async () => {
                   const attendanceId = employee?.id ?? employee?.originalData?.id;
                   if (!attendanceId) {
-                    setDeleteError('لا يمكن تحديد سجل الحضور.');
+                    setDeleteError('Could not identify the attendance record.');
                     return;
                   }
                   setDeleteError(null);
@@ -410,7 +410,7 @@ const GPSLocationDetailsPage = ({ userRole = "superAdmin" }) => {
                     setShowWarningModal(false);
                     navigate('/attendance/gps');
                   } catch (err) {
-                    const msg = err?.response?.data?.message || err?.message || 'فشل حذف سجل التحقق.';
+                    const msg = err?.response?.data?.message || err?.message || 'Failed to delete verification record.';
                     setDeleteError(msg);
                   } finally {
                     setDeleteLoading(false);

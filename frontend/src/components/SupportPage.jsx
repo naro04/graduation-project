@@ -154,7 +154,7 @@ const SupportPage = ({ userRole = "superAdmin" }) => {
       const status = err.response?.status;
       const friendlyMessage =
         status === 404
-          ? "خدمة الدعم غير متاحة حالياً. يرجى المحاولة لاحقاً أو التواصل مع المسؤول."
+          ? "Support is temporarily unavailable. Please try again later or contact an administrator."
           : err.response?.data?.message || err.message || "Failed to submit ticket.";
       setSubmitError(friendlyMessage);
     } finally {

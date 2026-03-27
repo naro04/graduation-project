@@ -133,7 +133,7 @@ const EditLocationModal = ({ location, onClose, onUpdate, onDelete, locationType
 
                     {/* Map: click to set latitude & longitude */}
                     <div className="mt-[8px]">
-                        <label className="block text-[14px] font-medium text-[#181818] mb-[8px]">اختر الموقع على الخريطة (انقر لتحديد خط العرض والطول)</label>
+                        <label className="block text-[14px] font-medium text-[#181818] mb-[8px]">Pick a point on the map (click to set latitude and longitude)</label>
                         <LocationMapPicker
                             latitude={formData.latitude}
                             longitude={formData.longitude}

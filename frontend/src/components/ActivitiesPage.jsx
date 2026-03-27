@@ -122,7 +122,7 @@ const ActivitiesPage = ({ userRole = "superAdmin" }) => {
         projectVal != null && String(projectVal).trim() ? String(projectVal).trim() : "—";
       const projectId = a.project_id ?? a.projectId;
       if (project === "—" && projectId != null && projectId !== "") {
-        project = `المشروع #${typeof projectId === "string" && projectId.length > 8 ? projectId.slice(0, 8) : projectId}`;
+        project = `Project #${typeof projectId === "string" && projectId.length > 8 ? projectId.slice(0, 8) : projectId}`;
       }
 
       return {

@@ -71,8 +71,8 @@ const RegisterPage = () => {
             // Send the access token to backend
             const result = await googleAuth(tokenResponse.access_token);
             
-            // Success - redirect to dashboard
-            navigate("/dashboard");
+            // Success - redirect to login page
+            navigate("/login");
           } catch (err) {
             setError(err.message || "Google sign-up failed. Please try again.");
             setIsGoogleLoading(false);
@@ -137,8 +137,8 @@ const RegisterPage = () => {
         privacyPolicyAgreement: agreeToTerms,
       });
       
-      // Success - redirect to dashboard
-      navigate("/dashboard");
+      // Success - redirect to login page
+      navigate("/login");
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
@@ -147,11 +147,11 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="min-h-screen w-full" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen w-full lg:h-screen lg:overflow-hidden" style={{ fontFamily: 'Inter, sans-serif' }}>
       {/* Desktop Version */}
-      <div className="hidden lg:flex min-h-screen max-w-[1440px] mx-auto">
+      <div className="hidden lg:flex h-screen max-w-[1440px] mx-auto overflow-hidden">
         {/* Left Section - White Background with Form */}
-        <div className="w-[48%] min-h-screen bg-white flex flex-col">
+        <div className="w-[48%] h-full bg-white flex flex-col overflow-y-auto overflow-x-hidden">
           {/* Logo */}
           <div className="pt-[43px] pl-[32px]">
             <img 
@@ -451,7 +451,7 @@ const RegisterPage = () => {
 
         {/* Right Section - Green Background */}
         <div 
-          className="relative w-[52%] min-h-screen flex flex-col overflow-hidden"
+          className="relative w-[52%] h-full flex flex-col overflow-hidden"
           style={{ backgroundColor: '#00564F' }}
         >
           {/* Content - Centered */}

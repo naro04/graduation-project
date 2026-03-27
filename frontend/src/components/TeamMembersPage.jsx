@@ -190,8 +190,8 @@ const TeamMembersPage = ({ userRole = "manager" }) => {
         if (!is403) {
           const serverMsg = err?.response?.data?.message || err?.response?.data?.error;
           const fallback = status === 500
-            ? "الخادم غير متاح حالياً. جرّب إعادة المحاولة لاحقاً."
-            : "تعذر تحميل أعضاء الفريق. جرّب إعادة المحاولة.";
+            ? "Server is temporarily unavailable. Please try again later."
+            : "Could not load team members. Please try again.";
           setError(serverMsg || err?.message || fallback);
         }
       }

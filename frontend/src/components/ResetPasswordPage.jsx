@@ -22,7 +22,7 @@ const ResetPasswordPage = () => {
 
   useEffect(() => {
     if (!tokenFromUrl) {
-      setError("رابط غير صالح أو منتهي. اطلب رابط إعادة تعيين جديد من صفحة نسيت كلمة المرور.");
+      setError("Invalid or expired link. Request a new reset link from Forgot password.");
     }
   }, [tokenFromUrl]);
 
@@ -31,11 +31,11 @@ const ResetPasswordPage = () => {
     setError("");
     if (!tokenFromUrl) return;
     if (password !== confirmPassword) {
-      setError("كلمات المرور غير متطابقة.");
+      setError("Passwords do not match.");
       return;
     }
     if (password.length < 8) {
-      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل.");
+      setError("Password must be at least 8 characters.");
       return;
     }
     setLoading(true);
@@ -44,7 +44,7 @@ const ResetPasswordPage = () => {
       setSuccess(true);
       setTimeout(() => navigate("/login"), 2000);
     } catch (err) {
-      setError(err.message || "رابط غير صالح أو منتهي. اطلب رابطاً جديداً.");
+      setError(err.message || "Invalid or expired link. Request a new link.");
     } finally {
       setLoading(false);
     }
@@ -102,7 +102,7 @@ const ResetPasswordPage = () => {
         {error && <p className="text-[14px] text-red-600">{error}</p>}
         {success && (
           <p className="text-[14px] font-medium" style={{ color: "#00564F" }}>
-            تم تغيير كلمة المرور بنجاح. جاري تحويلك لتسجيل الدخول...
+            Password changed successfully. Redirecting to sign in...
           </p>
         )}
 
@@ -115,7 +115,7 @@ const ResetPasswordPage = () => {
             border: "1px solid rgba(28, 137, 154, 0.7)",
           }}
         >
-          {loading ? "جاري الحفظ..." : "RESET PASSWORD"}
+          {loading ? "Saving..." : "RESET PASSWORD"}
         </button>
 
         <div className="text-center mt-[16px] flex flex-col gap-[8px]">

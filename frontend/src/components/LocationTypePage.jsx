@@ -80,7 +80,7 @@ const LocationTypePage = ({ userRole = "superAdmin" }) => {
       console.error("Failed to fetch location types:", err);
       const status = err.response?.status;
       const msg = status === 403
-        ? "لا تملك صلاحية الوصول. تأكد من تسجيل الدخول والحساب يملك صلاحية إدارة المواقع."
+        ? "Access denied. Sign in with an account that has permission to manage locations."
         : (err.response?.data?.message ?? err.message ?? "Failed to load location types");
       setSubmitError(msg);
       setLocationTypesData([]);

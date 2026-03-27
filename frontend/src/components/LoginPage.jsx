@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { login } from "../services/auth.js";
 
 // Logo images
@@ -23,6 +23,7 @@ const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,8 +46,8 @@ const LoginPage = () => {
       const response = await login(email.trim(), password, rememberMe);
       console.log('✅ Login successful:', response);
       
-      // Success - redirect to dashboard
-      navigate("/dashboard");
+      const from = location.state?.from || { pathname: "/dashboard" };
+      navigate(from, { replace: true });
     } catch (err) {
       console.error('❌ Login failed:', {
         message: err.message,
@@ -300,7 +301,7 @@ const LoginPage = () => {
       </div>
 
       {/* Desktop Version - مظهر الصورة الأولى: تقسيم واضح + نمط هندسي خفيف على الخلفية */}
-      <div className="hidden lg:flex h-screen w-full max-w-[1440px] mx-auto overflow-hidden">
+      <div className="hidden lg:flex h-screen w-full overflow-hidden">
         {/* Left Section - Teal مع الأشكال الهندسية كخلفية ناعمة */}
         <div 
           className="relative w-[52%] h-full flex flex-col overflow-hidden"
@@ -350,10 +351,9 @@ const LoginPage = () => {
             className="absolute pointer-events-none object-contain"
             style={{
               top: '8%',
-              right: '-20px',
+              right: '12px',
               width: '113px',
-              height: '113px',
-              opacity: 0.25
+              height: '113px'
             }}
           />
           <img 
@@ -362,10 +362,9 @@ const LoginPage = () => {
             className="absolute pointer-events-none object-contain"
             style={{
               top: '40%',
-              right: '-50px',
+              right: '8px',
               width: '150px',
-              height: '160px',
-              opacity: 0.25
+              height: '160px'
             }}
           />
           <img 
@@ -374,10 +373,9 @@ const LoginPage = () => {
             className="absolute pointer-events-none object-contain"
             style={{
               bottom: '18%',
-              right: '-35px',
+              right: '14px',
               width: '92px',
-              height: '103px',
-              opacity: 0.25
+              height: '103px'
             }}
           />
           <img 
@@ -389,8 +387,7 @@ const LoginPage = () => {
               left: '-10%',
               width: '45%',
               height: '50%',
-              maxWidth: '320px',
-              opacity: 0.2
+              maxWidth: '320px'
             }}
           />
         </div>

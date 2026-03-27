@@ -956,14 +956,14 @@ const EmployeesPage = ({ userRole = "superAdmin" }) => {
                             className="w-[16px] h-[16px] rounded border-[#E0E0E0] cursor-pointer"
                           />
                         </td>
-                        <td className="py-[16px] px-[20px] text-center" style={{ borderRight: '1px solid #E0E0E0' }}>
-                          <div className="flex items-center justify-center gap-[12px]">
+                        <td className="py-[16px] px-[20px] text-left" style={{ borderRight: '1px solid #E0E0E0' }}>
+                          <div className="flex items-center gap-[12px] pl-[6px] min-w-0">
                             <AvatarOrPlaceholder
                               src={employee.photo}
                               alt={employee.name}
                               className="w-[40px] h-[40px] rounded-full flex-shrink-0"
                             />
-                            <p className="text-[14px] font-medium" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, color: '#000000' }}>
+                            <p className="text-[14px] font-medium text-left leading-[1.2] min-w-0" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500, color: '#000000' }}>
                               {employee.name}
                             </p>
                           </div>

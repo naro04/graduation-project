@@ -842,14 +842,15 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                 <table className="w-full min-w-0" style={{ tableLayout: 'fixed' }}>
                   <colgroup>
                     <col style={{ width: '44px' }} />
-                    <col style={{ width: '18%' }} />
-                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '17%' }} />
+                    <col style={{ width: '112px' }} />
                     <col style={{ width: '72px' }} />
                     <col style={{ width: '72px' }} />
-                    <col style={{ width: '100px' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '90px' }} />
-                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '96px' }} />
+                    <col style={{ width: '13%' }} />
+                    {/* Wide enough for "Missing Check-out"; ellipsis if longer — keeps Action column aligned */}
+                    <col style={{ width: '148px' }} />
+                    <col style={{ width: '96px' }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
@@ -882,7 +883,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                       <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
                         Status
                       </th>
-                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] leading-tight" style={{ fontWeight: 500 }}>
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] leading-tight" style={{ fontWeight: 500, width: '96px' }}>
                         Action
                       </th>
                     </tr>
@@ -935,20 +936,23 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                             {employee.location}
                           </span>
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                        <td
+                          className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center align-middle min-w-0"
+                          style={{ overflow: 'hidden', maxWidth: 0 }}
+                          title={employee.status}
+                        >
                           <span
-                            className="text-[14px] inline-block"
-                            style={{
-                              fontWeight: 600,
-                              whiteSpace: 'nowrap',
-                              color: '#333333'
-                            }}
+                            className="text-[14px] block w-full truncate"
+                            style={{ fontWeight: 600, color: '#333333' }}
                           >
                             {employee.status}
                           </span>
                         </td>
-                        <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <div className="flex items-center justify-center gap-0">
+                        <td
+                          className="px-[8px] py-[12px] text-center align-middle bg-white"
+                          style={{ width: '96px', minWidth: '96px', maxWidth: '96px', whiteSpace: 'nowrap', verticalAlign: 'middle' }}
+                        >
+                          <div className="flex items-center justify-center gap-0 flex-nowrap">
                             <button
                               onClick={() => {
                                 setSelectedEmployeeForDetails(employee);

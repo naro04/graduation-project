@@ -2,6 +2,30 @@
 // Handles all authentication-related API calls
 
 import { apiRequest, setToken, removeToken, getToken } from './api.js';
+import { isJwtExpired } from '../utils/jwt.js';
+
+/**
+ * Clear stored session on the client (token + cached user). Does not call the API.
+ */
+const clearClientSession = () => {
+  removeToken();
+  localStorage.removeItem('userData');
+  sessionStorage.removeItem('userData');
+};
+
+/**
+ * True when a JWT is stored and, if it is a standard JWT with exp, it is not expired.
+ * Expired tokens are cleared so the UI matches server-side session rules.
+ */
+const hasValidAuthSession = () => {
+  const token = getToken();
+  if (!token || typeof token !== 'string' || !token.trim()) return false;
+  if (isJwtExpired(token)) {
+    clearClientSession();
+    return false;
+  }
+  return true;
+};
 
 /**
  * Login user
@@ -50,16 +74,11 @@ const login = async (email, password, rememberMe = false) => {
       userData.role = userData.role_name;
     }
 
-    // If rememberMe is true, fetch complete user data from /auth/me endpoint
-    // This ensures we have full user data including permissions and role info
-    if (rememberMe && token) {
+    // Always try /auth/me after login so userData includes full profile fields (e.g. avatar)
+    if (token) {
       try {
-        console.log('📤 Fetching complete user data from /auth/me (remember me enabled)');
-        const meResponse = await apiRequest('/auth/me', {
-          method: 'GET',
-        });
-        
-        // Update userData with complete profile from /auth/me
+        console.log('📤 Fetching complete user data from /auth/me after login');
+        const meResponse = await apiRequest('/auth/me', { method: 'GET' });
         if (meResponse.data?.user) {
           userData = meResponse.data.user;
         } else if (meResponse.user) {
@@ -67,24 +86,24 @@ const login = async (email, password, rememberMe = false) => {
         } else if (meResponse.data) {
           userData = meResponse.data;
         }
-        if (userData && userData.role_name && !userData.role) userData.role = userData.role_name;
-
-        // Store in localStorage for persistent session
-        if (userData) {
-          localStorage.setItem('userData', JSON.stringify(userData));
-        }
-        
-        console.log('✅ Complete user data stored (remember me)');
       } catch (meError) {
         console.warn('⚠️ Failed to fetch /auth/me, using login response data:', meError);
-        // Fallback to storing login response data
-        if (userData) {
-          localStorage.setItem('userData', JSON.stringify(userData));
-        }
       }
-    } else if (userData) {
-      // Store in sessionStorage for non-persistent session
-      sessionStorage.setItem('userData', JSON.stringify(userData));
+    }
+
+    if (userData && userData.role_name && !userData.role) {
+      userData.role = userData.role_name;
+    }
+
+    // Keep only one storage target based on rememberMe preference
+    if (userData) {
+      if (rememberMe) {
+        sessionStorage.removeItem('userData');
+        localStorage.setItem('userData', JSON.stringify(userData));
+      } else {
+        localStorage.removeItem('userData');
+        sessionStorage.setItem('userData', JSON.stringify(userData));
+      }
     }
 
     return response;
@@ -226,10 +245,7 @@ const logout = async () => {
     // Even if API call fails, we should still clear local data
     console.warn('⚠️ Logout API call failed, clearing local data anyway:', error);
   } finally {
-    // Always clear local storage regardless of API response
-    removeToken();
-    localStorage.removeItem('userData');
-    sessionStorage.removeItem('userData');
+    clearClientSession();
   }
 };
 
@@ -246,7 +262,7 @@ const getAuthToken = () => {
  * @returns {boolean} - True if token exists
  */
 const isAuthenticated = () => {
-  return !!getToken();
+  return hasValidAuthSession();
 };
 
 /**
@@ -293,6 +309,29 @@ const getEffectiveRole = (fallback = 'superAdmin') => {
   return fallback;
 };
 
+const normalizePermissionSlug = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[\/\s]+/g, "_")
+    .replace(/[^a-z0-9:_,-]/g, "");
+
+const hasAnyPermission = (requiredPermissions = [], userPermissions = null) => {
+  if (!Array.isArray(requiredPermissions) || requiredPermissions.length === 0) return true;
+
+  const perms = Array.isArray(userPermissions)
+    ? userPermissions
+    : (getCurrentUser()?.permissions || []);
+  if (!Array.isArray(perms) || perms.length === 0) return false;
+
+  const normalizedUserPerms = new Set(perms.map(normalizePermissionSlug).filter(Boolean));
+  return requiredPermissions
+    .map(normalizePermissionSlug)
+    .filter(Boolean)
+    .some((p) => normalizedUserPerms.has(p));
+};
+
 /**
  * Fetch current user data from API
  * @returns {Promise<object>} - User data with permissions and role info
@@ -316,6 +355,12 @@ const getMe = async () => {
       userData = response.data;
     }
 
+    // Keep permissions from existing cached session if /auth/me does not return them
+    const existingUser = getCurrentUser();
+    if (userData && (!Array.isArray(userData.permissions) || userData.permissions.length === 0) && Array.isArray(existingUser?.permissions)) {
+      userData.permissions = existingUser.permissions;
+    }
+
     // Store user data if available
     if (userData) {
       localStorage.setItem('userData', JSON.stringify(userData));
@@ -328,10 +373,7 @@ const getMe = async () => {
     
     // Handle specific error cases
     if (error.status === 401) {
-      // Token expired or invalid - clear stored data
-      removeToken();
-      localStorage.removeItem('userData');
-      sessionStorage.removeItem('userData');
+      clearClientSession();
       throw new Error('Session expired. Please login again.');
     } else if (error.status === 500) {
       throw new Error('Internal server error. Please try again later or contact support.');
@@ -375,4 +417,4 @@ const resetPassword = async (token, password, confirmPassword) => {
   return response;
 };
 
-export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, getCurrentUser, getEffectiveRole, getMe, forgotPassword, resetPassword, updateStoredUserAvatar };
+export { login, register, googleAuth, logout, getAuthToken, isAuthenticated, hasValidAuthSession, clearClientSession, getCurrentUser, getEffectiveRole, getMe, forgotPassword, resetPassword, updateStoredUserAvatar, hasAnyPermission };

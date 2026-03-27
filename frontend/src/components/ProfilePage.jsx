@@ -5,6 +5,7 @@ import {
   updateProfile,
   getPersonalInfo,
   updatePersonalInfo,
+  updatePersonalAvatar,
   getJobInfo,
   updateJobInfo,
   getEmergencyContact,
@@ -19,8 +20,8 @@ import { getRoles } from "../services/rbac.js";
 import { getLocationTypes } from "../services/locationTypes.js";
 import { getLocations } from "../services/locations.js";
 import { createLocationAssignment, deleteLocationAssignment } from "../services/locationAssignments.js";
+import { getMyAttendanceOverview } from "../services/attendance.js";
 import { getEffectiveRole, getCurrentUser, updateStoredUserAvatar } from "../services/auth.js";
-import { uploadImage } from "../services/uploads.js";
 import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
 import HeaderIcons from "./HeaderIcons";
@@ -113,6 +114,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   const avatarFileInputRef = useRef(null);
   const [isAvatarUploading, setIsAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState(null);
+  const [todayCheckInLocation, setTodayCheckInLocation] = useState(null);
 
   // Role display names
   const effectiveRole = getEffectiveRole();
@@ -240,7 +242,36 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
           const data = await getWorkSchedule();
           if (data) setProfileData((prev) => ({ ...prev, workSchedule: data }));
         } else if (activeTab === "locations") {
-          const list = await getProfileLocation();
+          const [list, attendanceData] = await Promise.all([
+            getProfileLocation(),
+            getMyAttendanceOverview({ page: 1, limit: 1 }),
+          ]);
+          const todayStatus = attendanceData?.todayStatus ?? null;
+          if (todayStatus?.checkedIn && todayStatus?.checkInLatitude != null && todayStatus?.checkInLongitude != null) {
+            setTodayCheckInLocation({
+              latitude: Number(todayStatus.checkInLatitude),
+              longitude: Number(todayStatus.checkInLongitude),
+            });
+          } else {
+            // Fallback: use latest attendance record that has GPS coordinates.
+            const latestWithGps = Array.isArray(attendanceData?.records)
+              ? attendanceData.records.find(
+                  (r) =>
+                    r?.location_latitude != null &&
+                    r?.location_longitude != null &&
+                    Number.isFinite(Number(r.location_latitude)) &&
+                    Number.isFinite(Number(r.location_longitude))
+                )
+              : null;
+            if (latestWithGps) {
+              setTodayCheckInLocation({
+                latitude: Number(latestWithGps.location_latitude),
+                longitude: Number(latestWithGps.location_longitude),
+              });
+            } else {
+              setTodayCheckInLocation(null);
+            }
+          }
           setProfileData((prev) => ({ ...prev, locations: Array.isArray(list) ? list : [] }));
         } else if (activeTab === "security") {
           const data = await getAccountSecurity();
@@ -677,13 +708,10 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
     setAvatarError(null);
     setIsAvatarUploading(true);
     try {
-      const url = await uploadImage(file);
-      const avatarUrl = typeof url === "string" ? url : (url?.url ?? url?.image_url ?? null);
-      if (!avatarUrl) throw new Error("Failed to get image URL");
-      await updatePersonalInfo({ avatarUrl });
+      await updatePersonalAvatar(file);
       const updated = await getProfileMe();
       setProfileData(updated);
-      const newAvatarUrl = updated?.avatarUrl ?? updated?.employee?.avatarUrl ?? avatarUrl;
+      const newAvatarUrl = updated?.avatarUrl ?? updated?.employee?.avatarUrl ?? null;
       updateStoredUserAvatar(newAvatarUrl);
     } catch (err) {
       console.error("Failed to update profile picture:", err);
@@ -753,7 +781,10 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   const profileLocations = profileData?.locations ?? [];
   const primaryLocation = profileLocations[0] ?? null;
   const secondaryLocation = profileLocations[1] ?? null;
-  const mapLocation = profileLocations.find((l) => l.latitude != null && l.longitude != null) || primaryLocation;
+  const mapLocation =
+    todayCheckInLocation ||
+    profileLocations.find((l) => l.latitude != null && l.longitude != null) ||
+    primaryLocation;
 
   // Close dropdown when clicking outside
   useEffect(() => {

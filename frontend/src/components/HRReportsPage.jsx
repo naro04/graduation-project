@@ -110,7 +110,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
     } catch (err) {
       const msg = err?.response?.data?.message ?? err?.message ?? "Failed to load HR reports";
       const isUnauth = err?.response?.status === 401;
-      setReportsError(isUnauth ? "يرجى تسجيل الدخول للوصول إلى تقارير HR." : msg);
+      setReportsError(isUnauth ? "Please sign in to access HR reports." : msg);
       setHrReportsData([]);
     } finally {
       setReportsLoading(false);

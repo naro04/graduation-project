@@ -150,12 +150,37 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
       const monthKey = d ? MONTH_ORDER[d.getMonth()] : null;
       if (!monthKey || !byMonth[monthKey]) return;
       const type = (r.type || "").toLowerCase().replace(/\s+/g, "");
-      const attendees = Number(r.attendees ?? r.attendees_count ?? r.attendee_count) || 0;
+      // Keep chart useful even when backend stores empty attendees_count.
+      const rawAttendees = Number(r.attendees ?? r.attendees_count ?? r.attendee_count);
+      const attendees = Number.isFinite(rawAttendees) && rawAttendees > 0 ? rawAttendees : 1;
       if (type.includes("workshop")) byMonth[monthKey].workshop += attendees;
       else if (type.includes("group") || type.includes("session")) byMonth[monthKey].groupSession += attendees;
     });
     return MONTH_ORDER.map((m) => byMonth[m] || { month: m, workshop: 0, groupSession: 0 });
   }, [reportsData]);
+
+  const createAxisTicks = (maxValue) => {
+    const safeMax = Math.max(4, Number(maxValue) || 0);
+    const step = Math.max(1, Math.ceil(safeMax / 4));
+    return [step * 4, step * 3, step * 2, step, 0];
+  };
+
+  const trendMaxValue = React.useMemo(() => {
+    const maxVal = monthlyTrendData.reduce((acc, item) => (
+      Math.max(acc, Number(item.implemented) || 0, Number(item.planned) || 0)
+    ), 0);
+    return Math.max(4, maxVal);
+  }, [monthlyTrendData]);
+
+  const participantsMaxValue = React.useMemo(() => {
+    const maxVal = monthlyParticipantsData.reduce((acc, item) => (
+      Math.max(acc, Number(item.workshop) || 0, Number(item.groupSession) || 0)
+    ), 0);
+    return Math.max(4, maxVal);
+  }, [monthlyParticipantsData]);
+
+  const trendTicks = React.useMemo(() => createAxisTicks(trendMaxValue), [trendMaxValue]);
+  const participantsTicks = React.useMemo(() => createAxisTicks(participantsMaxValue), [participantsMaxValue]);
 
   // Activity types
   const activityTypes = ["All Type", "Workshop", "Group Session"];
@@ -468,7 +493,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="relative" style={{ height: '250px' }}>
                   {/* Y-axis Labels */}
                   <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
-                    {[80, 60, 40, 20, 0].map((value) => (
+                    {trendTicks.map((value) => (
                       <div
                         key={value}
                         className="text-right pr-[8px]"
@@ -489,7 +514,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                     {/* Grid Lines */}
                     <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                      {[80, 60, 40, 20, 0].map((value, index) => {
+                      {trendTicks.map((value, index) => {
                         const y = (index / 4) * 100;
                         return (
                           <line
@@ -544,7 +569,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       <polyline
                         points={monthlyTrendData.map((data, index) => {
                           const x = (index / 11) * 1000;
-                          const y = valueToY(data.implemented, 80, 200);
+                          const y = valueToY(data.implemented, trendMaxValue, 200);
                           return `${x},${y}`;
                         }).join(' ')}
                         fill="none"
@@ -558,7 +583,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                       <polyline
                         points={monthlyTrendData.map((data, index) => {
                           const x = (index / 11) * 1000;
-                          const y = valueToY(data.planned, 80, 200);
+                          const y = valueToY(data.planned, trendMaxValue, 200);
                           return `${x},${y}`;
                         }).join(' ')}
                         fill="none"
@@ -628,7 +653,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="relative" style={{ height: '250px' }}>
                   {/* Y-axis Labels */}
                   <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '30px' }}>
-                    {[80, 60, 40, 20, 0].map((value) => (
+                    {participantsTicks.map((value) => (
                       <div
                         key={value}
                         className="text-right pr-[8px]"
@@ -649,7 +674,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="ml-[40px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                     {/* Grid Lines */}
                     <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                      {[80, 60, 40, 20, 0].map((value, index) => {
+                      {participantsTicks.map((value, index) => {
                         const y = (index / 4) * 100;
                         return (
                           <line
@@ -679,7 +704,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                               <div
                                 style={{
                                   width: 'calc(45% - 1px)',
-                                  height: `${valueToHeight(data.workshop, 80)}%`,
+                                  height: `${valueToHeight(data.workshop, participantsMaxValue)}%`,
                                   backgroundColor: '#00564F',
                                   borderRadius: '2px 2px 0 0',
                                   minHeight: data.workshop > 0 ? '2px' : '0'
@@ -691,7 +716,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                               <div
                                 style={{
                                   width: 'calc(45% - 1px)',
-                                  height: `${valueToHeight(data.groupSession, 80)}%`,
+                                  height: `${valueToHeight(data.groupSession, participantsMaxValue)}%`,
                                   backgroundColor: '#53A7A0',
                                   borderRadius: '2px 2px 0 0',
                                   minHeight: data.groupSession > 0 ? '2px' : '0'
@@ -1215,7 +1240,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
               <div className="relative" style={{ height: '200px' }}>
                 {/* Y-axis Labels */}
                 <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '25px' }}>
-                  {[80, 60, 40, 20, 0].map((value) => (
+                  {trendTicks.map((value) => (
                     <div
                       key={value}
                       className="text-right pr-[4px]"
@@ -1235,7 +1260,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="ml-[30px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                   {/* Grid Lines */}
                   <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                    {[80, 60, 40, 20, 0].map((value, index) => {
+                    {trendTicks.map((value, index) => {
                       const y = (index / 4) * 100;
                       return (
                         <line
@@ -1281,7 +1306,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     <polyline
                       points={monthlyTrendData.map((data, index) => {
                         const x = (index / 11) * 1000;
-                        const y = valueToY(data.implemented, 80, 200);
+                        const y = valueToY(data.implemented, trendMaxValue, 200);
                         return `${x},${y}`;
                       }).join(' ')}
                       fill="none"
@@ -1295,7 +1320,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                     <polyline
                       points={monthlyTrendData.map((data, index) => {
                         const x = (index / 11) * 1000;
-                        const y = valueToY(data.planned, 80, 200);
+                        const y = valueToY(data.planned, trendMaxValue, 200);
                         return `${x},${y}`;
                       }).join(' ')}
                       fill="none"
@@ -1350,7 +1375,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
               <div className="relative" style={{ height: '200px' }}>
                 {/* Y-axis Labels */}
                 <div className="absolute left-0 top-0 bottom-[30px] flex flex-col justify-between" style={{ width: '25px' }}>
-                  {[80, 60, 40, 20, 0].map((value) => (
+                  {participantsTicks.map((value) => (
                     <div
                       key={value}
                       className="text-right pr-[4px]"
@@ -1370,7 +1395,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                 <div className="ml-[30px] relative" style={{ height: '100%', paddingBottom: '30px' }}>
                   {/* Grid Lines */}
                   <svg className="absolute inset-0" style={{ width: '100%', height: 'calc(100% - 30px)' }} preserveAspectRatio="none">
-                    {[80, 60, 40, 20, 0].map((value, index) => {
+                    {participantsTicks.map((value, index) => {
                       const y = (index / 4) * 100;
                       return (
                         <line
@@ -1395,7 +1420,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                             <div
                               style={{
                                 width: 'calc(45% - 0.5px)',
-                                height: `${valueToHeight(data.workshop, 80)}%`,
+                                height: `${valueToHeight(data.workshop, participantsMaxValue)}%`,
                                 backgroundColor: '#00564F',
                                 borderRadius: '2px 2px 0 0',
                                 minHeight: data.workshop > 0 ? '2px' : '0'
@@ -1406,7 +1431,7 @@ const FieldActivityReportsPage = ({ userRole = "superAdmin" }) => {
                             <div
                               style={{
                                 width: 'calc(45% - 0.5px)',
-                                height: `${valueToHeight(data.groupSession, 80)}%`,
+                                height: `${valueToHeight(data.groupSession, participantsMaxValue)}%`,
                                 backgroundColor: '#53A7A0',
                                 borderRadius: '2px 2px 0 0',
                                 minHeight: data.groupSession > 0 ? '2px' : '0'

@@ -1533,7 +1533,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                   if (!employeeToDelete) return;
                   const attendanceId = employeeToDelete.id ?? employeeToDelete.originalData?.id;
                   if (!attendanceId) {
-                    alert("لا يمكن تحديد سجل الحضور.");
+                    alert("Could not identify the attendance record.");
                     return;
                   }
                   try {
@@ -1544,7 +1544,7 @@ const GPSVerificationsPage = ({ userRole = "superAdmin" }) => {
                     setEmployeeToDelete(null);
                   } catch (error) {
                     console.error("Failed to delete verification:", error);
-                    alert(error?.response?.data?.message ?? error?.message ?? "فشل حذف سجل التحقق.");
+                    alert(error?.response?.data?.message ?? error?.message ?? "Failed to delete verification record.");
                   } finally {
                     setIsDeleting(false);
                   }

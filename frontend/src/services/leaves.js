@@ -1,6 +1,6 @@
 import { apiClient } from "./apiClient";
 
-// BASE is relative to apiClient.baseURL (e.g. http://localhost:5000/api/v1 when VITE_API_BASE_URL is set)
+// BASE is relative to apiClient.baseURL (set via VITE_API_URL in .env)
 // Full URLs: GET/POST /leaves, GET /leaves/my, GET /leaves/my-stats, etc.
 const BASE = "/leaves";
 

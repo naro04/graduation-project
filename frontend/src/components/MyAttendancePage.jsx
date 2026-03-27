@@ -27,7 +27,7 @@ const DropdownArrow = new URL(
   import.meta.url
 ).href;
 
-/** تحويل إحداثيات GPS إلى عنوان (المكان اللي أنت فيه) — OpenStreetMap مجاني */
+/** Reverse-geocode GPS coordinates to a human-readable address — OpenStreetMap (free). */
 async function reverseGeocode(lat, lon) {
   try {
     const controller = new AbortController();
@@ -58,6 +58,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
   const effectiveRole = getEffectiveRole();
+  const isOfficeRole = effectiveRole === "officer";
   const [activeMenu, setActiveMenu] = useState("3-3");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState("All Status");
@@ -162,9 +163,11 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
     if (!loc || String(loc).toLowerCase().includes("unknown")) return loc || "—";
     return loc;
   })();
-  // When API didn't return a location name but we sent GPS, show "من موقعك الحالي"
+  // When API didn't return a location name but we sent GPS, show current device location label
   const hasLocationFromApi = todayLocationFromApi != null && todayLocationFromApi !== "" && todayLocationFromApi !== "—" && !String(todayLocationFromApi).toLowerCase().includes("unknown");
-  const displayLocationLabel = hasLocationFromApi ? todayLocationFromApi : (lastCheckInCoords ? "من موقعك الحالي" : checkInLocationLabel);
+  const displayLocationLabel = hasLocationFromApi
+    ? todayLocationFromApi
+    : (lastCheckInCoords ? "Current device location" : (isOfficeRole ? "Office" : checkInLocationLabel));
 
   // Derive today's check-in state from API: use the ACTIVE session (no check-out) or latest record for today
   useEffect(() => {
@@ -235,12 +238,19 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
         const found = (attendanceLocations || []).find((l) => (l.id ?? l.location_id) == locId);
         loc = found?.name ?? found?.location_name ?? (loc || "—");
       }
-      // إذا اللوكيشن "Unknown" لكن عندنا إحداثيات GPS من الباكند = التسجيل كان من الموقع الحالي
+      // If location is Unknown but backend has GPS coords, treat as GPS-registered location
       if (!loc || String(loc).toLowerCase().includes("unknown")) {
         const hasCoords = r.location_latitude != null && r.location_longitude != null;
-        loc = hasCoords ? "موقع مسجّل (GPS)" : (loc || "—");
+        if (isOfficeRole) {
+          loc = "Office";
+        } else {
+          loc = hasCoords ? "Registered location (GPS)" : (loc || "—");
+        }
       }
-      const typ = r.attendance_type ?? r.type ?? r.check_method ?? "—";
+      let typ = r.attendance_type ?? r.type ?? r.check_method ?? "—";
+      if (isOfficeRole && (!typ || typ === "—" || String(typ).toLowerCase() === "manual")) {
+        typ = "Office";
+      }
       const st = r.status ?? "Present";
       return {
         id: r.id ?? r.attendance_id,
@@ -253,7 +263,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
         status: st,
       };
     });
-  }, [attendanceFromApi, attendanceLocations]);
+  }, [attendanceFromApi, attendanceLocations, isOfficeRole]);
 
   // Format date
   const formatDate = (date) => {
@@ -324,6 +334,10 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
   }, []);
 
   const handleCheckIn = () => {
+    if (isOfficeRole) {
+      confirmCheckIn();
+      return;
+    }
     setShowLocationModal(true);
   };
 
@@ -333,6 +347,11 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
     const buildPayload = (coords, addressLabel) => {
       const payload = {};
       payload.check_in_time = new Date().toISOString();
+      if (isOfficeRole) {
+        payload.work_type = "Office";
+        payload.check_in_method = "Manual";
+        payload.location_address = "Office";
+      }
       if (selectedLocationId != null) {
         payload.location_id = selectedLocationId;
         payload.locationId = selectedLocationId;
@@ -341,14 +360,18 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
         payload.latitude = Number(coords.latitude);
         payload.longitude = Number(coords.longitude);
         payload.check_in_method = "GPS";
-        // العنوان الحقيقي إن وُجد (من عكس الجيوكودينج)، وإلا ن fallback
-        payload.location_address = addressLabel || "موقع مسجّل (GPS)";
+        // Human-readable address from reverse geocoding, else fallback label
+        payload.location_address = addressLabel || "Registered location (GPS)";
       }
       return payload;
     };
     const tryGeolocationThenCheckIn = () => {
+      if (isOfficeRole) {
+        apiCheckIn(buildPayload(null)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
+        return;
+      }
       if (!navigator.geolocation) {
-        setAttendanceError("المتصفح لا يدعم الموقع. تم التسجيل بدون موقع.");
+        setAttendanceError("This browser does not support geolocation. Check-in recorded without location.");
         apiCheckIn(buildPayload(null)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
         return;
       }
@@ -367,8 +390,8 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
         (err) => {
           setLastCheckInCoords(null);
           const msg = err.code === 1
-            ? "لم يسمح بالموقع. فعّل صلاحية الموقع للموقع ثم جرّب مرة أخرى."
-            : "لم نتمكن من قراءة الموقع من المتصفح. تم التسجيل بدون موقع.";
+            ? "Location permission denied. Enable location for this site and try again."
+            : "Could not read location from the browser. Check-in recorded without location.";
           setAttendanceError(msg);
           apiCheckIn(buildPayload(null)).then(onCheckInSuccess).catch(onCheckInError).finally(onCheckInFinally);
         },
@@ -463,7 +486,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
           setCheckOutTime("");
           setTotalHours("");
           setAttendanceError(
-            "النظام لم يجد تسجيل حضور فعّال اليوم. يرجى الضغط على «Check-in» أولاً لتسجيل الدخول، ثم «Check-out» عند الانتهاء."
+            "No active check-in was found for today. Please use Check-in first, then Check-out when finished."
           );
           refreshMyAttendance();
         } else {
@@ -624,7 +647,9 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                   color: "#6B7280",
                 }}
               >
-                Track your daily attendance, check-ins and work hours
+                {isOfficeRole
+                  ? "Record your office attendance and work hours"
+                  : "Track your daily attendance, check-ins and work hours"}
               </p>
             </div>
 
@@ -644,9 +669,9 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
               >
                 {attendanceError.toLowerCase().includes("employee record not found") ? (
                   <>
-                    <strong>حسابك غير مرتبط بسجل موظف.</strong>
+                    <strong>Your account is not linked to an employee record.</strong>
                     <br />
-                    يرجى التواصل مع مسؤول الموارد البشرية لربط حسابك بسجل موظف في النظام حتى تتمكن من تسجيل الحضور والانصراف.
+                    Please contact HR to link your account to an employee record so you can check in and out.
                   </>
                 ) : (
                   attendanceError
@@ -790,7 +815,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                   </>
                 )}
                 </div>
-                {/* تفعيل زر الخروج إذا كنت مسجّل دخول لكن الواجهة لا تعرض ذلك */}
+                {/* Enable Check-out if already checked in but UI is out of sync */}
                 {!isCheckedOut && !isCheckedIn && !checkInOutLoading && !attendanceLoading && (
                   <button
                     type="button"
@@ -798,7 +823,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                     className="text-[14px] underline text-[#027066] hover:text-[#004D40] text-left"
                     style={{ fontFamily: "Inter, sans-serif" }}
                   >
-                    تم تسجيل الدخول مسبقاً؟ اضغط هنا لتفعيل زر الخروج
+                    Already checked in? Click here to enable Check-out
                   </button>
                 )}
               </div>
@@ -876,7 +901,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                       <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "18%" }}>Check-in</th>
                       <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "18%" }}>Check-out</th>
                       <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "10%" }}>Work hours</th>
-                      <th className="px-[12px] py-[12px] text-left text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, width: "26%" }}>Location</th>
+                      <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, width: "26%" }}>Location</th>
                       <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "8%" }}>Type</th>
                       <th className="px-[12px] py-[12px] text-center text-[14px] text-[#6B7280]" style={{ fontWeight: 500, whiteSpace: "nowrap", width: "10%" }}>Status</th>
                     </tr>
@@ -907,8 +932,8 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                         <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center align-middle overflow-hidden">
                           <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }} title={item.workHours}>{item.workHours}</span>
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left align-top overflow-hidden" style={{ wordBreak: "break-word", overflowWrap: "break-word" }}>
-                          <span className="text-[14px] text-[#333333]" style={{ fontWeight: 600 }}>{item.location}</span>
+                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center align-middle overflow-hidden" style={{ wordBreak: "break-word", overflowWrap: "break-word" }}>
+                          <span className="text-[14px] text-[#333333] block truncate" style={{ fontWeight: 600 }} title={item.location}>{item.location}</span>
                         </td>
                         <td
                           className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center"
@@ -1193,7 +1218,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
                   onClick={enableCheckOutFallback}
                   className="text-sm underline text-teal-600 hover:text-teal-800 text-left mt-1"
                 >
-                  تم تسجيل الدخول مسبقاً؟ اضغط هنا لتفعيل زر الخروج
+                  Already checked in? Click here to enable Check-out
                 </button>
               )}
             </div>
@@ -1327,7 +1352,7 @@ const MyAttendancePage = ({ userRole = "superAdmin" }) => {
       </div>
 
       <LocationErrorModal
-        isOpen={showLocationModal}
+        isOpen={!isOfficeRole && showLocationModal}
         onClose={() => setShowLocationModal(false)}
         onSelectLocation={confirmCheckIn}
       />
