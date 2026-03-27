@@ -770,14 +770,17 @@ exports.getTeamAttendance = async (req, res) => {
     try {
         const { date, location, status, search } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
-        const userId = req.user.id;
+        let managerEmployeeId = req.user.employee_id;
 
-        // Get the manager's employee_id
-        const managerResult = await pool.query('SELECT id FROM employees WHERE user_id = $1', [userId]);
-        if (managerResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Manager employee record not found' });
+        // Fallback for legacy tokens/users where employee_id may be missing on req.user
+        if (!managerEmployeeId) {
+            const userId = req.user.id;
+            const managerResult = await pool.query('SELECT id FROM employees WHERE user_id = $1', [userId]);
+            if (managerResult.rows.length === 0) {
+                return res.status(404).json({ message: 'Manager employee record not found' });
+            }
+            managerEmployeeId = managerResult.rows[0].id;
         }
-        const managerEmployeeId = managerResult.rows[0].id;
 
         // Get team members (employees where supervisor_id = manager's employee_id)
         const teamMembersResult = await pool.query(
