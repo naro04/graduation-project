@@ -4,6 +4,9 @@ const employeesController = require('../controllers/employees');
 const { protect, restrictTo } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 
+// All employee routes require authentication.
+router.use(protect);
+
 // All employee routes are protected and restricted to users with manage_employees permission
 
 router.route('/')
@@ -13,6 +16,8 @@ router.route('/')
 router.get('/reports', restrictTo('reports:hr_reports', 'manage_employees'), employeesController.getHRReports);
 
 router.get('/team/members', employeesController.getTeamMembers);
+router.get('/team/assignable-candidates', employeesController.getTeamAssignableCandidates);
+router.post('/team/assign', employeesController.assignEmployeeToMyTeam);
 
 router.post('/bulk-action', restrictTo('user_management:employees', 'user_actions:disable/delete_employee', 'manage_employees'), employeesController.bulkAction);
 
