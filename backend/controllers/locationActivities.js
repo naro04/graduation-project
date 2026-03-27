@@ -659,9 +659,9 @@ exports.getActivityReports = async (req, res) => {
             LEFT JOIN employees e ON a.employee_id = e.id
             LEFT JOIN locations l ON a.location_id = l.id
             LEFT JOIN activity_employees ae ON a.id = ae.activity_id
-            WHERE ($1::DATE IS NULL OR a.start_date >= $1)
-              AND ($2::DATE IS NULL OR a.end_date <= $2)
-              AND ($3::TEXT IS NULL OR a.activity_type = $3)
+            WHERE ($1::DATE IS NULL OR a.end_date >= $1::DATE)
+              AND ($2::DATE IS NULL OR a.start_date <= $2::DATE)
+              AND ($3::TEXT IS NULL OR LOWER(TRIM(a.activity_type)) = LOWER(TRIM($3::TEXT)))
               AND ($4::TEXT IS NULL OR a.approval_status = $4)
               AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
               AND ($6::UUID IS NULL OR a.employee_id = $6 OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
