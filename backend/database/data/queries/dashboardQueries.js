@@ -116,7 +116,59 @@ const dashboardQueries = {
             (SELECT COUNT(*) FROM employees WHERE status = 'active') as active_users,
             (SELECT COUNT(*) FROM employees WHERE status != 'active') as inactive_users,
             (SELECT COUNT(*) FROM employees WHERE hired_at >= CURRENT_DATE - INTERVAL '30 days') as new_users_30d;
-    `
+    `,
+
+    // 8. Weekly Attendance Percentage (Last 7 days)
+    getAttendanceWeekPercentage: (scope = 'system') => {
+        let filter = "";
+        let employeeFilter = "status = 'active'";
+        if (scope === 'team') {
+            filter = "AND a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1)";
+            employeeFilter += " AND supervisor_id = $1";
+        } else if (scope === 'personal') {
+            filter = "AND a.employee_id = $1";
+            employeeFilter += " AND id = $1";
+        }
+
+        return `
+            WITH daily_attendance AS (
+                SELECT 
+                    day_series,
+                    COUNT(DISTINCT a.employee_id) as present_count
+                FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') as day_series
+                LEFT JOIN attendance a ON DATE(a.check_in_time) = day_series ${filter}
+                GROUP BY day_series
+            ),
+            team_size AS (
+                SELECT COUNT(*) as total FROM employees WHERE ${employeeFilter}
+            )
+            SELECT 
+                CASE 
+                    WHEN (SELECT total FROM team_size) = 0 THEN 0
+                    ELSE ROUND(AVG(present_count)::numeric / (SELECT total FROM team_size) * 100)
+                END as weekly_percentage
+            FROM daily_attendance;
+        `;
+    },
+
+    // 9. Activity Metrics (Approved/Pending counts - last 7 days)
+    getActivityMetrics: (scope = 'system') => {
+        let filter = "WHERE start_time >= CURRENT_DATE - INTERVAL '6 days'";
+        if (scope === 'team') {
+            filter += " AND id IN (SELECT activity_id FROM activity_employees WHERE employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1))";
+        } else if (scope === 'personal') {
+            filter += " AND id IN (SELECT activity_id FROM activity_employees WHERE employee_id = $1)";
+        }
+
+        return `
+            SELECT 
+                COUNT(*) FILTER (WHERE approval_status = 'Approved') as approved_count,
+                COUNT(*) FILTER (WHERE approval_status = 'Pending') as pending_count,
+                COUNT(*) as total_count
+            FROM activities
+            ${filter};
+        `;
+    }
 };
 
 module.exports = dashboardQueries;
