@@ -17,7 +17,7 @@ const dashboardQueries = {
             attendanceFilter += " AND employee_id = $1";
             return `
                 SELECT 
-                    COUNT(*) FILTER (WHERE daily_status = 'Present') as present_count,
+                    COUNT(*) FILTER (WHERE daily_status IN ('Present', 'Late') OR daily_status IS NULL) as present_count,
                     COUNT(*) FILTER (WHERE daily_status = 'Late') as late_count,
                     COUNT(*) as total_present,
                     1 as total_active
@@ -28,7 +28,7 @@ const dashboardQueries = {
 
         return `
             SELECT 
-                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status = 'Present') as present_count,
+                COUNT(DISTINCT employee_id) FILTER (WHERE daily_status IN ('Present', 'Late') OR daily_status IS NULL) as present_count,
                 COUNT(DISTINCT employee_id) FILTER (WHERE daily_status = 'Late') as late_count,
                 COUNT(DISTINCT employee_id) as total_present,
                 (SELECT COUNT(*) FROM employees WHERE ${employeeFilter}) as total_active
@@ -94,10 +94,18 @@ const dashboardQueries = {
         let filter = "";
         if (scope === 'team') {
             // Team scope: Activities where any team member is assigned
-            filter = "AND (act.id IN (SELECT activity_id FROM activity_employees WHERE employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1)))";
+            filter = `AND (
+                act.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1)
+                OR 
+                act.id IN (SELECT activity_id FROM activity_employees WHERE employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1))
+            )`;
         } else if (scope === 'personal') {
             // Personal scope: Activities where the current user is assigned
-            filter = "AND (act.id IN (SELECT activity_id FROM activity_employees WHERE employee_id = $1))";
+            filter = `AND (
+                act.employee_id = $1
+                OR 
+                act.id IN (SELECT activity_id FROM activity_employees WHERE employee_id = $1)
+            )`;
         }
 
         return `
@@ -106,7 +114,7 @@ const dashboardQueries = {
                 SUM(CASE WHEN act.implementation_status = 'Implemented' THEN 1 ELSE 0 END) as implemented_count,
                 SUM(CASE WHEN act.implementation_status = 'Planned' THEN 1 ELSE 0 END) as planned_count
             FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') as day_series
-            LEFT JOIN activities act ON DATE(act.start_time) = day_series ${filter}
+            LEFT JOIN activities act ON COALESCE(DATE(act.start_time), act.start_date) = day_series ${filter}
             GROUP BY day_series
             ORDER BY day_series ASC;
         `;
@@ -155,11 +163,19 @@ const dashboardQueries = {
 
     // 9. Activity Metrics (Approved/Pending counts - last 7 days)
     getActivityMetrics: (scope = 'system') => {
-        let filter = "WHERE start_time >= CURRENT_DATE - INTERVAL '6 days'";
+        let filter = "WHERE (start_time >= CURRENT_DATE - INTERVAL '6 days' OR start_date >= CURRENT_DATE - INTERVAL '6 days')";
         if (scope === 'team') {
-            filter += " AND id IN (SELECT activity_id FROM activity_employees WHERE employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1))";
+            filter += ` AND (
+                employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1)
+                OR 
+                id IN (SELECT activity_id FROM activity_employees WHERE employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1))
+            )`;
         } else if (scope === 'personal') {
-            filter += " AND id IN (SELECT activity_id FROM activity_employees WHERE employee_id = $1)";
+            filter += ` AND (
+                employee_id = $1
+                OR 
+                id IN (SELECT activity_id FROM activity_employees WHERE employee_id = $1)
+            )`;
         }
 
         return `
