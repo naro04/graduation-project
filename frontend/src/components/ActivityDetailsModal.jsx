@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getLocationActivityById } from "../services/locationActivities";
+import { getLocationActivityById, approveLocationActivity, rejectLocationActivity } from "../services/locationActivities";
 import { apiClient } from "../services/apiClient";
 
 // Icons
@@ -36,6 +36,20 @@ function getActivityImageUrls(api) {
     return urls;
 }
 
+/** Map implementation_status / approval_status to English label for display */
+function getStatusLabel(api) {
+    const approval = (api?.approval_status ?? api?.approval ?? "").toString().trim().toLowerCase();
+    const impl = (api?.implementation_status ?? api?.status ?? "").toString().trim();
+    const implLower = impl.toLowerCase();
+    if (approval === "pending") return "Pending";
+    if (implLower === "planned") return "Planned";
+    if (implLower === "implemented") return "Implemented";
+    if (implLower === "overdue") return "Overdue";
+    if (implLower === "canceled" || implLower === "cancelled") return "Canceled";
+    if (implLower === "on_hold" || implLower === "on hold") return "On Hold";
+    return impl || "—";
+}
+
 // Normalize API response: same field names as backend may use latitude/longitude, assigned_*, location_*, etc.
 function getCoordsFromApi(a) {
     const lat = a?.coordinates?.lat ?? a?.latitude ?? a?.location_latitude ?? a?.assigned_latitude ?? a?.location?.latitude ?? "";
@@ -55,6 +69,9 @@ function buildDetailsFromApi(api) {
     const respName = api.responsible_employee ?? api.responsibleEmployee ?? api.responsible_employee_name ?? api.employee_name ?? (api.responsible_employee_id ? "—" : "—");
     const respFromObj = api.responsible_employee_obj ?? api.responsibleEmployeeObj;
     const responsibleEmployee = typeof respFromObj === "object" && respFromObj?.name != null ? respFromObj.name : (respName || "—");
+    const implStatus = (api.implementation_status ?? api.status ?? "").toString().trim().toLowerCase();
+    const actualStart = api.actual_start_date ?? api.start_date ?? api.startDate ?? api.date;
+    const actualEnd = api.actual_end_date ?? api.actual_date ?? api.end_date ?? api.endDate;
     return {
         location: api.location_name ?? api.location ?? "—",
         coordinates: coords,
@@ -62,16 +79,22 @@ function buildDetailsFromApi(api) {
         duration,
         responsibleEmployee,
         team,
-        status: api.status ?? "—",
+        status: getStatusLabel(api),
         description: api.description ?? "—",
+        approvalStatus: (api.approval_status ?? api.approval ?? "").toString().trim().toLowerCase(),
+        implementationStatus: implStatus,
+        isImplemented: implStatus === "implemented",
+        actualStartDate: actualStart,
+        actualEndDate: actualEnd,
     };
 }
 
-const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
+const ActivityDetailsModal = ({ activity, onClose, onDelete, onApprovalChange }) => {
     const [detailsFromApi, setDetailsFromApi] = useState(null);
     const [rawApiData, setRawApiData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [actionLoading, setActionLoading] = useState(false);
 
     useEffect(() => {
         if (!activity?.id) {
@@ -112,6 +135,8 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
         return `${day} ${month} ${year}`;
     };
 
+    const approvalFromActivity = (activity.approval_status ?? activity.approval ?? "").toString().trim().toLowerCase();
+    const implFromActivity = (activity.implementation_status ?? activity.status ?? "").toString().trim().toLowerCase();
     const fallback = {
         location: activity.location || "—",
         coordinates: (() => {
@@ -124,8 +149,13 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
         duration: activity.duration || "—",
         responsibleEmployee: activity.responsibleEmployee || "—",
         team: activity.team || "—",
-        status: activity.status || "—",
+        status: getStatusLabel(activity) || activity.status || "—",
         description: activity.description || "—",
+        approvalStatus: approvalFromActivity,
+        implementationStatus: implFromActivity,
+        isImplemented: implFromActivity === "implemented",
+        actualStartDate: activity.actual_start_date ?? activity.start_date ?? activity.date,
+        actualEndDate: activity.actual_end_date ?? activity.actual_date ?? activity.end_date,
     };
     const activityDetails = detailsFromApi ?? fallback;
     const imageUrls = getActivityImageUrls(rawApiData ?? activity);
@@ -222,6 +252,16 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
                         <p className="text-[14px]">
                             <span className="font-medium text-[#374151]">Status :</span> <span className="text-[#6B7280]">{activityDetails.status}</span>
                         </p>
+                        {activityDetails.isImplemented && (
+                            <>
+                                <p className="text-[14px]">
+                                    <span className="font-medium text-[#374151]">Start Date :</span> <span className="text-[#6B7280]">{formatDate(activityDetails.actualStartDate)}</span>
+                                </p>
+                                <p className="text-[14px]">
+                                    <span className="font-medium text-[#374151]">End Date :</span> <span className="text-[#6B7280]">{formatDate(activityDetails.actualEndDate)}</span>
+                                </p>
+                            </>
+                        )}
                     </div>
 
                     {/* Description */}
@@ -236,12 +276,71 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
 
                     {/* Buttons Footer */}
                     <div className="flex justify-center gap-[12px] md:gap-[16px] flex-wrap md:flex-nowrap">
+                        {activityDetails.approvalStatus === "pending" && (
+                            <>
+                                <button
+                                    disabled={actionLoading}
+                                    onClick={async () => {
+                                        setActionLoading(true);
+                                        try {
+                                            await rejectLocationActivity(activity.id);
+                                            onApprovalChange?.();
+                                            onClose();
+                                        } catch (e) {
+                                            setError(e?.response?.data?.message ?? e?.message ?? "Failed to reject.");
+                                        } finally {
+                                            setActionLoading(false);
+                                        }
+                                    }}
+                                    className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-red-50 transition-colors w-full md:w-[180px] h-[40px] disabled:opacity-60"
+                                    style={{
+                                        fontFamily: 'Inter, sans-serif',
+                                        fontWeight: 500,
+                                        fontSize: '14px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#B70B0B',
+                                        border: '1px solid #B70B0B',
+                                        textAlign: 'center'
+                                    }}
+                                >
+                                    Reject Activity
+                                </button>
+                                <button
+                                    disabled={actionLoading}
+                                    onClick={async () => {
+                                        setActionLoading(true);
+                                        try {
+                                            await approveLocationActivity(activity.id);
+                                            onApprovalChange?.();
+                                            onClose();
+                                        } catch (e) {
+                                            setError(e?.response?.data?.message ?? e?.message ?? "Failed to approve.");
+                                        } finally {
+                                            setActionLoading(false);
+                                        }
+                                    }}
+                                    className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-[#E8F5E9] transition-colors w-full md:w-[180px] h-[40px] disabled:opacity-60"
+                                    style={{
+                                        fontFamily: 'Inter, sans-serif',
+                                        fontWeight: 500,
+                                        fontSize: '14px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#00564F',
+                                        border: '1px solid #00564F',
+                                        textAlign: 'center'
+                                    }}
+                                >
+                                    Accept Activity
+                                </button>
+                            </>
+                        )}
                         <button
                             onClick={() => {
                                 onClose();
                                 onDelete(activity);
                             }}
-                            className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-red-50 transition-colors w-full md:w-[180px] h-[40px]"
+                            disabled={actionLoading}
+                            className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-red-50 transition-colors w-full md:w-[180px] h-[40px] disabled:opacity-60"
                             style={{
                                 fontFamily: 'Inter, sans-serif',
                                 fontWeight: 500,
@@ -256,7 +355,8 @@ const ActivityDetailsModal = ({ activity, onClose, onDelete }) => {
                         </button>
                         <button
                             onClick={onClose}
-                            className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-gray-50 transition-colors w-full md:w-[180px] h-[40px]"
+                            disabled={actionLoading}
+                            className="px-[24px] py-[8px] rounded-[5px] flex items-center justify-center hover:bg-gray-50 transition-colors w-full md:w-[180px] h-[40px] disabled:opacity-60"
                             style={{
                                 fontFamily: 'Inter, sans-serif',
                                 fontWeight: 500,

@@ -35,6 +35,21 @@ export async function getMyAttendance(params = {}) {
 }
 
 /**
+ * GET /attendance/my-attendance
+ * Full payload including todayStatus for check-in/out summary.
+ * @param {Object} params
+ * @returns {Promise<Object>} raw response shape
+ */
+export async function getMyAttendanceOverview(params = {}) {
+  const res = await apiClient.get(`${BASE}/my-attendance`, { params });
+  const body = res.data?.data ?? res.data;
+  if (!body || Array.isArray(body)) {
+    return { records: Array.isArray(body) ? body : [], todayStatus: { checkedIn: false } };
+  }
+  return body;
+}
+
+/**
  * GET /attendance/daily
  * الحضور اليومي (لـ HR)
  * @param {Object} params - { date? (YYYY-MM-DD) }
@@ -65,9 +80,11 @@ export async function getTeamAttendance(params = {}) {
  */
 export async function getAttendanceReports(params = {}) {
   const res = await apiClient.get(`${BASE}/reports`, { params });
-  const raw = res.data?.data ?? res.data;
+  const body = res.data;
+  if (Array.isArray(body)) return body;
+  const raw = body?.data ?? body;
   if (Array.isArray(raw)) return raw;
-  return raw?.items ?? raw?.records ?? raw?.reports ?? [];
+  return raw?.records ?? raw?.items ?? raw?.reports ?? raw?.attendance ?? [];
 }
 
 /**

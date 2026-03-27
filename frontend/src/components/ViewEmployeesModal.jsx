@@ -1,23 +1,9 @@
 import React from 'react';
-
-// Employee Photos
-const MohamedAliPhoto = new URL("../images/Mohamed Ali.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
-const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).href;
-const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
-const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
+import { AvatarOrPlaceholder } from './HeaderUserAvatar.jsx';
+import { toAbsoluteAvatarUrl } from '../utils/avatarUrl.js';
 
 const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [], employeesLoading = false }) => {
     if (!isOpen) return null;
-
-    // Mock employee photos mapping (in real app, this would come from employee data)
-    const photoMap = {
-        "Mohamed Ali": MohamedAliPhoto,
-        "Amal Ahmed": AmalAhmedPhoto,
-        "Amjad Saeed": AmjadSaeedPhoto,
-        "Jana Hassan": JanaHassanPhoto,
-        "Hasan Jaber": HasanJaberPhoto
-    };
 
     return (
         <div
@@ -96,7 +82,9 @@ const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [], emp
                                 </div>
 
                                 {/* Table Rows */}
-                                {employees.map((employee, index) => (
+                                {employees.map((employee, index) => {
+                                    const photo = toAbsoluteAvatarUrl(employee.avatar_url ?? employee.profile_image) || (employee.photo ?? employee.avatar_url ?? null);
+                                    return (
                                     <div
                                         key={employee.id || index}
                                         className={`grid grid-cols-[2fr_1fr_1fr] border-b border-[#E0E0E0] last:border-b-0 ${index % 2 === 0 ? 'bg-white' : 'bg-[#F9FAFB]'
@@ -109,8 +97,8 @@ const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [], emp
                                                 borderRight: '1px solid #E0E0E0'
                                             }}
                                         >
-                                            <img
-                                                src={photoMap[employee.name] || MohamedAliPhoto}
+                                            <AvatarOrPlaceholder
+                                                src={photo}
                                                 alt={employee.name}
                                                 className="w-[40px] h-[40px] rounded-full object-cover"
                                             />
@@ -143,19 +131,22 @@ const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [], emp
                                             {employee.position}
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             {/* Mobile Card View */}
                             <div className="md:hidden space-y-3">
-                                {employees.map((employee, index) => (
+                                {employees.map((employee, index) => {
+                                    const photo = toAbsoluteAvatarUrl(employee.avatar_url ?? employee.profile_image) || (employee.photo ?? employee.avatar_url ?? null);
+                                    return (
                                     <div
                                         key={employee.id || index}
                                         className="bg-white border border-[#E0E0E0] rounded-[8px] p-4"
                                     >
                                         <div className="flex items-center gap-3 mb-3">
-                                            <img
-                                                src={photoMap[employee.name] || MohamedAliPhoto}
+                                            <AvatarOrPlaceholder
+                                                src={photo}
                                                 alt={employee.name}
                                                 className="w-[48px] h-[48px] rounded-full object-cover"
                                             />
@@ -177,7 +168,8 @@ const ViewEmployeesModal = ({ isOpen, onClose, activityName, employees = [], emp
                                             </div>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </>
                     )}

@@ -7,9 +7,9 @@ import HeaderIcons from "./HeaderIcons";
 import { getLeaves, updateLeaveStatus, deleteLeave, createLeave } from "../services/leaves";
 import { getProfileMe } from "../services/profile";
 import { getEmployees } from "../services/employees";
-
-// User Avatar
-const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
 
 // Header icons
 const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4c365858f.png", import.meta.url).href;
@@ -17,22 +17,17 @@ const NotificationIcon = new URL("../images/ebf8a1610effc5cf80410fb898c4452b8d53
 const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7b.png", import.meta.url).href;
 
 // Summary card icons
-const PendingIcon = new URL("../images/icons/pending (2).png", import.meta.url).href;
-const ApprovedIcon = new URL("../images/icons/approved (2).png", import.meta.url).href;
+const PendingIcon = new URL("../images/icons/pending " + "(2).png", import.meta.url).href;
+const ApprovedIcon = new URL("../images/icons/approved " + "(2).png", import.meta.url).href;
 const RejectIcon = new URL("../images/icons/reject.png", import.meta.url).href;
 
 // Action icons
 const ViewIcon = new URL("../images/icons/eye.png", import.meta.url).href;
-// Using approved icon for approve action
-const ApproveIcon = new URL("../images/icons/approved (2).png", import.meta.url).href;
+const ApproveIcon = new URL("../images/icons/approved " + "(2).png", import.meta.url).href;
 const RejectActionIcon = new URL("../images/icons/reject.png", import.meta.url).href;
-const WarningIcon = new URL("../images/icons/warnning (2).png", import.meta.url).href;
+const WarningIcon = new URL("../images/icons/warnning " + "(2).png", import.meta.url).href;
 const UploadIcon = new URL("../images/icons/upload.png", import.meta.url).href;
 
-// Employee Photos
-const AmeerJamalPhoto = new URL("../images/Ameer Jamal.jpg", import.meta.url).href;
-const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
-const HasanJaberPhoto = new URL("../images/Hasan Jaber.jpg", import.meta.url).href;
 
 const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
@@ -89,10 +84,11 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
         const dateRangeStr =
           start && end ? `${formatDateShort(start)} - ${formatDateShort(end)}` : (item.date_range || "—");
         const submitted = item.submitted_date ?? item.created_at ?? item.submittedDate;
+        const avatarUrl = item.employee_avatar ?? item.avatar_url ?? item.employeePhoto ?? null;
         return {
           id: item.id,
           employeeName: item.employee_name ?? item.employeeName ?? "-",
-          employeePhoto: item.avatar_url ?? item.employeePhoto ?? AmeerJamalPhoto,
+          employeePhoto: toAbsoluteAvatarUrl(avatarUrl) || avatarUrl || null,
           position: item.position ?? "—",
           department: item.department ?? "—",
           leaveType: item.leave_type ?? item.leaveType ?? "—",
@@ -344,12 +340,24 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
     return matchesSearch && matchesLeaveType && matchesStatus;
   });
 
-  // Pagination
+  // Pagination: 10 per page; show at least 3 page numbers (1, 2, 3)
   const itemsPerPage = 10;
-  const actualTotalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
+  const actualTotalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
   const totalPages = Math.max(3, actualTotalPages);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
+
+  // Reset to page 1 when filters/search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedLeaveType, selectedStatus]);
+
+  // If current page is out of range (e.g. after filtering), go to last valid page
+  useEffect(() => {
+    if (currentPage > actualTotalPages && actualTotalPages >= 1) {
+      setCurrentPage(actualTotalPages);
+    }
+  }, [actualTotalPages, currentPage]);
 
   // Handle checkbox selection
   const handleCheckboxChange = (requestId) => {
@@ -417,8 +425,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -462,7 +469,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                         <div className="px-[16px] py-[8px]">
                           <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                         </div>
-                        <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                        <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                           Edit Profile
                         </button>
                         <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -910,7 +917,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                           </td>
                           <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             <div className="flex items-center gap-[12px] min-w-0">
-                              <img
+                              <AvatarOrPlaceholder
                                 src={request.employeePhoto}
                                 alt={request.employeeName}
                                 className="w-[32px] h-[32px] rounded-full object-cover flex-shrink-0"
@@ -1019,48 +1026,50 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
             {filteredData.length > 0 && (
               <div className="flex items-center justify-center gap-[8px] mt-[24px]">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  type="button"
+                  onClick={() => currentPage > 1 && setCurrentPage(prev => Math.max(1, prev - 1))}
                   className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
                   style={{
                     opacity: currentPage === 1 ? 0.5 : 1,
-                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                    cursor: currentPage === 1 ? 'default' : 'pointer'
                   }}
-                  disabled={currentPage === 1}
+                  aria-disabled={currentPage === 1}
                 >
                   <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => {
-                      if (page <= actualTotalPages) {
-                        setCurrentPage(page);
-                      }
-                    }}
-                    className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: currentPage === page ? 600 : 400,
-                      color: currentPage === page ? '#474747' : page > actualTotalPages ? '#9CA3AF' : '#827F7F',
-                      fontSize: '14px',
-                      cursor: page > actualTotalPages ? 'not-allowed' : 'pointer',
-                      opacity: page > actualTotalPages ? 0.5 : 1
-                    }}
-                    disabled={page > actualTotalPages}
-                  >
-                    {page}
-                  </button>
-                ))}
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                  const isDisabled = page > actualTotalPages;
+                  return (
+                    <button
+                      key={page}
+                      type="button"
+                      onClick={() => !isDisabled && setCurrentPage(page)}
+                      className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
+                      style={{
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: currentPage === page ? 600 : 400,
+                        color: currentPage === page ? '#474747' : isDisabled ? '#9CA3AF' : '#827F7F',
+                        fontSize: '14px',
+                        cursor: isDisabled ? 'default' : 'pointer',
+                        opacity: isDisabled ? 0.5 : 1
+                      }}
+                      aria-disabled={isDisabled}
+                    >
+                      {page}
+                    </button>
+                  );
+                })}
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                  type="button"
+                  onClick={() => currentPage < actualTotalPages && setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
                   className="w-[32px] h-[32px] rounded-full flex items-center justify-center transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA]"
                   style={{
                     opacity: currentPage >= actualTotalPages ? 0.5 : 1,
-                    cursor: currentPage >= actualTotalPages ? 'not-allowed' : 'pointer'
+                    cursor: currentPage >= actualTotalPages ? 'default' : 'pointer'
                   }}
-                  disabled={currentPage >= actualTotalPages}
+                  aria-disabled={currentPage >= actualTotalPages}
                 >
                   <svg className="w-[16px] h-[16px] text-[#6B7280]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1096,8 +1105,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1117,7 +1125,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1303,7 +1311,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 >
                   {/* Header with Employee Info */}
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#F0F0F0]">
-                    <img
+                    <AvatarOrPlaceholder
                       src={request.employeePhoto}
                       alt={request.employeeName}
                       className="w-[48px] h-[48px] rounded-full object-cover flex-shrink-0"
@@ -1402,32 +1410,41 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
           {filteredData.length > 0 && (
             <div className="flex items-center justify-center gap-[8px] mt-8">
               <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                type="button"
+                onClick={() => currentPage > 1 && setCurrentPage(prev => Math.max(1, prev - 1))}
                 className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
-                disabled={currentPage === 1}
-                style={{ opacity: currentPage === 1 ? 0.5 : 1 }}
+                style={{ opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'default' : 'pointer' }}
+                aria-disabled={currentPage === 1}
               >
                 <svg className="w-[16px] h-[16px] text-[#000000]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18L9 12L15 6" /></svg>
               </button>
-              {Array.from({ length: Math.min(totalPages, actualTotalPages) }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page ? 'font-semibold' : ''}`}
-                  style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: currentPage === page ? 600 : 400,
-                    color: currentPage === page ? '#474747' : '#827F7F'
-                  }}
-                >
-                  {page}
-                </button>
-              ))}
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                const isDisabled = page > actualTotalPages;
+                return (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => !isDisabled && setCurrentPage(page)}
+                    className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[14px] transition-colors bg-white border border-[#E0E0E0] hover:bg-[#F5F7FA] ${currentPage === page ? 'font-semibold' : ''}`}
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: currentPage === page ? 600 : 400,
+                      color: currentPage === page ? '#474747' : isDisabled ? '#9CA3AF' : '#827F7F',
+                      opacity: isDisabled ? 0.5 : 1,
+                      cursor: isDisabled ? 'default' : 'pointer'
+                    }}
+                    aria-disabled={isDisabled}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
               <button
-                onClick={() => setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
+                type="button"
+                onClick={() => currentPage < actualTotalPages && setCurrentPage(prev => Math.min(actualTotalPages, prev + 1))}
                 className="w-[32px] h-[32px] rounded-full border border-[#E0E0E0] bg-white flex items-center justify-center hover:bg-[#F5F7FA] transition-colors"
-                disabled={currentPage >= actualTotalPages}
-                style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1 }}
+                style={{ opacity: currentPage >= actualTotalPages ? 0.5 : 1, cursor: currentPage >= actualTotalPages ? 'default' : 'pointer' }}
+                aria-disabled={currentPage >= actualTotalPages}
               >
                 <svg className="w-[16px] h-[16px] text-[#000000]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18L15 12L9 6" /></svg>
               </button>
@@ -1504,7 +1521,7 @@ const LeaveManagementPage = ({ userRole = "superAdmin" }) => {
                 </h3>
                 <div className="flex items-start gap-[16px]">
                   {/* Profile Picture */}
-                  <img
+                  <AvatarOrPlaceholder
                     src={selectedRequest.employeePhoto}
                     alt={selectedRequest.employeeName}
                     className="w-[64px] h-[64px] rounded-full object-cover flex-shrink-0"

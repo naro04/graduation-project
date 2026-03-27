@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import HeaderIcons from "./HeaderIcons";
 
@@ -37,89 +38,6 @@ const roleDisplayNames = {
 
 const CATEGORY_ICONS = [BookIcon, TimeIcon, PulseIcon, LeaveIcon, EmployeesIcon, SettingIcon];
 
-const DEFAULT_CATEGORIES = [
-    {
-      id: 1,
-      title: "Getting Started",
-      icon: BookIcon,
-      description: "Learn the basics of the HR & Field Activity Management System",
-      links: [
-        "Introduction to the Platform",
-        "Settings up your Account",
-        "Dashboard Overview",
-        "User Roles and Permissions"
-      ]
-    },
-    {
-      id: 2,
-      title: "Attendance & GPS",
-      icon: TimeIcon,
-      description: "Track employee attendance and manage GPS-based check-ins",
-      links: [
-        "How to Mark Attendance",
-        "GPS Location Tracking",
-        "Setting Up Geofencing",
-        "Attendance Reports"
-      ]
-    },
-    {
-      id: 3,
-      title: "Activities & Reports",
-      icon: PulseIcon,
-      description: "Manage field activities and generate comprehensive reports",
-      links: [
-        "Creating Field Activities",
-        "Activity Status Tracking",
-        "Generating Reports",
-        "Export Data"
-      ]
-    },
-    {
-      id: 4,
-      title: "Leave Management",
-      icon: LeaveIcon,
-      description: "Handle leave requests, approvals, and leave policies",
-      links: [
-        "Submitting Leave Requests",
-        "Leave Approval Workflow",
-        "Leave Balance Overview",
-        "Leave Policies"
-      ]
-    },
-    {
-      id: 5,
-      title: "Employee Management",
-      icon: EmployeesIcon,
-      description: "Add, edit, and manage employee information",
-      links: [
-        "Adding New Employees",
-        "Managing Employee Profiles",
-        "Department Setup",
-        "Employee Onboarding"
-      ]
-    },
-    {
-      id: 6,
-      title: "System Configuration",
-      icon: SettingIcon,
-      description: "Configure system settings and customize workflows",
-      links: [
-        "System Settings Overview",
-        "Notifications Configuration",
-        "API Integration",
-        "Security Settings"
-      ]
-    }
-  ];
-
-const DEFAULT_POPULAR_ARTICLES = [
-  { id: 1, title: "How to reset your password?", views: "2.5k" },
-  { id: 2, title: "Setting up GPS-based attendance", views: "1.8k" },
-  { id: 3, title: "Understanding leave approval workflows", views: "1.6k" },
-  { id: 4, title: "Generating monthly attendance reports", views: "1.4k" },
-  { id: 5, title: "Configuring notification settings", views: "1.2k" }
-];
-
 const HelpCenterPage = ({ userRole = "superAdmin" }) => {
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
@@ -133,8 +51,8 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
   const userDropdownRef = useRef(null);
   const desktopDropdownRef = useRef(null);
 
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [popularArticles, setPopularArticles] = useState(DEFAULT_POPULAR_ARTICLES);
+  const [categories, setCategories] = useState([]);
+  const [popularArticles, setPopularArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -171,12 +89,12 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
         if (cancelled) return;
         const cats = Array.isArray(data) ? data : data.categories || [];
         const articles = data.popular_articles || [];
-        setCategories(cats.length ? cats.map((cat, i) => normalizeCategory(cat, i)) : DEFAULT_CATEGORIES);
-        setPopularArticles(articles.length ? articles.map((item, i) => normalizeArticle(item, i)) : DEFAULT_POPULAR_ARTICLES);
+        setCategories(cats.length ? cats.map((cat, i) => normalizeCategory(cat, i)) : []);
+        setPopularArticles(articles.length ? articles.map((item, i) => normalizeArticle(item, i)) : []);
       } catch (err) {
         if (!cancelled) {
-          setCategories(DEFAULT_CATEGORIES);
-          setPopularArticles(DEFAULT_POPULAR_ARTICLES);
+          setCategories([]);
+          setPopularArticles([]);
           const status = err.response?.status;
           if (status === 404) {
             setError(null);
@@ -278,8 +196,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsDesktopDropdownOpen(!isDesktopDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -305,7 +222,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -447,13 +364,14 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                     </div>
                     <div className="space-y-[8px]" style={{ paddingLeft: '64px' }}>
                       {(Array.isArray(category.links) ? category.links : []).map((link, index) => {
-                        const href = typeof link === 'object' && link !== null && link.path != null ? String(link.path) : '#';
                         const label = typeof link === 'object' && link !== null && link.title != null ? String(link.title) : (typeof link === 'string' ? link : '');
                         return (
-                          <a
+                          <span
                             key={index}
-                            href={href}
-                            className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors"
+                            role="presentation"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onKeyDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors cursor-default"
                             style={{
                               fontFamily: 'Inter, sans-serif',
                               fontWeight: 400,
@@ -469,7 +387,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                               style={{ transform: 'rotate(135deg)', marginRight: '8px', marginLeft: '-20px' }}
                             />
                             {label}
-                          </a>
+                          </span>
                         );
                       })}
                     </div>
@@ -500,7 +418,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   {!loading && filteredArticles.map((article) => (
                     <div
                       key={article.id}
-                      className="flex items-center justify-between py-[12px] border-b border-[#F0F0F0] last:border-b-0 hover:bg-[#F9FAFB] rounded-[8px] px-[12px] transition-colors cursor-pointer"
+                      className="flex items-center justify-between py-[12px] border-b border-[#F0F0F0] last:border-b-0 rounded-[8px] px-[12px] cursor-default"
                     >
                       <div className="flex items-center gap-[16px]">
                         <div
@@ -587,7 +505,9 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                     {card.description}
                   </p>
                   <button
-                    className="text-[14px] text-[#00564F] font-medium hover:text-[#004D40] transition-colors flex items-center gap-[4px] justify-center"
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    className="text-[14px] text-[#00564F] font-medium hover:text-[#004D40] transition-colors flex items-center gap-[4px] justify-center cursor-default"
                     style={{
                       fontFamily: 'Inter, sans-serif',
                       fontWeight: 500,
@@ -631,8 +551,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                 className="flex items-center gap-2"
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -648,7 +567,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-4 py-2">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-4 py-2 text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-4 py-2 text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-1"></div>
@@ -790,13 +709,14 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   </div>
                   <div className="space-y-2 pl-[52px]">
                     {(Array.isArray(category.links) ? category.links : []).map((link, index) => {
-                      const href = typeof link === 'object' && link !== null && link.path != null ? String(link.path) : '#';
                       const label = typeof link === 'object' && link !== null && link.title != null ? String(link.title) : (typeof link === 'string' ? link : '');
                       return (
-                        <a
+                        <span
                           key={index}
-                          href={href}
-                          className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors"
+                          role="presentation"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          onKeyDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          className="flex items-center text-[#00564F] hover:text-[#004D40] transition-colors cursor-default"
                           style={{
                             fontFamily: 'Inter, sans-serif',
                             fontWeight: 400,
@@ -812,7 +732,7 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                             style={{ transform: 'rotate(135deg)' }}
                           />
                           {label}
-                        </a>
+                        </span>
                       );
                     })}
                   </div>
@@ -930,7 +850,9 @@ const HelpCenterPage = ({ userRole = "superAdmin" }) => {
                   {card.description}
                 </p>
                 <button
-                  className="text-[12px] text-[#00564F] font-medium hover:text-[#004D40] transition-colors flex items-center gap-1 justify-center"
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  className="text-[12px] text-[#00564F] font-medium hover:text-[#004D40] transition-colors flex items-center gap-1 justify-center cursor-default"
                   style={{
                     fontFamily: 'Inter, sans-serif',
                     fontWeight: 500,

@@ -3,20 +3,13 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import LogoutModal from "./LogoutModal";
 import HeaderIcons from "./HeaderIcons";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser, logout } from "../services/auth.js";
 import { getTeamAttendance, getAttendanceLocations, deleteAttendance } from "../services/attendance";
 import { getTeamMembers } from "../services/employees.js";
 import { exportToExcel, exportToPdf } from "../utils/exportReport";
-import { BASE_URL } from "../services/api.js";
-
-const API_ORIGIN = BASE_URL.replace(/\/api\/v1\/?$/, "");
-
-function toAbsoluteAvatarUrl(avatarUrl) {
-  if (!avatarUrl || typeof avatarUrl !== "string") return null;
-  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
-  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
-  return `${API_ORIGIN}${path}`;
-}
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
 const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
 const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4c365858f.png", import.meta.url).href;
@@ -28,7 +21,6 @@ const HurryIcon = new URL("../images/icons/hurry.png", import.meta.url).href;
 const ViewIcon = new URL("../images/icons/eye.png", import.meta.url).href;
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href;
 const ExportIcon = new URL("../images/icons/export.png", import.meta.url).href;
-const DefaultPhoto = new URL("../images/Mohamed Ali.jpg", import.meta.url).href;
 const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).href;
 
 const roleDisplayNames = {
@@ -103,7 +95,12 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
     setError(null);
     Promise.all([
       getTeamMembers().catch(() => []),
-      dateParam ? getTeamAttendance({ date: dateParam }).catch(() => []) : Promise.resolve([]),
+      dateParam ? getTeamAttendance({
+        date: dateParam,
+        location: selectedLocation === "All Locations" ? null : selectedLocation,
+        status: selectedStatus === "All Status" ? null : selectedStatus,
+        search: searchQuery || null,
+      }).catch(() => []) : Promise.resolve([]),
       getAttendanceLocations().catch(() => []),
     ]).then(([team, list, locations]) => {
       if (cancelled) return;
@@ -116,11 +113,16 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [dateParam]);
+  }, [dateParam, selectedLocation, selectedStatus, searchQuery]);
 
   const refreshAttendance = () => {
     if (!dateParam) return;
-    getTeamAttendance({ date: dateParam }).then((list) => setAttendanceFromApi(Array.isArray(list) ? list : [])).catch(() => { });
+    getTeamAttendance({
+      date: dateParam,
+      location: selectedLocation === "All Locations" ? null : selectedLocation,
+      status: selectedStatus === "All Status" ? null : selectedStatus,
+      search: searchQuery || null,
+    }).then((list) => setAttendanceFromApi(Array.isArray(list) ? list : [])).catch(() => { });
   };
 
   const teamIds = useMemo(() => (teamMembers || []).map((m) => m.id), [teamMembers]);
@@ -138,7 +140,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
       attendanceType: r.attendanceType ?? r.attendance_type ?? r.type ?? "—",
       location: r.location ?? r.location_name ?? r.location_address ?? "—",
       status: r.status ?? "Present",
-      photo: toAbsoluteAvatarUrl(r.avatar_url ?? r.avatarUrl) || r.photo || DefaultPhoto,
+      photo: toAbsoluteAvatarUrl(r.avatar_url ?? r.avatarUrl) || r.photo || null,
     }));
   }, [attendanceFromApi, teamIds]);
 
@@ -213,7 +215,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
                 <HeaderIcons />
                 <div className="relative" ref={userDropdownRef}>
                   <div className="flex items-center gap-[12px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
-                    <img src={UserAvatar} alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                    <HeaderUserAvatar alt="User" className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]" />
                     <div>
                       <div className="flex items-center gap-[6px]">
                         <p className="text-[16px] font-semibold text-[#333333]">Hi, {currentUser?.name || currentUser?.full_name || currentUser?.firstName || "User"}!</p>
@@ -225,7 +227,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
                   {isUserDropdownOpen && (
                     <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                       <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => navigate("/profile")}>Edit Profile</button>
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]" />
                       <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                     </div>
@@ -366,7 +368,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
                             </td>
                             <td className="px-3 py-3 border-r border-[#E0E0E0] text-left">
                               <div className="flex items-center gap-2">
-                                <img src={employee.photo} alt={employee.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = DefaultPhoto; }} />
+                                <AvatarOrPlaceholder src={employee.photo} alt={employee.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
                                 <span className="text-[14px] font-semibold text-[#333333] truncate block">{employee.name}</span>
                               </div>
                             </td>
@@ -414,13 +416,13 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
             <HeaderIcons iconSize="w-[18px] h-[18px]" />
             <div className="relative" ref={userDropdownRef}>
               <div className="flex items-center gap-[8px] cursor-pointer" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
-                <img src={UserAvatar} alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
+                <HeaderUserAvatar alt="User" className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]" />
                 <img src={DropdownArrow} alt="" className={`w-[12px] h-[12px] object-contain transition-transform duration-200 ${isUserDropdownOpen ? "rotate-180" : ""}`} />
               </div>
               {isUserDropdownOpen && (
                 <div className="absolute right-0 top-full mt-[8px] w-[200px] bg-white rounded-[8px] shadow-lg border border-[#E0E0E0] py-[8px] z-50">
                   <div className="px-[16px] py-[8px]"><p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p></div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onClick={() => { setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
+                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA]" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>Edit Profile</button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]" />
                   <button type="button" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); setIsLogoutModalOpen(true); }} className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#DC2626] hover:bg-[#F5F7FA] transition-colors">Log Out</button>
                 </div>
@@ -501,7 +503,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
                   <div key={employee.id} className="bg-white rounded-[10px] border border-[#E0E0E0] shadow-sm p-[16px]">
                     <div className="flex items-start justify-between mb-[12px]">
                       <div className="flex items-center gap-[12px]">
-                        <div className="w-[40px] h-[40px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 overflow-hidden"><img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = DefaultPhoto; }} /></div>
+                        <div className="w-[40px] h-[40px] rounded-full flex-shrink-0 overflow-hidden"><AvatarOrPlaceholder src={employee.photo} alt={employee.name} className="w-[40px] h-[40px] rounded-full object-cover" /></div>
                         <div><p className="text-[14px] font-medium text-[#111827] mb-[2px]">{employee.name}</p><p className="text-[12px] text-[#6B7280]">#{employee.employeeId}</p></div>
                       </div>
                       <div className="flex items-center gap-[8px]">
@@ -542,7 +544,7 @@ const TeamAttendancePage = ({ userRole = "manager" }) => {
           <div className="bg-white rounded-[10px] shadow-lg w-full max-w-[400px] mx-4 p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-[18px] font-semibold text-[#003934] mb-4" style={{ fontFamily: "Inter, sans-serif" }}>Attendance Details</h3>
             <div className="flex items-center gap-3 mb-4">
-              <img src={selectedEmployeeForDetails.photo} alt={selectedEmployeeForDetails.name} className="w-12 h-12 rounded-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = DefaultPhoto; }} />
+              <AvatarOrPlaceholder src={selectedEmployeeForDetails.photo} alt={selectedEmployeeForDetails.name} className="w-12 h-12 rounded-full object-cover" />
               <div>
                 <p className="font-semibold text-[#333333]">{selectedEmployeeForDetails.name}</p>
                 <p className="text-[12px] text-[#6B7280]">#{selectedEmployeeForDetails.employeeId}</p>

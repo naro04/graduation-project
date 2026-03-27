@@ -55,6 +55,16 @@ export async function getLocationActivityById(id) {
 }
 
 /**
+ * GET http://localhost:5000/api/v1/location-activities/:id/employees
+ * موظفو نشاط معين
+ */
+export async function getActivityEmployees(activityId) {
+  const res = await apiClient.get(`${BASE}/${activityId}/employees`);
+  const raw = res.data?.data ?? res.data;
+  return Array.isArray(raw) ? raw : raw?.items ?? raw?.records ?? [];
+}
+
+/**
  * PUT http://localhost:5000/api/v1/location-activities/:id
  * تحديث نشاط موقع
  */

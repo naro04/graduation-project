@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getDailyAttendance, getAttendanceLocations, deleteAttendance } from "../services/attendance";
 import { exportToExcel, exportToPdf } from "../utils/exportReport";
@@ -20,7 +23,6 @@ const NotWorkingIcon = new URL("../images/icons/notworking.png", import.meta.url
 const HurryIcon = new URL("../images/icons/hurry.png", import.meta.url).href;
 
 // Employee Photos
-const MohamedAliPhoto = new URL("../images/Mohamed Ali.jpg", import.meta.url).href;
 const AmalAhmedPhoto = new URL("../images/Amal Ahmed.png", import.meta.url).href;
 const AmjadSaeedPhoto = new URL("../images/Amjad Saeed.jpg", import.meta.url).href;
 const JanaHassanPhoto = new URL("../images/Jana Hassan.jpg", import.meta.url).href;
@@ -35,7 +37,7 @@ const WarningIcon = new URL("../images/icons/warnning.png", import.meta.url).hre
 const CalendarIcon = new URL("../images/icons/calendar.png", import.meta.url).href;
 
 // Attendance Details icons
-const ProfileIcon = new URL("../images/icons/profile (2).png", import.meta.url).href;
+const ProfileIcon = new URL("../images/icons/profile " + "(2).png", import.meta.url).href;
 const LocationIcon = new URL("../images/icons/location3.png", import.meta.url).href;
 const CheckmarkIcon = new URL("../images/icons/chekmark.png", import.meta.url).href;
 const DateIcon = new URL("../images/icons/date.png", import.meta.url).href;
@@ -89,7 +91,12 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
     setAttendanceLoading(true);
     setAttendanceError(null);
     Promise.all([
-      dateParam ? getDailyAttendance({ date: dateParam }).catch((err) => {
+      dateParam ? getDailyAttendance({
+        date: dateParam,
+        location: selectedLocation === "All Locations" ? null : selectedLocation,
+        status: selectedStatus === "All Status" ? null : selectedStatus,
+        search: searchQuery || null,
+      }).catch((err) => {
         if (!cancelled) setAttendanceError(err?.response?.data?.message || err?.message || "Failed to load daily attendance");
         return [];
       }) : Promise.resolve([]),
@@ -102,11 +109,16 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
       if (!cancelled) setAttendanceLoading(false);
     });
     return () => { cancelled = true; };
-  }, [dateParam]);
+  }, [dateParam, selectedLocation, selectedStatus, searchQuery]);
 
   const refreshDailyAttendance = () => {
     if (!dateParam) return;
-    getDailyAttendance({ date: dateParam })
+    getDailyAttendance({
+      date: dateParam,
+      location: selectedLocation === "All Locations" ? null : selectedLocation,
+      status: selectedStatus === "All Status" ? null : selectedStatus,
+      search: searchQuery || null,
+    })
       .then((list) => setAttendanceFromApi(Array.isArray(list) ? list : []))
       .catch(() => {});
   };
@@ -130,7 +142,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
       attendanceType: r.attendanceType ?? r.attendance_type ?? r.check_method ?? r.type ?? "—",
       location: r.location ?? r.location_name ?? "—",
       status: r.status ?? "Present",
-      photo: r.avatarUrl ?? r.photo ?? r.avatar_url ?? MohamedAliPhoto,
+      photo: toAbsoluteAvatarUrl(r.avatar_url ?? r.avatarUrl) || (r.photo ?? r.avatarUrl ?? r.avatar_url ?? null),
     }));
   }, [attendanceFromApi]);
 
@@ -300,8 +312,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -324,7 +335,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -670,7 +681,9 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                     {locationOptions.map((location) => (
                       <button
                         key={location}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
                           setSelectedLocation(location);
                           setIsLocationDropdownOpen(false);
                         }}
@@ -703,7 +716,9 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                     {["All Status", "Present", "Absent", "Late", "In progress", "Missing Check-out"].map((status) => (
                       <button
                         key={status}
-                        onClick={() => {
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
                         }}
@@ -827,14 +842,15 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                 <table className="w-full min-w-0" style={{ tableLayout: 'fixed' }}>
                   <colgroup>
                     <col style={{ width: '44px' }} />
-                    <col style={{ width: '18%' }} />
-                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '17%' }} />
+                    <col style={{ width: '112px' }} />
                     <col style={{ width: '72px' }} />
                     <col style={{ width: '72px' }} />
-                    <col style={{ width: '100px' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '90px' }} />
-                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '96px' }} />
+                    <col style={{ width: '13%' }} />
+                    {/* Wide enough for "Missing Check-out"; ellipsis if longer — keeps Action column aligned */}
+                    <col style={{ width: '148px' }} />
+                    <col style={{ width: '96px' }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-[#E0E0E0]">
@@ -867,7 +883,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                       <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] border-r border-[#E0E0E0] leading-tight" style={{ fontWeight: 500 }}>
                         Status
                       </th>
-                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] leading-tight" style={{ fontWeight: 500 }}>
+                      <th className="px-[12px] py-[10px] text-center text-[14px] text-[#6B7280] leading-tight" style={{ fontWeight: 500, width: '96px' }}>
                         Action
                       </th>
                     </tr>
@@ -885,7 +901,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                         </td>
                         <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-left min-w-0" style={{ overflow: 'hidden' }}>
                           <div className="flex items-center gap-[8px] min-w-0">
-                            <img
+                            <AvatarOrPlaceholder
                               src={employee.photo}
                               alt={employee.name}
                               className="w-[28px] h-[28px] rounded-full object-cover flex-shrink-0"
@@ -920,20 +936,23 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                             {employee.location}
                           </span>
                         </td>
-                        <td className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center" style={{ whiteSpace: 'nowrap' }}>
+                        <td
+                          className="px-[12px] py-[12px] border-r border-[#E0E0E0] text-center align-middle min-w-0"
+                          style={{ overflow: 'hidden', maxWidth: 0 }}
+                          title={employee.status}
+                        >
                           <span
-                            className="text-[14px] inline-block"
-                            style={{
-                              fontWeight: 600,
-                              whiteSpace: 'nowrap',
-                              color: '#333333'
-                            }}
+                            className="text-[14px] block w-full truncate"
+                            style={{ fontWeight: 600, color: '#333333' }}
                           >
                             {employee.status}
                           </span>
                         </td>
-                        <td className="px-[12px] py-[12px] text-center" style={{ whiteSpace: 'nowrap' }}>
-                          <div className="flex items-center justify-center gap-0">
+                        <td
+                          className="px-[8px] py-[12px] text-center align-middle bg-white"
+                          style={{ width: '96px', minWidth: '96px', maxWidth: '96px', whiteSpace: 'nowrap', verticalAlign: 'middle' }}
+                        >
+                          <div className="flex items-center justify-center gap-0 flex-nowrap">
                             <button
                               onClick={() => {
                                 setSelectedEmployeeForDetails(employee);
@@ -1044,8 +1063,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[8px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1062,7 +1080,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1260,7 +1278,9 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                   {locationOptions.map((location) => (
                     <button
                       key={location}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         setSelectedLocation(location);
                         setIsLocationDropdownOpen(false);
                       }}
@@ -1292,7 +1312,9 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
                   {["All Status", "Present", "Absent", "Late", "In progress", "Missing Check-out"].map((status) => (
                     <button
                       key={status}
-                      onClick={() => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
                       }}
@@ -1328,9 +1350,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
               <div key={employee.id} className="bg-white rounded-[10px] border border-[#E0E0E0] shadow-sm p-[16px]">
                 <div className="flex items-start justify-between mb-[12px]">
                   <div className="flex items-center gap-[12px]">
-                    <div className="w-[40px] h-[40px] rounded-full bg-[#E5E7EB] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" />
-                    </div>
+                    <AvatarOrPlaceholder src={employee.photo} alt={employee.name} className="w-[40px] h-[40px] rounded-full flex-shrink-0" />
                     <div>
                       <p className="text-[14px] font-medium text-[#111827] mb-[2px]" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>
                         {employee.name}
@@ -1495,7 +1515,7 @@ const DailyAttendancePage = ({ userRole = "superAdmin" }) => {
             <div className="p-[32px]">
               {/* Profile Picture */}
               <div className="flex justify-center mb-[24px]">
-                <img
+                <AvatarOrPlaceholder
                   src={selectedEmployeeForDetails.photo}
                   alt={selectedEmployeeForDetails.name}
                   className="w-[120px] h-[120px] rounded-full object-cover"

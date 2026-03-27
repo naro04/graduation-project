@@ -27,7 +27,7 @@ const ForgotPasswordPage = () => {
       await forgotPassword(email);
       setSuccess(true);
     } catch (err) {
-      setError(err.message || "حدث خطأ. حاول مرة أخرى.");
+      setError(err.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -85,7 +85,7 @@ const ForgotPasswordPage = () => {
           {error && <p className="text-[14px] text-red-600">{error}</p>}
           {success && (
             <p className="text-[14px] font-medium" style={{ color: '#00564F' }}>
-              إذا كان الحساب موجوداً، تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك.
+              If an account exists, a password reset link has been sent to your email.
             </p>
           )}
           {/* Send Reset Link Button */}
@@ -98,7 +98,7 @@ const ForgotPasswordPage = () => {
               border: '1px solid rgba(28, 137, 154, 0.7)'
             }}
           >
-            {loading ? "جاري الإرسال..." : "SEND RESET LINK"}
+            {loading ? "Sending..." : "SEND RESET LINK"}
           </button>
 
           {/* Back to Login Link */}
@@ -307,7 +307,7 @@ const ForgotPasswordPage = () => {
               {error && <p className="text-[14px] text-red-600">{error}</p>}
               {success && (
                 <p className="text-[14px] font-medium" style={{ color: '#00564F' }}>
-                  إذا كان الحساب موجوداً، تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك.
+                  If an account exists, a password reset link has been sent to your email.
                 </p>
               )}
               {/* Send Reset Link Button */}
@@ -320,7 +320,7 @@ const ForgotPasswordPage = () => {
                   border: '1px solid rgba(28, 137, 154, 0.7)'
                 }}
               >
-                {loading ? "جاري الإرسال..." : "SEND RESET LINK"}
+                {loading ? "Sending..." : "SEND RESET LINK"}
               </button>
 
               {/* Back to Login Link */}

@@ -5,6 +5,7 @@ import {
   updateProfile,
   getPersonalInfo,
   updatePersonalInfo,
+  updatePersonalAvatar,
   getJobInfo,
   updateJobInfo,
   getEmergencyContact,
@@ -15,11 +16,15 @@ import {
 } from "../services/profile.js";
 import { getDepartments } from "../services/departments.js";
 import { getPositions } from "../services/positions.js";
-import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
+import { getRoles } from "../services/rbac.js";
+import { getLocationTypes } from "../services/locationTypes.js";
+import { getLocations } from "../services/locations.js";
+import { createLocationAssignment, deleteLocationAssignment } from "../services/locationAssignments.js";
+import { getMyAttendanceOverview } from "../services/attendance.js";
+import { getEffectiveRole, getCurrentUser, updateStoredUserAvatar } from "../services/auth.js";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
+import { AvatarOrPlaceholder } from "./HeaderUserAvatar.jsx";
 import HeaderIcons from "./HeaderIcons";
-
-// User Avatar
-const UserAvatar = new URL("../images/c3485c911ad8f5739463d77de89e5fedf4b2785c.jpg", import.meta.url).href;
 
 // Header icons
 const MessageIcon = new URL("../images/6946bb75eb51db75adabc0ccd83d4fe4c365858f.png", import.meta.url).href;
@@ -38,7 +43,7 @@ const WhatsAppIcon = new URL("../images/icons/whatsapp.png", import.meta.url).hr
 const PersonalIcon = new URL("../images/icons/personal.png", import.meta.url).href;
 const ContactDetailsIcon = new URL("../images/icons/Contact Details.png", import.meta.url).href;
 const JobIcon = new URL("../images/icons/job.png", import.meta.url).href;
-const LocationIcon2 = new URL("../images/icons/location (2).png", import.meta.url).href;
+const LocationIcon2 = new URL("../images/icons/location " + "(2).png", import.meta.url).href;
 const EmergencyIcon = new URL("../images/icons/phonecontact.png", import.meta.url).href;
 const SecurityIcon = new URL("../images/icons/password.png", import.meta.url).href;
 const BlindIcon = new URL("../images/icons/blind.png", import.meta.url).href;
@@ -60,7 +65,14 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const dropdownRef = useRef(null);
   const mobileDropdownRef = useRef(null);
-  const [currentWeekStart, setCurrentWeekStart] = useState(new Date(2024, 11, 7)); // Dec 7, 2024
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
   const [profileData, setProfileData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -88,10 +100,21 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   const [jobFormData, setJobFormData] = useState({ departmentId: "", positionId: "", employmentType: "" });
   const [departmentsList, setDepartmentsList] = useState([]);
   const [positionsList, setPositionsList] = useState([]);
+  const [rolesList, setRolesList] = useState([]);
   const [isSavingJob, setIsSavingJob] = useState(false);
   const [jobSaveError, setJobSaveError] = useState(null);
   const [isLocationsEditMode, setIsLocationsEditMode] = useState(false);
+  const [locationsEditPrimaryId, setLocationsEditPrimaryId] = useState("");
+  const [locationsEditSecondaryId, setLocationsEditSecondaryId] = useState("");
+  const [isLocationsSaving, setIsLocationsSaving] = useState(false);
+  const [locationsSaveError, setLocationsSaveError] = useState(null);
+  const [locationTypesList, setLocationTypesList] = useState([]);
+  const [locationsList, setLocationsList] = useState([]);
   const [isScheduleInfoOpen, setIsScheduleInfoOpen] = useState(false);
+  const avatarFileInputRef = useRef(null);
+  const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState(null);
+  const [todayCheckInLocation, setTodayCheckInLocation] = useState(null);
 
   // Role display names
   const effectiveRole = getEffectiveRole();
@@ -219,7 +242,36 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
           const data = await getWorkSchedule();
           if (data) setProfileData((prev) => ({ ...prev, workSchedule: data }));
         } else if (activeTab === "locations") {
-          const list = await getProfileLocation();
+          const [list, attendanceData] = await Promise.all([
+            getProfileLocation(),
+            getMyAttendanceOverview({ page: 1, limit: 1 }),
+          ]);
+          const todayStatus = attendanceData?.todayStatus ?? null;
+          if (todayStatus?.checkedIn && todayStatus?.checkInLatitude != null && todayStatus?.checkInLongitude != null) {
+            setTodayCheckInLocation({
+              latitude: Number(todayStatus.checkInLatitude),
+              longitude: Number(todayStatus.checkInLongitude),
+            });
+          } else {
+            // Fallback: use latest attendance record that has GPS coordinates.
+            const latestWithGps = Array.isArray(attendanceData?.records)
+              ? attendanceData.records.find(
+                  (r) =>
+                    r?.location_latitude != null &&
+                    r?.location_longitude != null &&
+                    Number.isFinite(Number(r.location_latitude)) &&
+                    Number.isFinite(Number(r.location_longitude))
+                )
+              : null;
+            if (latestWithGps) {
+              setTodayCheckInLocation({
+                latitude: Number(latestWithGps.location_latitude),
+                longitude: Number(latestWithGps.location_longitude),
+              });
+            } else {
+              setTodayCheckInLocation(null);
+            }
+          }
           setProfileData((prev) => ({ ...prev, locations: Array.isArray(list) ? list : [] }));
         } else if (activeTab === "security") {
           const data = await getAccountSecurity();
@@ -277,18 +329,40 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
     }
   }, [profileData, isEmergencyEditMode]);
 
-  // Load departments and positions when Job tab is active (for edit dropdowns)
+  // Load departments, positions and roles when Job tab is active (for edit dropdowns and job info block)
   useEffect(() => {
     if (activeTab !== "job") return;
     let cancelled = false;
-    Promise.all([getDepartments(), getPositions()])
-      .then(([depts, positions]) => {
+    Promise.all([getDepartments(), getPositions(), getRoles()])
+      .then(([depts, positions, roles]) => {
         if (!cancelled) {
           setDepartmentsList(Array.isArray(depts) ? depts : []);
           setPositionsList(Array.isArray(positions) ? positions : []);
+          setRolesList(Array.isArray(roles) ? roles : []);
         }
       })
-      .catch((err) => console.error("Failed to load departments/positions:", err));
+      .catch((err) => console.error("Failed to load departments/positions/roles:", err));
+    return () => { cancelled = true; };
+  }, [activeTab]);
+
+  // Load location types and locations when Locations tab is active (for edit dropdowns)
+  useEffect(() => {
+    if (activeTab !== "locations") return;
+    let cancelled = false;
+    Promise.all([getLocationTypes(), getLocations()])
+      .then(([types, locs]) => {
+        if (!cancelled) {
+          setLocationTypesList(Array.isArray(types) ? types : []);
+          setLocationsList(Array.isArray(locs) ? locs : (locs?.data ?? locs?.items ?? []));
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLocationTypesList([]);
+          setLocationsList([]);
+          console.error("Failed to load location types/locations:", err);
+        }
+      });
     return () => { cancelled = true; };
   }, [activeTab]);
 
@@ -440,10 +514,40 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   };
 
   const handleLocationsEditClick = () => {
+    setLocationsEditPrimaryId(primaryLocation?.id ?? "");
+    setLocationsEditSecondaryId(secondaryLocation?.id ?? "");
+    setLocationsSaveError(null);
     setIsLocationsEditMode(true);
   };
   const handleCancelLocationsEdit = () => {
     setIsLocationsEditMode(false);
+    setLocationsSaveError(null);
+  };
+  const handleSaveLocationsEdit = async () => {
+    const employeeId = profileData?.employee?.id;
+    if (!employeeId) {
+      setLocationsSaveError("Employee not found.");
+      return;
+    }
+    const currentIds = (profileLocations || []).map((l) => l.id ?? l.location_id).filter(Boolean);
+    const newIds = [locationsEditPrimaryId, locationsEditSecondaryId].filter(Boolean);
+    setLocationsSaveError(null);
+    setIsLocationsSaving(true);
+    try {
+      for (const locId of currentIds) {
+        if (!newIds.includes(locId)) await deleteLocationAssignment(employeeId, locId);
+      }
+      for (const locId of newIds) {
+        if (!currentIds.includes(locId)) await createLocationAssignment({ employee_id: employeeId, location_id: locId });
+      }
+      const list = await getProfileLocation();
+      setProfileData((prev) => ({ ...prev, locations: Array.isArray(list) ? list : [] }));
+      setIsLocationsEditMode(false);
+    } catch (err) {
+      setLocationsSaveError(err?.response?.data?.message || err?.message || "Failed to update locations.");
+    } finally {
+      setIsLocationsSaving(false);
+    }
   };
 
   // Handle emergency contact edit mode toggle
@@ -596,6 +700,27 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
     }
   };
 
+  // Change profile picture: upload then update personal info with avatarUrl
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    e.target.value = "";
+    setAvatarError(null);
+    setIsAvatarUploading(true);
+    try {
+      await updatePersonalAvatar(file);
+      const updated = await getProfileMe();
+      setProfileData(updated);
+      const newAvatarUrl = updated?.avatarUrl ?? updated?.employee?.avatarUrl ?? null;
+      updateStoredUserAvatar(newAvatarUrl);
+    } catch (err) {
+      console.error("Failed to update profile picture:", err);
+      setAvatarError(err.message || "Failed to update picture. Try again.");
+    } finally {
+      setIsAvatarUploading(false);
+    }
+  };
+
   // Helper function to format date from ISO string to DD/MM/YYYY
   const formatDate = (dateString) => {
     if (!dateString) return "";
@@ -656,7 +781,10 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
   const profileLocations = profileData?.locations ?? [];
   const primaryLocation = profileLocations[0] ?? null;
   const secondaryLocation = profileLocations[1] ?? null;
-  const mapLocation = profileLocations.find((l) => l.latitude != null && l.longitude != null) || primaryLocation;
+  const mapLocation =
+    todayCheckInLocation ||
+    profileLocations.find((l) => l.latitude != null && l.longitude != null) ||
+    primaryLocation;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -706,8 +834,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[12px] cursor-pointer"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <AvatarOrPlaceholder
+                  src={toAbsoluteAvatarUrl(userData?.avatarUrl) || userData?.avatarUrl}
                   alt="User"
                   className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -732,7 +860,7 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -771,15 +899,40 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
               className="px-[24px] pt-[24px] pb-[20px] relative rounded-[12px] border-b border-[#E0E0E0] flex flex-col"
               style={{ backgroundColor: '#004D40' }}
             >
-              {/* Avatar - Positioned to extend beyond green header */}
-              <img
-                src={userData?.avatarUrl || UserAvatar}
-                alt="Profile"
-                className="absolute left-[16px] top-[16px] w-[180px] h-[160px] rounded-[8px] object-cover z-10"
-                onError={(e) => {
-                  e.target.src = UserAvatar;
-                }}
-              />
+              {/* Avatar with edit icon - Positioned to extend beyond green header */}
+              <div className="absolute left-[16px] top-[16px] w-[180px] h-[160px] rounded-[8px] z-10 group">
+                <AvatarOrPlaceholder
+                  src={toAbsoluteAvatarUrl(userData?.avatarUrl) || userData?.avatarUrl}
+                  alt="Profile"
+                  className="w-full h-full rounded-[8px] object-cover"
+                />
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => avatarFileInputRef.current?.click()}
+                  disabled={isAvatarUploading}
+                  className="absolute bottom-[8px] right-[8px] w-[36px] h-[36px] rounded-full bg-[#004D40] text-white flex items-center justify-center shadow-md hover:bg-[#003934] focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-60 disabled:pointer-events-none transition-all"
+                  title="Change profile picture"
+                >
+                  <img src={EditIcon} alt="Edit" className="w-[18px] h-[18px] object-contain" />
+                </button>
+                {isAvatarUploading && (
+                  <div className="absolute inset-0 rounded-[8px] bg-black/50 flex items-center justify-center">
+                    <span className="text-white text-sm font-medium">Updating...</span>
+                  </div>
+                )}
+                {avatarError && (
+                  <div className="absolute -bottom-6 left-0 right-0 text-[11px] text-red-600 bg-white/95 px-2 py-1 rounded shadow truncate" title={avatarError}>
+                    {avatarError}
+                  </div>
+                )}
+              </div>
 
               {/* Top Row: Name */}
               <div className="flex items-start gap-[20px] pl-[220px]">
@@ -1279,18 +1432,56 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                       )}
                     </div>
 
-                    {isLocationsEditMode && (
+                    {isLocationsEditMode && canEditProfileLocations && (
                       <div className="mb-[20px] p-[16px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
-                        <p className="text-[13px] text-[#0C4A6E] mb-2">
-                          {canEditProfileLocations ? (
-                            <>To change assigned locations, go to <strong>Locations Management → Location Assignment</strong> and update the employee&apos;s locations.</>
-                          ) : (
-                            <>Assigned locations are set by an admin. <strong>Contact your admin or HR</strong> to request or change your assigned locations. (Location Assignment is only available to roles with that permission.)</>
-                          )}
-                        </p>
-                        <button type="button" onClick={handleCancelLocationsEdit} className="px-[16px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[13px] font-medium hover:bg-[#F5F5F5]">
-                          Close
-                        </button>
+                        <p className="text-[13px] text-[#0C4A6E] mb-3">Select primary and optional secondary location.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-[12px] mb-3">
+                          <div>
+                            <label className="block text-[12px] font-medium text-[#4B5563] mb-1">Primary Location</label>
+                            <select
+                              value={locationsEditPrimaryId}
+                              onChange={(e) => setLocationsEditPrimaryId(e.target.value)}
+                              className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] focus:outline-none focus:border-[#00564F]"
+                            >
+                              <option value="">Select location</option>
+                              {(Array.isArray(locationsList) ? locationsList : []).map((loc) => {
+                                const id = loc.id ?? loc.location_id;
+                                const name = loc.name ?? loc.location_name ?? "";
+                                return <option key={id} value={id}>{name || id}</option>;
+                              })}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-medium text-[#4B5563] mb-1">Secondary Location</label>
+                            <select
+                              value={locationsEditSecondaryId}
+                              onChange={(e) => setLocationsEditSecondaryId(e.target.value)}
+                              className="w-full h-[36px] px-[10px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] focus:outline-none focus:border-[#00564F]"
+                            >
+                              <option value="">None</option>
+                              {(Array.isArray(locationsList) ? locationsList : []).map((loc) => {
+                                const id = loc.id ?? loc.location_id;
+                                const name = loc.name ?? loc.location_name ?? "";
+                                return <option key={id} value={id}>{name || id}</option>;
+                              })}
+                            </select>
+                          </div>
+                        </div>
+                        {locationsSaveError && <p className="text-[13px] text-red-600 mb-2">{locationsSaveError}</p>}
+                        <div className="flex gap-2">
+                          <button type="button" onClick={handleSaveLocationsEdit} disabled={isLocationsSaving} className="px-[16px] py-[6px] rounded-[6px] bg-[#00564F] text-white text-[13px] font-medium hover:bg-[#004D40] disabled:opacity-60">
+                            {isLocationsSaving ? "Saving..." : "Save"}
+                          </button>
+                          <button type="button" onClick={handleCancelLocationsEdit} disabled={isLocationsSaving} className="px-[16px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[13px] font-medium hover:bg-[#F5F5F5]">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {isLocationsEditMode && !canEditProfileLocations && (
+                      <div className="mb-[20px] p-[16px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
+                        <p className="text-[13px] text-[#0C4A6E] mb-2">Assigned locations are set by an admin. Contact your admin or HR to request or change your assigned locations.</p>
+                        <button type="button" onClick={handleCancelLocationsEdit} className="px-[16px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[13px] font-medium hover:bg-[#F5F5F5]">Close</button>
                       </div>
                     )}
 
@@ -1903,8 +2094,8 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
               {/* Avatar and Name Row */}
               <div className="flex items-center gap-[12px] mb-[12px]">
                 {/* Avatar */}
-                <img
-                  src={UserAvatar}
+                <AvatarOrPlaceholder
+                  src={toAbsoluteAvatarUrl(userData?.avatarUrl) || userData?.avatarUrl}
                   alt="Profile"
                   className="w-[80px] h-[80px] rounded-[8px] object-cover flex-shrink-0"
                 />
@@ -2099,18 +2290,20 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                     </div>
 
                     <div className="space-y-[12px]">
-                      {/* Department */}
+                      {/* Department - من الـ API */}
                       <div>
                         <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Department</label>
                         <div className="relative">
-                          <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
+                          <select
+                            value={profileData?.jobInfo?.department_id ?? profileData?.employee?.department_id ?? ""}
+                            readOnly
+                            disabled
+                            className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none"
+                          >
                             <option value="">Select Department</option>
-                            <option value="HR">HR</option>
-                            <option value="Field Operations">Field Operations</option>
-                            <option value="Office">Office</option>
-                            <option value="Project Management">Project Management</option>
-                            <option value="Finance">Finance</option>
-                            <option value="IT">IT</option>
+                            {departmentsList.map((d) => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
                           </select>
                           <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                             <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -2118,17 +2311,20 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         </div>
                       </div>
 
-                      {/* Position */}
+                      {/* Position - من الـ API */}
                       <div>
                         <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Position</label>
                         <div className="relative">
-                          <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
+                          <select
+                            value={profileData?.jobInfo?.position_id ?? profileData?.employee?.position_id ?? ""}
+                            readOnly
+                            disabled
+                            className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none"
+                          >
                             <option value="">Select Position</option>
-                            <option value="System Administration">System Administration</option>
-                            <option value="Manager">Manager</option>
-                            <option value="Developer">Developer</option>
-                            <option value="Designer">Designer</option>
-                            <option value="Analyst">Analyst</option>
+                            {positionsList.map((p) => (
+                              <option key={p.id} value={p.id}>{p.title ?? p.name}</option>
+                            ))}
                           </select>
                           <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                             <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -2136,17 +2332,20 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         </div>
                       </div>
 
-                      {/* Employee Type */}
+                      {/* Employee Type (Role) - من الـ API */}
                       <div>
                         <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Employee Type</label>
                         <div className="relative">
-                          <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
+                          <select
+                            value={profileData?.jobInfo?.role_id ?? profileData?.employee?.role_id ?? effectiveRole ?? ""}
+                            readOnly
+                            disabled
+                            className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none"
+                          >
                             <option value="">Select Employee Type</option>
-                            <option value="Super Admin">Super Admin</option>
-                            <option value="HR">HR</option>
-                            <option value="Manager">Manager</option>
-                            <option value="Field Employee">Field Employee</option>
-                            <option value="Officer">Officer</option>
+                            {rolesList.map((r) => (
+                              <option key={r.id} value={r.id ?? r.name}>{r.name ?? r.title}</option>
+                            ))}
                           </select>
                           <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                             <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -2154,21 +2353,19 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         </div>
                       </div>
 
-                      {/* Supervisor */}
+                      {/* Supervisor - بدون قائمة ثابتة */}
                       <div>
                         <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Supervisor</label>
                         <div className="relative">
                           <select
-                            className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer"
-                            defaultValue={effectiveRole === "superAdmin" ? "none" : ""}
+                            className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-[#F9FAFB] text-[13px] text-[#333333] focus:outline-none appearance-none"
+                            value={userData?.supervisor ?? (effectiveRole === "superAdmin" ? "none" : "")}
+                            readOnly
+                            disabled
                           >
                             <option value="">Select Supervisor</option>
                             <option value="none">None</option>
-                            <option value="ahmed-mohammed">Ahmed Mohammed</option>
-                            <option value="sara-ali">Sara Ali</option>
-                            <option value="mohammed-hassan">Mohammed Hassan</option>
-                            <option value="fatima-ibrahim">Fatima Ibrahim</option>
-                            <option value="khalid-omar">Khalid Omar</option>
+                            {userData?.supervisor ? <option value={typeof userData.supervisor === "string" ? userData.supervisor : (userData.supervisor?.id ?? "")}>{typeof userData.supervisor === "string" ? userData.supervisor : (userData.supervisor?.name ?? "—")}</option> : null}
                           </select>
                           <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                             <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -2214,15 +2411,43 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                     )}
                   </div>
 
-                  {isLocationsEditMode && (
+                  {isLocationsEditMode && canEditProfileLocations && (
                     <div className="mb-[16px] p-[12px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
-                      <p className="text-[12px] text-[#0C4A6E] mb-2">
-                        {canEditProfileLocations ? (
-                          <>To change assigned locations, go to <strong>Locations Management → Location Assignment</strong>.</>
-                        ) : (
-                          <>Assigned locations are set by an admin. <strong>Contact your admin or HR</strong> to request or change your locations.</>
-                        )}
-                      </p>
+                      <p className="text-[12px] text-[#0C4A6E] mb-2">Select primary and optional secondary location.</p>
+                      <div className="space-y-2 mb-2">
+                        <div>
+                          <label className="block text-[11px] font-medium text-[#4B5563] mb-0.5">Primary</label>
+                          <select value={locationsEditPrimaryId} onChange={(e) => setLocationsEditPrimaryId(e.target.value)} className="w-full h-[34px] px-[8px] rounded-[6px] border border-[#E0E0E0] bg-white text-[12px] focus:outline-none focus:border-[#00564F]">
+                            <option value="">Select</option>
+                            {(Array.isArray(locationsList) ? locationsList : []).map((loc) => {
+                              const id = loc.id ?? loc.location_id;
+                              const name = loc.name ?? loc.location_name ?? "";
+                              return <option key={id} value={id}>{name || id}</option>;
+                            })}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-[#4B5563] mb-0.5">Secondary</label>
+                          <select value={locationsEditSecondaryId} onChange={(e) => setLocationsEditSecondaryId(e.target.value)} className="w-full h-[34px] px-[8px] rounded-[6px] border border-[#E0E0E0] bg-white text-[12px] focus:outline-none focus:border-[#00564F]">
+                            <option value="">None</option>
+                            {(Array.isArray(locationsList) ? locationsList : []).map((loc) => {
+                              const id = loc.id ?? loc.location_id;
+                              const name = loc.name ?? loc.location_name ?? "";
+                              return <option key={id} value={id}>{name || id}</option>;
+                            })}
+                          </select>
+                        </div>
+                      </div>
+                      {locationsSaveError && <p className="text-[12px] text-red-600 mb-1">{locationsSaveError}</p>}
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleSaveLocationsEdit} disabled={isLocationsSaving} className="px-[12px] py-[5px] rounded-[6px] bg-[#00564F] text-white text-[12px] font-medium disabled:opacity-60">{isLocationsSaving ? "Saving..." : "Save"}</button>
+                        <button type="button" onClick={handleCancelLocationsEdit} disabled={isLocationsSaving} className="px-[12px] py-[5px] rounded-[6px] border border-[#E0E0E0] bg-white text-[12px] font-medium">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {isLocationsEditMode && !canEditProfileLocations && (
+                    <div className="mb-[16px] p-[12px] rounded-[8px] bg-[#F0F9FF] border border-[#0EA5E9]/30">
+                      <p className="text-[12px] text-[#0C4A6E] mb-2">Assigned locations are set by an admin. Contact your admin or HR to request or change your locations.</p>
                       <button type="button" onClick={handleCancelLocationsEdit} className="px-[12px] py-[6px] rounded-[6px] border border-[#E0E0E0] bg-white text-[#333] text-[12px] font-medium">Close</button>
                     </div>
                   )}
@@ -2251,9 +2476,10 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           <div className="relative">
                             <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
                               <option value="">Select Type</option>
-                              <option value="Office">Office</option>
-                              <option value="School">School</option>
-                              <option value="Field">Field</option>
+                              {locationTypesList.map((t) => {
+                                const name = t.name ?? t.type ?? t.title;
+                                return name ? <option key={t.id ?? name} value={name}>{name}</option> : null;
+                              })}
                             </select>
                             <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                               <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -2267,8 +2493,9 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           <div className="relative">
                             <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
                               <option value="">Select Location</option>
-                              <option value="Foundation Office">Foundation Office</option>
-                              <option value="Hittin School">Hittin School</option>
+                              {locationsList.map((loc) => (
+                                <option key={loc.id} value={loc.id}>{loc.name ?? loc.title ?? ""}</option>
+                              ))}
                             </select>
                             <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                               <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -2355,9 +2582,10 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                           <div className="relative">
                             <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
                               <option value="">Select Type</option>
-                              <option value="Office">Office</option>
-                              <option value="School">School</option>
-                              <option value="Field">Field</option>
+                              {locationTypesList.map((t) => {
+                                const name = t.name ?? t.type ?? t.title;
+                                return name ? <option key={t.id ?? name} value={name}>{name}</option> : null;
+                              })}
                             </select>
                             <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                               <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -2369,7 +2597,12 @@ const ProfilePage = ({ userRole = "superAdmin" }) => {
                         <div>
                           <label className="block text-[13px] font-medium text-[#4B5563] mb-[4px]">Location Name</label>
                           <div className="relative">
-                            <input type="text" placeholder="" className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none" />
+                            <select className="w-full h-[36px] pl-[10px] pr-[28px] rounded-[6px] border border-[#E0E0E0] bg-white text-[13px] text-[#333333] focus:outline-none appearance-none cursor-pointer">
+                              <option value="">Select Location</option>
+                              {locationsList.map((loc) => (
+                                <option key={loc.id} value={loc.id}>{loc.name ?? loc.title ?? ""}</option>
+                              ))}
+                            </select>
                             <svg className="absolute right-[10px] top-1/2 -translate-y-1/2 w-[14px] h-[14px] text-[#666666] pointer-events-none" viewBox="0 0 24 24" fill="none">
                               <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>

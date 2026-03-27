@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 
 // User Avatar
@@ -15,7 +16,7 @@ const DropdownArrow = new URL("../images/f770524281fcd53758f9485b3556316915e91e7
 const TimeIcon = new URL("../images/icons/time.png", import.meta.url).href;
 const SettingIcon = new URL("../images/icons/setteing.png", import.meta.url).href;
 const PulseIcon = new URL("../images/icons/pulse.png", import.meta.url).href;
-const LocationIcon = new URL("../images/icons/location (3).png", import.meta.url).href;
+const LocationIcon = new URL("../images/icons/location " + "(3).png", import.meta.url).href;
 const DocumentIcon = new URL("../images/icons/document.png", import.meta.url).href;
 
 import LogoutModal from "./LogoutModal";
@@ -166,15 +167,6 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
     }
   ];
 
-  // Default recent changes (fallback if API returns empty or different shape)
-  const DEFAULT_RECENT_CHANGES = [
-    { id: 1, title: "Work Hours Updated", author: "Hassan Ahmed", date: "Dec 20, 2024", time: "2:30 PM" },
-    { id: 2, title: "Leave Approval Flow Modified", author: "Lama Jaber", date: "Dec 18, 2024", time: "11:15 AM" },
-    { id: 3, title: "GPS Accuracy Changed", author: "Rami Khaled", date: "Dec 15, 2024", time: "4:45 PM" },
-    { id: 4, title: "Activity Types Updated", author: "Sara Ali", date: "Dec 12, 2024", time: "9:20 AM" },
-    { id: 5, title: "Time Zone Modified", author: "Omar Hassan", date: "Dec 10, 2024", time: "3:15 PM" },
-  ];
-
   const normalizeHistoryItem = (item) => {
     const d = item.changed_at ? new Date(item.changed_at) : null;
     return {
@@ -261,10 +253,10 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
     try {
       const list = await getSystemSettingsHistory();
       const arr = Array.isArray(list) ? list : [];
-      setRecentChanges(arr.length ? arr.map(normalizeHistoryItem) : DEFAULT_RECENT_CHANGES);
+      setRecentChanges(arr.length ? arr.map(normalizeHistoryItem) : []);
     } catch (err) {
       setHistoryError(err.response?.data?.message ?? err.message ?? "Failed to load history");
-      setRecentChanges(DEFAULT_RECENT_CHANGES);
+      setRecentChanges([]);
     } finally {
       setHistoryLoading(false);
     }
@@ -513,8 +505,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsDesktopDropdownOpen(!isDesktopDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -540,7 +531,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -795,8 +786,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -816,7 +806,7 @@ const SystemConfigurationPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>

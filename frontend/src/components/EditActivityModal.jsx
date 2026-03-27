@@ -3,7 +3,10 @@ import React, { useState, useEffect } from "react";
 // Icons
 const DeleteIcon = new URL("../images/icons/Delet.png", import.meta.url).href; // Reusing delete icon
 
-const EditActivityModal = ({ isOpen, onClose, activity, locations, employees }) => {
+const EditActivityModal = ({ isOpen, onClose, activity, locations = [], employees = [], onSave }) => {
+    const safeLocations = Array.isArray(locations) ? locations : [];
+    const locationNames = safeLocations.map((loc) => (loc && typeof loc === "object" ? (loc.name ?? loc.location_name ?? "") : String(loc))).filter(Boolean);
+    const safeEmployees = Array.isArray(employees) ? employees : [];
     // Form state
     const [formData, setFormData] = useState({
         activityName: "",
@@ -13,22 +16,30 @@ const EditActivityModal = ({ isOpen, onClose, activity, locations, employees }) 
     const [numberOfDays, setNumberOfDays] = useState(1);
     const [activityDates, setActivityDates] = useState([""]);
     const [showDeleteWarning, setShowDeleteWarning] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     // Populate form data when opening
     useEffect(() => {
         if (isOpen && activity) {
             setFormData({
-                activityName: activity.name || "",
-                location: activity.locationName || "", // Assuming locationName is available in activity object or passed correctly
+                activityName: activity.name || activity.activity_name || "",
+                location: activity.locationName || activity.location_name || "",
             });
-            // Mocking selected employees for now as IDs 1, 2, 3 based on sample
-            setSelectedEmployees([1, 2, 3]);
+            const ids = Array.isArray(activity.employee_ids) ? activity.employee_ids : [];
+            setSelectedEmployees(ids.length ? ids.map((id) => (typeof id === "object" ? (id?.id ?? id?.employee_id) : id)) : []);
 
-            // Handle dates
-            // If activity has date range, generate dates. Otherwise default.
-            // Simplified logic based on previous page logic
-            setNumberOfDays(2); // Example default based on screenshot "2 day"
-            setActivityDates(["2025-12-19", "2025-12-19"]); // Example dates based on screenshot
+            const start = activity.start_date ?? activity.startDate;
+            const end = activity.end_date ?? activity.endDate;
+            if (start && end) {
+                const startStr = typeof start === "string" && start.includes("T") ? start.slice(0, 10) : start;
+                const endStr = typeof end === "string" && end.includes("T") ? end.slice(0, 10) : end;
+                setActivityDates([startStr, endStr]);
+                setNumberOfDays(2);
+            } else {
+                const todayStr = new Date().toISOString().slice(0, 10);
+                setActivityDates([todayStr, todayStr]);
+                setNumberOfDays(1);
+            }
         }
     }, [isOpen, activity]);
 
@@ -66,10 +77,31 @@ const EditActivityModal = ({ isOpen, onClose, activity, locations, employees }) 
         setNumberOfDays(newDates.length);
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        console.log('Update activity:', { ...formData, selectedEmployees, numberOfDays, activityDates });
-        onClose();
+        if (!activity?.id || !onSave) {
+            onClose();
+            return;
+        }
+        const locationObj = safeLocations.find((loc) => (loc && typeof loc === "object" ? (loc.name ?? loc.location_name) : loc) === formData.location);
+        const location_id = locationObj ? (locationObj.id ?? locationObj.location_id) : null;
+        const dates = activityDates.filter((d) => d && String(d).trim());
+        const payload = {
+            name: formData.activityName || activity.name,
+            location_id: location_id || activity.location_id,
+            dates: dates.length ? dates : undefined,
+            activity_days: numberOfDays,
+            employee_ids: selectedEmployees.length ? selectedEmployees : undefined,
+        };
+        setSaving(true);
+        try {
+            await onSave(payload);
+            onClose();
+        } catch (err) {
+            console.error("Failed to update activity:", err);
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleDeleteActivity = () => {
@@ -150,8 +182,8 @@ const EditActivityModal = ({ isOpen, onClose, activity, locations, employees }) 
                                         className="focus:outline-none bg-white appearance-none cursor-pointer w-full border border-[#939393] rounded-[4px] px-[12px] pr-[32px] h-[36px] text-[#000000] text-[14px]"
                                     >
                                         <option value="" disabled>Select Location</option>
-                                        {locations.map((location) => (
-                                            <option key={location} value={location}>{location}</option>
+                                        {locationNames.map((name) => (
+                                            <option key={name} value={name}>{name}</option>
                                         ))}
                                     </select>
                                     <svg className="absolute right-[12px] top-1/2 -translate-y-1/2 w-[12px] h-[12px] text-[#939393] pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -169,20 +201,20 @@ const EditActivityModal = ({ isOpen, onClose, activity, locations, employees }) 
                                     className="bg-white border border-[#939393] rounded-[4px] w-full h-[150px] overflow-y-auto"
                                 >
                                     <div className="p-[12px] space-y-[12px]">
-                                        {employees.map((employee) => (
-                                            <div key={employee.id} className="flex items-center gap-[12px] border-b border-[#F0F0F0] pb-[8px] last:border-0 last:pb-0">
+                                        {safeEmployees.map((employee) => (
+                                            <div key={employee.id ?? employee.employee_id ?? employee.name} className="flex items-center gap-[12px] border-b border-[#F0F0F0] pb-[8px] last:border-0 last:pb-0">
                                                 <input
                                                     type="checkbox"
-                                                    checked={selectedEmployees.includes(employee.id)}
-                                                    onChange={() => handleEmployeeCheckboxChange(employee.id)}
+                                                    checked={selectedEmployees.includes(employee.id ?? employee.employee_id)}
+                                                    onChange={() => handleEmployeeCheckboxChange(employee.id ?? employee.employee_id)}
                                                     className="w-[16px] h-[16px] rounded border-[#E0E0E0] flex-shrink-0 cursor-pointer"
                                                 />
                                                 <div className="flex-1 min-w-0">
                                                     <div className="text-[13px] font-semibold text-black mb-[2px]">
-                                                        {employee.name}
+                                                        {employee.name ?? employee.employee_name ?? employee.full_name ?? "—"}
                                                     </div>
                                                     <div className="text-[11px] text-gray-500">
-                                                        {employee.role}
+                                                        {employee.role ?? employee.position ?? employee.department ?? ""}
                                                     </div>
                                                 </div>
                                             </div>
@@ -294,9 +326,10 @@ const EditActivityModal = ({ isOpen, onClose, activity, locations, employees }) 
                                 </button>
                                 <button
                                     type="submit"
-                                    className="w-[100px] h-[34px] rounded-[5px] bg-[#00564F] border border-[#B5B1B1] text-white font-semibold text-[14px] hover:opacity-90 transition-opacity"
+                                    disabled={saving}
+                                    className="w-[100px] h-[34px] rounded-[5px] bg-[#00564F] border border-[#B5B1B1] text-white font-semibold text-[14px] hover:opacity-90 transition-opacity disabled:opacity-60"
                                 >
-                                    Update
+                                    {saving ? "Saving..." : "Update"}
                                 </button>
                             </div>
                         </div>

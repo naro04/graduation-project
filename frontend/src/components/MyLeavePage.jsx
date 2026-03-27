@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getMyLeaves, getMyLeaveStats, createLeave } from "../services/leaves";
 import { getProfileMe } from "../services/profile";
@@ -308,8 +309,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                  <img 
-                    src={UserAvatar}
+<HeaderUserAvatar
                     alt="User"
                     className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                   />
@@ -335,7 +335,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -380,7 +380,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                     color: '#000000'
                   }}
                 >
-                  Leave Requests
+                  My Leave
                 </h1>
                 <p 
                   className="text-[14px]"
@@ -586,7 +586,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
               </div>
             </div>
 
-            {/* Leave Requests Table */}
+            {/* My Leave Table */}
             <div className="bg-white rounded-[10px] overflow-hidden" style={{ boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', border: '1px solid #B5B1B1' }}>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -658,6 +658,8 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                             <div className="flex items-center justify-center">
                               <button 
                                 onClick={() => {
+                                  setIsLeaveTypeDropdownOpen(false);
+                                  setIsStatusDropdownOpen(false);
                                   setSelectedRequest(request);
                                   setShowRejectedDetailsModal(true);
                                 }}
@@ -763,8 +765,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -784,7 +785,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -823,7 +824,7 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
           {/* Title and Button */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-[20px] font-semibold text-[#000000] mb-0">Leave Requests</h1>
+              <h1 className="text-[20px] font-semibold text-[#000000] mb-0">My Leave</h1>
               <p className="text-[12px] text-[#6B7280]">View your leave balance and history</p>
             </div>
             <button
@@ -1036,6 +1037,8 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
                   <div className="flex items-center justify-center">
                     <button
                       onClick={() => {
+                        setIsLeaveTypeDropdownOpen(false);
+                        setIsStatusDropdownOpen(false);
                         setSelectedRequest(request);
                         setShowRejectedDetailsModal(true);
                       }}
@@ -1092,18 +1095,18 @@ const MyLeavePage = ({ userRole = "superAdmin" }) => {
         </div>
       </div>
 
-      {/* Leave Request Details Modal */}
+      {/* Leave Request Details Modal - z-[200] so it appears above page filters (z-[100]) */}
       {
         showRejectedDetailsModal && selectedRequest && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]"
           onClick={() => {
             setShowRejectedDetailsModal(false);
             setSelectedRequest(null);
           }}
         >
           <div 
-            className="bg-white rounded-[10px] relative"
+            className="bg-white rounded-[10px] relative z-[201]"
             style={{
               width: '700px',
               maxHeight: '90vh',

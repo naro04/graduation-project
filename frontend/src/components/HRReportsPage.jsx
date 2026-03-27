@@ -1,18 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import HeaderUserAvatar from "./HeaderUserAvatar.jsx";
 import { getEffectiveRole, getCurrentUser } from "../services/auth.js";
 import { getHRReports } from "../services/employees";
-import { apiClient } from "../services/apiClient";
+import { getDepartments } from "../services/departments";
 import { exportToExcel, exportToPdf } from "../utils/exportReport";
+import { toAbsoluteAvatarUrl } from "../utils/avatarUrl.js";
 
-const API_ORIGIN = (apiClient.defaults.baseURL || "").replace(/\/api\/v1\/?$/, "");
-function toAbsoluteAvatarUrl(avatarUrl) {
-  if (!avatarUrl || typeof avatarUrl !== "string") return null;
-  if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://")) return avatarUrl;
-  const path = avatarUrl.startsWith("/") ? avatarUrl : `/${avatarUrl}`;
-  return `${API_ORIGIN}${path}`;
-}
 function getInitials(name) {
   if (!name || typeof name !== "string") return "?";
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -63,8 +58,12 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("All Departments");
   const [selectedStatus, setSelectedStatus] = useState("All Status");
-  const [fromDate, setFromDate] = useState("2025-12-12");
-  const [toDate, setToDate] = useState("2025-12-19");
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isDepartmentDropdownOpen, setIsDepartmentDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -76,6 +75,8 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const departmentDropdownRef = useRef(null);
   const statusDropdownRef = useRef(null);
+  const departmentDropdownRefMobile = useRef(null);
+  const statusDropdownRefMobile = useRef(null);
   const exportAllDropdownRef = useRef(null);
   const exportSelectedDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
@@ -83,6 +84,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
   const [hrReportsData, setHrReportsData] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [reportsError, setReportsError] = useState(null);
+  const [departmentsList, setDepartmentsList] = useState([]);
 
   const fetchReports = async () => {
     try {
@@ -96,7 +98,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
           return {
             id: item.id ?? item.employee_id,
             employeeName: fullName,
-            employeePhoto: toAbsoluteAvatarUrl(item.avatar_url ?? item.employeePhoto ?? item.profile_image) || AmeerJamalPhoto,
+            employeePhoto: toAbsoluteAvatarUrl(item.avatar_url ?? item.employeePhoto ?? item.profile_image) || item.employeePhoto || null,
             department: item.department ?? item.department_name ?? "—",
             position: item.position ?? item.position_title ?? item.job_title ?? "—",
             attendanceRate: Number(item.attendance_rate ?? item.attendanceRate ?? 0) || 0,
@@ -108,7 +110,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
     } catch (err) {
       const msg = err?.response?.data?.message ?? err?.message ?? "Failed to load HR reports";
       const isUnauth = err?.response?.status === 401;
-      setReportsError(isUnauth ? "يرجى تسجيل الدخول للوصول إلى تقارير HR." : msg);
+      setReportsError(isUnauth ? "Please sign in to access HR reports." : msg);
       setHrReportsData([]);
     } finally {
       setReportsLoading(false);
@@ -119,6 +121,18 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
     fetchReports();
   }, [fromDate, toDate]);
 
+  useEffect(() => {
+    let cancelled = false;
+    getDepartments()
+      .then((raw) => {
+        if (cancelled) return;
+        const list = Array.isArray(raw) ? raw : [];
+        setDepartmentsList(list.map((d) => d.name).filter(Boolean));
+      })
+      .catch(() => { if (!cancelled) setDepartmentsList([]); });
+    return () => { cancelled = true; };
+  }, []);
+
   // Role display names
   const roleDisplayNames = {
     superAdmin: "Super Admin",
@@ -128,93 +142,76 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
     officer: "Officer",
   };
 
-  // Normalize department name from API to chart key
-  const normalizeDeptKey = (dept) => {
-    if (!dept || typeof dept !== "string") return null;
-    const d = dept.toLowerCase().trim();
-    if (d.includes("office")) return "office";
-    if (d.includes("field")) return "fieldOperations";
-    if (d.includes("finance")) return "finance";
-    if (d.includes("it")) return "it";
-    if (d.includes("hr") || d === "human resources") return "hr";
-    if (d.includes("project")) return "projectManager";
-    return null;
-  };
+  // ألوان للرسوم (ديناميكي حسب عدد الأقسام)
+  const CHART_COLORS = ["#00564F", "#8CCCC6", "#1B223F", "#B1B1B1", "#670505", "#626262", "#4A90A4", "#E8A87C", "#85CDCA", "#C38D9E"];
 
-  const deptKeyToLabel = {
-    office: "Office",
-    fieldOperations: "Field Operations",
-    finance: "Finance",
-    it: "IT",
-    hr: "HR",
-    projectManager: "Project Manager",
-  };
-
-  // Employee distribution by department from API (pie chart)
-  const departmentDistribution = React.useMemo(() => {
-    const counts = { office: 0, fieldOperations: 0, finance: 0, it: 0, hr: 0, projectManager: 0 };
-    (hrReportsData || []).forEach((r) => {
-      const key = normalizeDeptKey(r.department);
-      if (key && counts[key] !== undefined) counts[key]++;
+  // توزيع الموظفين حسب القسم من البيانات (ديناميكي — بدون أقسام ثابتة)
+  const departmentDistributionList = React.useMemo(() => {
+    const data = hrReportsData || [];
+    const counts = {};
+    data.forEach((r) => {
+      const name = (r.department && String(r.department).trim()) || "—";
+      counts[name] = (counts[name] || 0) + 1;
     });
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    if (total === 0) return { office: 0, fieldOperations: 0, finance: 0, it: 0, hr: 0, projectManager: 0 };
-    return {
-      office: Math.round((counts.office / total) * 100),
-      fieldOperations: Math.round((counts.fieldOperations / total) * 100),
-      finance: Math.round((counts.finance / total) * 100),
-      it: Math.round((counts.it / total) * 100),
-      hr: Math.round((counts.hr / total) * 100),
-      projectManager: Math.round((counts.projectManager / total) * 100),
-    };
-  }, [hrReportsData]);
-
-  // Attendance vs Leave per department from API (bar chart)
-  const attendanceLeaveData = React.useMemo(() => {
-    const byDept = {};
-    const order = ["hr", "it", "office", "finance", "fieldOperations", "projectManager"];
-    order.forEach((k) => { byDept[k] = { department: deptKeyToLabel[k], attendance: 0, leaveDays: 0, count: 0 }; });
-    (hrReportsData || []).forEach((r) => {
-      const key = normalizeDeptKey(r.department);
-      if (key && byDept[key]) {
-        byDept[key].attendance += r.attendanceRate ?? 0;
-        byDept[key].leaveDays += r.leaveDaysTaken ?? 0;
-        byDept[key].count++;
-      }
+    const order = [...departmentsList];
+    const names = Object.keys(counts).filter((n) => n !== "—");
+    names.sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
     });
-    return order.map((k) => {
-      const d = byDept[k];
+    if (counts["—"]) names.push("—");
+    return names.map((name, i) => {
+      const count = counts[name] || 0;
+      const percentage = total ? Math.round((count / total) * 100) : 0;
+      return { name, count, percentage, color: CHART_COLORS[i % CHART_COLORS.length] };
+    });
+  }, [hrReportsData, departmentsList]);
+
+  // زوايا الدائرة للرسم (ديناميكي)
+  const pieSegments = React.useMemo(() => {
+    const total = departmentDistributionList.reduce((a, s) => a + s.percentage, 0) || 1;
+    let start = -90;
+    return departmentDistributionList.map((seg) => {
+      const angle = (seg.percentage / total) * 360;
+      const segment = { ...seg, startAngle: start, angle };
+      start += angle;
+      return segment;
+    });
+  }, [departmentDistributionList]);
+
+  // Attendance vs Leave لكل قسم من البيانات (ديناميكي)
+  const attendanceLeaveData = React.useMemo(() => {
+    const data = hrReportsData || [];
+    const byDept = {};
+    data.forEach((r) => {
+      const name = (r.department && String(r.department).trim()) || "—";
+      if (!byDept[name]) byDept[name] = { department: name, attendance: 0, leaveDays: 0, count: 0 };
+      byDept[name].attendance += r.attendanceRate ?? 0;
+      byDept[name].leaveDays += r.leaveDaysTaken ?? 0;
+      byDept[name].count++;
+    });
+    const order = departmentDistributionList.map((s) => s.name);
+    return order.map((name) => {
+      const d = byDept[name] || { department: name, attendance: 0, leaveDays: 0, count: 0 };
       const avgAtt = d.count ? Math.round(d.attendance / d.count) : 0;
       const avgLeave = d.count ? Math.round(d.leaveDays / d.count) : 0;
-      return { department: d.department, attendance: avgAtt, leaveDays: Math.min(100, avgLeave * 5) };
+      return { department: name, attendance: avgAtt, leaveDays: Math.min(100, avgLeave * 5) };
     });
-  }, [hrReportsData]);
+  }, [hrReportsData, departmentDistributionList]);
 
-  // Departments
-  const departments = ["All Departments", "Office", "Field Operations", "Finance", "IT", "HR", "Project Manager"];
+  // Departments from API (filter dropdown)
+  const departments = ["All Departments", ...departmentsList];
 
   // Status options
   const statusOptions = ["All Status", "Active", "Inactive"];
 
-  // Calculate pie chart segments
-  const totalDistribution = departmentDistribution.office + departmentDistribution.fieldOperations +
-    departmentDistribution.finance + departmentDistribution.it +
-    departmentDistribution.hr + departmentDistribution.projectManager;
+  const totalDistribution = departmentDistributionList.reduce((a, s) => a + s.percentage, 0);
   const safeTotal = totalDistribution || 1;
-  const officeAngle = (departmentDistribution.office / safeTotal) * 360;
-  const fieldOpsAngle = (departmentDistribution.fieldOperations / safeTotal) * 360;
-  const financeAngle = (departmentDistribution.finance / safeTotal) * 360;
-  const itAngle = (departmentDistribution.it / safeTotal) * 360;
-  const hrAngle = (departmentDistribution.hr / safeTotal) * 360;
-  const projectManagerAngle = (departmentDistribution.projectManager / safeTotal) * 360;
-
-  // Calculate cumulative angles for pie chart
-  const officeStartAngle = -90;
-  const fieldOpsStartAngle = officeStartAngle + officeAngle;
-  const financeStartAngle = fieldOpsStartAngle + fieldOpsAngle;
-  const itStartAngle = financeStartAngle + financeAngle;
-  const hrStartAngle = itStartAngle + itAngle;
-  const projectManagerStartAngle = hrStartAngle + hrAngle;
 
   // Helper function to convert angle to coordinates
   const getCoordinates = (angle, radius) => {
@@ -245,15 +242,15 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
     }
   };
 
-  // Close dropdowns when clicking outside
+  // Close dropdowns when clicking outside (check both desktop and mobile refs)
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (departmentDropdownRef.current && !departmentDropdownRef.current.contains(event.target)) {
-        setIsDepartmentDropdownOpen(false);
-      }
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
-        setIsStatusDropdownOpen(false);
-      }
+      const insideDept = (departmentDropdownRef.current && departmentDropdownRef.current.contains(event.target)) ||
+        (departmentDropdownRefMobile.current && departmentDropdownRefMobile.current.contains(event.target));
+      if (!insideDept) setIsDepartmentDropdownOpen(false);
+      const insideStatus = (statusDropdownRef.current && statusDropdownRef.current.contains(event.target)) ||
+        (statusDropdownRefMobile.current && statusDropdownRefMobile.current.contains(event.target));
+      if (!insideStatus) setIsStatusDropdownOpen(false);
       if (isExportAllDropdownOpen && exportAllDropdownRef.current && !exportAllDropdownRef.current.contains(event.target)) {
         setIsExportAllDropdownOpen(false);
       }
@@ -285,11 +282,13 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
     { key: "status", label: "Status" },
   ];
 
-  // Filter data
+  // Filter data (status comparison case-insensitive: API may return "active" vs dropdown "Active")
   const filteredData = hrReportsData.filter(record => {
     const matchesSearch = record.employeeName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDepartment = selectedDepartment === "All Departments" || record.department === selectedDepartment;
-    const matchesStatus = selectedStatus === "All Status" || record.status === selectedStatus;
+    const recordStatus = (record.status ?? "").toString().trim().toLowerCase();
+    const selectedStatusNorm = (selectedStatus ?? "").toString().trim().toLowerCase();
+    const matchesStatus = selectedStatus === "All Status" || !selectedStatusNorm || recordStatus === selectedStatusNorm;
     return matchesSearch && matchesDepartment && matchesStatus;
   });
 
@@ -342,8 +341,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                     className="flex items-center gap-[12px] cursor-pointer"
                     onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   >
-                    <img
-                      src={UserAvatar}
+                    <HeaderUserAvatar
                       alt="User"
                       className="w-[44px] h-[44px] rounded-full object-cover border-2 border-[#E5E7EB]"
                     />
@@ -369,7 +367,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                       <div className="px-[16px] py-[8px]">
                         <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                       </div>
-                      <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                      <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                         Edit Profile
                       </button>
                       <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -524,67 +522,24 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                         </>
                       ) : (
                         <>
-                          {officeAngle > 0 && (
-                            <path d={`M 100 100 L ${getCoordinates(officeStartAngle, 80).x} ${getCoordinates(officeStartAngle, 80).y} A 80 80 0 ${officeAngle > 180 ? 1 : 0} 1 ${getCoordinates(officeStartAngle + officeAngle, 80).x} ${getCoordinates(officeStartAngle + officeAngle, 80).y} Z`} fill="#00564F" />
-                          )}
-                          {fieldOpsAngle > 0 && (
-                            <path d={`M 100 100 L ${getCoordinates(fieldOpsStartAngle, 80).x} ${getCoordinates(fieldOpsStartAngle, 80).y} A 80 80 0 ${fieldOpsAngle > 180 ? 1 : 0} 1 ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).x} ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).y} Z`} fill="#8CCCC6" />
-                          )}
-                          {financeAngle > 0 && (
-                            <path d={`M 100 100 L ${getCoordinates(financeStartAngle, 80).x} ${getCoordinates(financeStartAngle, 80).y} A 80 80 0 ${financeAngle > 180 ? 1 : 0} 1 ${getCoordinates(financeStartAngle + financeAngle, 80).x} ${getCoordinates(financeStartAngle + financeAngle, 80).y} Z`} fill="#1B223F" />
-                          )}
-                          {itAngle > 0 && (
-                            <path d={`M 100 100 L ${getCoordinates(itStartAngle, 80).x} ${getCoordinates(itStartAngle, 80).y} A 80 80 0 ${itAngle > 180 ? 1 : 0} 1 ${getCoordinates(itStartAngle + itAngle, 80).x} ${getCoordinates(itStartAngle + itAngle, 80).y} Z`} fill="#B1B1B1" />
-                          )}
-                          {hrAngle > 0 && (
-                            <path d={`M 100 100 L ${getCoordinates(hrStartAngle, 80).x} ${getCoordinates(hrStartAngle, 80).y} A 80 80 0 ${hrAngle > 180 ? 1 : 0} 1 ${getCoordinates(hrStartAngle + hrAngle, 80).x} ${getCoordinates(hrStartAngle + hrAngle, 80).y} Z`} fill="#670505" />
-                          )}
-                          {projectManagerAngle > 0 && (
-                            <path d={`M 100 100 L ${getCoordinates(projectManagerStartAngle, 80).x} ${getCoordinates(projectManagerStartAngle, 80).y} A 80 80 0 ${projectManagerAngle > 180 ? 1 : 0} 1 ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).x} ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).y} Z`} fill="#626262" />
-                          )}
+                          {pieSegments.filter((s) => s.angle > 0).map((seg, i) => (
+                            <path key={i} d={`M 100 100 L ${getCoordinates(seg.startAngle, 80).x} ${getCoordinates(seg.startAngle, 80).y} A 80 80 0 ${seg.angle > 180 ? 1 : 0} 1 ${getCoordinates(seg.startAngle + seg.angle, 80).x} ${getCoordinates(seg.startAngle + seg.angle, 80).y} Z`} fill={seg.color} />
+                          ))}
                         </>
                       )}
                     </svg>
                   </div>
 
-                  {/* Labels */}
+                  {/* Labels - ديناميكي من البيانات */}
                   <div className="flex flex-col justify-center gap-[12px]">
-                    <div className="flex items-center gap-[8px]">
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#00564F' }}></div>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#00564F' }}>
-                        {departmentDistribution.office} Office
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-[8px]">
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#8CCCC6' }}></div>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#8CCCC6' }}>
-                        {departmentDistribution.fieldOperations} Field Operations
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-[8px]">
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#1B223F' }}></div>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#1B223F' }}>
-                        {departmentDistribution.finance} Finance
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-[8px]">
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#B1B1B1' }}></div>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#B1B1B1' }}>
-                        {departmentDistribution.it} IT
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-[8px]">
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#670505' }}></div>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#670505' }}>
-                        {departmentDistribution.hr} HR
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-[8px]">
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#626262' }}></div>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#626262' }}>
-                        {departmentDistribution.projectManager} Project Manager
-                      </span>
-                    </div>
+                    {departmentDistributionList.map((seg, i) => (
+                      <div key={i} className="flex items-center gap-[8px]">
+                        <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: seg.color }}></div>
+                        <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: seg.color }}>
+                          {seg.percentage} {seg.name}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -646,9 +601,10 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                     {/* Bars */}
                     <div className="absolute inset-0 flex items-end justify-start" style={{ height: 'calc(100% - 30px)', paddingLeft: '8px', paddingRight: '8px', gap: '8px' }}>
                       {attendanceLeaveData.map((data, index) => {
+                        const n = Math.max(1, attendanceLeaveData.length);
                         const availableWidth = 'calc(100% - 16px)';
-                        const gapTotal = 8 * 5;
-                        const deptWidth = `calc((${availableWidth} - ${gapTotal}px) / 6)`;
+                        const gapTotal = 8 * (n - 1);
+                        const deptWidth = `calc((${availableWidth} - ${gapTotal}px) / ${n})`;
 
                         return (
                           <div key={index} className="flex items-end justify-center gap-[2px]" style={{ width: deptWidth, height: '100%', flexShrink: 0 }}>
@@ -689,7 +645,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                             fontWeight: 500,
                             lineHeight: '100%',
                             color: '#827F7F',
-                            width: `${100 / 6}%`
+                            width: `${attendanceLeaveData.length ? 100 / attendanceLeaveData.length : 0}%`
                           }}
                         >
                           {data.department}
@@ -783,8 +739,10 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Department Dropdown */}
-              <div className="relative" ref={departmentDropdownRef}>
+              <div className="relative z-[100]" ref={departmentDropdownRef}>
                 <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => setIsDepartmentDropdownOpen(!isDepartmentDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[160px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -795,10 +753,11 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isDepartmentDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[160px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200] min-w-[160px]" onMouseDown={(e) => e.stopPropagation()}>
                     {departments.map((dept) => (
                       <button
                         key={dept}
+                        type="button"
                         onClick={() => {
                           setSelectedDepartment(dept);
                           setIsDepartmentDropdownOpen(false);
@@ -822,8 +781,10 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
               </div>
 
               {/* Status Dropdown */}
-              <div className="relative" ref={statusDropdownRef}>
+              <div className="relative z-[100]" ref={statusDropdownRef}>
                 <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                   className="px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between min-w-[140px] hover:border-[#004D40] transition-colors"
                   style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, color: '#000000' }}
@@ -834,10 +795,11 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                   </svg>
                 </button>
                 {isStatusDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10 min-w-[140px]">
+                  <div className="absolute top-full left-0 mt-[4px] bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200] min-w-[140px]" onMouseDown={(e) => e.stopPropagation()}>
                     {statusOptions.map((status) => (
                       <button
                         key={status}
+                        type="button"
                         onClick={() => {
                           setSelectedStatus(status);
                           setIsStatusDropdownOpen(false);
@@ -1037,8 +999,8 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                                 fontSize: '13px',
                                 lineHeight: '100%',
                                 whiteSpace: 'nowrap',
-                                color: record.status === "Active" ? '#00564F' : '#626262',
-                                backgroundColor: record.status === "Active" ? '#68BFCC' : '#E5E7EB',
+                                color: (record.status || '').toString().trim().toLowerCase() === 'active' ? '#00564F' : '#626262',
+                                backgroundColor: (record.status || '').toString().trim().toLowerCase() === 'active' ? '#68BFCC' : '#E5E7EB',
                                 textAlign: 'center'
                               }}
                             >
@@ -1140,8 +1102,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                 className="flex items-center gap-[6px] cursor-pointer"
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
               >
-                <img
-                  src={UserAvatar}
+                <HeaderUserAvatar
                   alt="User"
                   className="w-[36px] h-[36px] rounded-full object-cover border-2 border-[#E5E7EB]"
                 />
@@ -1161,7 +1122,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                   <div className="px-[16px] py-[8px]">
                     <p className="text-[12px] text-[#6B7280]">{currentUser?.email || ""}</p>
                   </div>
-                  <button className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors">
+                  <button type="button" className="w-full px-[16px] py-[10px] text-left text-[14px] text-[#333333] hover:bg-[#F5F7FA] transition-colors" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsUserDropdownOpen(false); navigate("/profile"); }}>
                     Edit Profile
                   </button>
                   <div className="h-[1px] bg-[#DC2626] my-[4px]"></div>
@@ -1228,55 +1189,24 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                       </>
                     ) : (
                       <>
-                        {officeAngle > 0 && <path d={`M 100 100 L ${getCoordinates(officeStartAngle, 80).x} ${getCoordinates(officeStartAngle, 80).y} A 80 80 0 ${officeAngle > 180 ? 1 : 0} 1 ${getCoordinates(officeStartAngle + officeAngle, 80).x} ${getCoordinates(officeStartAngle + officeAngle, 80).y} Z`} fill="#00564F" />}
-                        {fieldOpsAngle > 0 && <path d={`M 100 100 L ${getCoordinates(fieldOpsStartAngle, 80).x} ${getCoordinates(fieldOpsStartAngle, 80).y} A 80 80 0 ${fieldOpsAngle > 180 ? 1 : 0} 1 ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).x} ${getCoordinates(fieldOpsStartAngle + fieldOpsAngle, 80).y} Z`} fill="#8CCCC6" />}
-                        {financeAngle > 0 && <path d={`M 100 100 L ${getCoordinates(financeStartAngle, 80).x} ${getCoordinates(financeStartAngle, 80).y} A 80 80 0 ${financeAngle > 180 ? 1 : 0} 1 ${getCoordinates(financeStartAngle + financeAngle, 80).x} ${getCoordinates(financeStartAngle + financeAngle, 80).y} Z`} fill="#1B223F" />}
-                        {itAngle > 0 && <path d={`M 100 100 L ${getCoordinates(itStartAngle, 80).x} ${getCoordinates(itStartAngle, 80).y} A 80 80 0 ${itAngle > 180 ? 1 : 0} 1 ${getCoordinates(itStartAngle + itAngle, 80).x} ${getCoordinates(itStartAngle + itAngle, 80).y} Z`} fill="#B1B1B1" />}
-                        {hrAngle > 0 && <path d={`M 100 100 L ${getCoordinates(hrStartAngle, 80).x} ${getCoordinates(hrStartAngle, 80).y} A 80 80 0 ${hrAngle > 180 ? 1 : 0} 1 ${getCoordinates(hrStartAngle + hrAngle, 80).x} ${getCoordinates(hrStartAngle + hrAngle, 80).y} Z`} fill="#670505" />}
-                        {projectManagerAngle > 0 && <path d={`M 100 100 L ${getCoordinates(projectManagerStartAngle, 80).x} ${getCoordinates(projectManagerStartAngle, 80).y} A 80 80 0 ${projectManagerAngle > 180 ? 1 : 0} 1 ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).x} ${getCoordinates(projectManagerStartAngle + projectManagerAngle, 80).y} Z`} fill="#626262" />}
+                        {pieSegments.filter((s) => s.angle > 0).map((seg, i) => (
+                          <path key={i} d={`M 100 100 L ${getCoordinates(seg.startAngle, 80).x} ${getCoordinates(seg.startAngle, 80).y} A 80 80 0 ${seg.angle > 180 ? 1 : 0} 1 ${getCoordinates(seg.startAngle + seg.angle, 80).x} ${getCoordinates(seg.startAngle + seg.angle, 80).y} Z`} fill={seg.color} />
+                        ))}
                       </>
                     )}
                   </svg>
                 </div>
 
-                {/* Labels */}
+                {/* Labels - ديناميكي من البيانات */}
                 <div className="flex flex-col gap-2 w-full">
-                  <div className="flex items-center gap-[8px]">
-                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#00564F' }}></div>
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#00564F' }}>
-                      {departmentDistribution.office} Office
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-[8px]">
-                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#8CCCC6' }}></div>
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#8CCCC6' }}>
-                      {departmentDistribution.fieldOperations} Field Operations
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-[8px]">
-                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#1B223F' }}></div>
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#1B223F' }}>
-                      {departmentDistribution.finance} Finance
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-[8px]">
-                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#B1B1B1' }}></div>
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#B1B1B1' }}>
-                      {departmentDistribution.it} IT
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-[8px]">
-                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#670505' }}></div>
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#670505' }}>
-                      {departmentDistribution.hr} HR
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-[8px]">
-                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#626262' }}></div>
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: '#626262' }}>
-                      {departmentDistribution.projectManager} Project Manager
-                    </span>
-                  </div>
+                  {departmentDistributionList.map((seg, i) => (
+                    <div key={i} className="flex items-center gap-[8px]">
+                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: seg.color }}></div>
+                      <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, color: seg.color }}>
+                        {seg.percentage} {seg.name}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1367,7 +1297,7 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                           fontSize: '10px',
                           fontWeight: 500,
                           color: '#827F7F',
-                          width: `${100 / 6}%`
+                          width: `${attendanceLeaveData.length ? 100 / attendanceLeaveData.length : 0}%`
                         }}
                       >
                         {data.department}
@@ -1423,8 +1353,10 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Department Dropdown */}
-            <div className="relative" ref={departmentDropdownRef}>
+            <div className="relative z-[100]" ref={departmentDropdownRefMobile}>
               <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setIsDepartmentDropdownOpen(!isDepartmentDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -1434,10 +1366,11 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isDepartmentDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200]" onMouseDown={(e) => e.stopPropagation()}>
                   {departments.map((dept) => (
                     <button
                       key={dept}
+                      type="button"
                       onClick={() => {
                         setSelectedDepartment(dept);
                         setIsDepartmentDropdownOpen(false);
@@ -1454,8 +1387,10 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
             </div>
 
             {/* Status Dropdown */}
-            <div className="relative" ref={statusDropdownRef}>
+            <div className="relative z-[100]" ref={statusDropdownRefMobile}>
               <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
                 className="w-full px-[16px] py-[10px] rounded-[5px] border border-[#E0E0E0] bg-white flex items-center justify-between text-[14px] font-semibold text-[#000000]"
               >
@@ -1465,10 +1400,11 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                 </svg>
               </button>
               {isStatusDropdownOpen && (
-                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-10">
+                <div className="absolute top-full left-0 mt-[4px] w-full bg-white border border-[#E0E0E0] rounded-[5px] shadow-lg z-[200]" onMouseDown={(e) => e.stopPropagation()}>
                   {statusOptions.map((status) => (
                     <button
                       key={status}
+                      type="button"
                       onClick={() => {
                         setSelectedStatus(status);
                         setIsStatusDropdownOpen(false);
@@ -1549,8 +1485,8 @@ const HRReportsPage = ({ userRole = "superAdmin" }) => {
                       <span
                         className="inline-block px-[14px] py-[6px] rounded-[8px] text-[13px] font-bold shadow-sm"
                         style={{
-                          color: record.status === "Active" ? '#00564F' : '#626262',
-                          backgroundColor: record.status === "Active" ? '#68BFCC' : '#E5E7EB'
+                          color: (record.status || '').toString().trim().toLowerCase() === 'active' ? '#00564F' : '#626262',
+                          backgroundColor: (record.status || '').toString().trim().toLowerCase() === 'active' ? '#68BFCC' : '#E5E7EB'
                         }}
                       >
                         {record.status}
