@@ -96,8 +96,11 @@ exports.getTeamReports = async (req, res) => {
             attendanceWhereClause += ` AND check_in_time <= $${attendanceParams.length}::DATE + INTERVAL '1 day'`;
         }
         if (isManager) {
-            attendanceParams.push(teamMemberIds);
-            attendanceWhereClause += ` AND employee_id = ANY($${attendanceParams.length}::uuid[])`;
+            attendanceParams.push(managerEmployeeId);
+            attendanceWhereClause += ` AND (
+                employee_id = $${attendanceParams.length}::UUID OR
+                employee_id IN (SELECT id FROM employees WHERE supervisor_id = $${attendanceParams.length}::UUID)
+            )`;
         }
 
         const attendanceQuery = `

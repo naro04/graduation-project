@@ -662,7 +662,8 @@ exports.getActivityReports = async (req, res) => {
               AND ($3::TEXT IS NULL OR LOWER(TRIM(a.activity_type)) = LOWER(TRIM($3::TEXT)))
               AND ($4::TEXT IS NULL OR (
                   CASE 
-                    WHEN $4 = 'Implemented' THEN (a.implementation_status = 'Implemented' OR a.approval_status = 'Approved')
+                    WHEN $4 IN ('Implemented', 'Completed') THEN (a.implementation_status = 'Implemented' OR a.approval_status = 'Approved')
+                    WHEN $4 = 'In Progress' THEN (a.implementation_status = 'Planned' AND a.approval_status != 'Approved')
                     ELSE a.implementation_status = $4 
                   END
               ))
@@ -719,7 +720,7 @@ exports.getActivityReports = async (req, res) => {
         `;
 
         // 3. Participants by Activity Type
-        // Uses the attendees_count column + staff count
+        // Uses the attendees_count logic including staff
         const participantsQuery = `
             SELECT 
                 a.activity_type as type,
