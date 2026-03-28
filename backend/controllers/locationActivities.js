@@ -648,7 +648,7 @@ exports.getActivityReports = async (req, res) => {
                 COALESCE(a.actual_date, a.start_date) as actual_date,
                 (
                     COALESCE(a.attendees_count, 0) + 
-                    (SELECT COUNT(DISTINCT employee_id) FROM activity_employees WHERE activity_id = a.id) + 
+                    (SELECT COUNT(DISTINCT ae3.employee_id) FROM activity_employees ae3 WHERE ae3.activity_id = a.id) + 
                     1
                 ) as attendees_count,
                 e.first_name || ' ' || e.last_name as responsible_employee,
@@ -667,9 +667,13 @@ exports.getActivityReports = async (req, res) => {
                   END
               ))
               AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
-              AND ($6::UUID IS NULL OR a.employee_id = $6
-                OR a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6)
-                OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
+              AND ($6::UUID IS NULL OR a.employee_id = $6::UUID
+                OR a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6::UUID)
+                OR EXISTS (
+                    SELECT 1 FROM activity_employees ae2 
+                    JOIN employees e2 ON ae2.employee_id = e2.id 
+                    WHERE ae2.activity_id = a.id AND e2.supervisor_id = $6::UUID
+                ))
             ORDER BY a.start_date DESC;
         `, [
             from || null,
@@ -685,18 +689,18 @@ exports.getActivityReports = async (req, res) => {
 
         // Scoping boilerplate for charts
         let chartParams = [fromD, toD];
-        let chartWhereClause = `WHERE ($1::DATE IS NULL OR activities.end_date >= $1::DATE)
-              AND ($2::DATE IS NULL OR activities.start_date <= $2::DATE)`;
+        let chartWhereClause = `WHERE ($1::DATE IS NULL OR a.end_date >= $1::DATE)
+              AND ($2::DATE IS NULL OR a.start_date <= $2::DATE)`;
 
         if (isManager) {
             chartParams.push(managerEmployeeId);
             chartWhereClause += ` AND (
-                activities.employee_id = $3::UUID
-                OR activities.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $3::UUID)
+                a.employee_id = $3::UUID
+                OR a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $3::UUID)
                 OR EXISTS (
                     SELECT 1 FROM activity_employees ae2 
                     JOIN employees e2 ON ae2.employee_id = e2.id 
-                    WHERE ae2.activity_id = activities.id AND e2.supervisor_id = $3::UUID
+                    WHERE ae2.activity_id = a.id AND e2.supervisor_id = $3::UUID
                 )
             )`;
         }
@@ -705,31 +709,28 @@ exports.getActivityReports = async (req, res) => {
         // Implemented: Status is 'Implemented' OR 'Approved'
         const trendQuery = `
             SELECT 
-                TO_CHAR(date_trunc('month', start_date), 'Mon') as month,
-                COUNT(*) FILTER (WHERE implementation_status IN ('Planned', 'Implemented') OR approval_status = 'Approved') as planned,
-                COUNT(*) FILTER (WHERE 
-                    implementation_status = 'Implemented' OR 
-                    approval_status = 'Approved'
-                ) as implemented
-            FROM activities
+                TO_CHAR(date_trunc('month', a.start_date), 'Mon') as month,
+                COUNT(*) FILTER (WHERE a.implementation_status IN ('Planned', 'Implemented') OR a.approval_status = 'Approved') as planned,
+                COUNT(*) FILTER (WHERE a.implementation_status = 'Implemented' OR a.approval_status = 'Approved') as implemented
+            FROM activities a
             ${chartWhereClause}
-            GROUP BY date_trunc('month', start_date)
-            ORDER BY date_trunc('month', start_date);
+            GROUP BY date_trunc('month', a.start_date)
+            ORDER BY date_trunc('month', a.start_date);
         `;
 
         // 3. Participants by Activity Type
         // Uses the attendees_count column + staff count
         const participantsQuery = `
             SELECT 
-                activity_type as type,
+                a.activity_type as type,
                 SUM(
-                    COALESCE(attendees_count, 0) + 
-                    (SELECT COUNT(DISTINCT employee_id) FROM activity_employees WHERE activity_id = activities.id) + 
+                    COALESCE(a.attendees_count, 0) + 
+                    (SELECT COUNT(DISTINCT ae4.employee_id) FROM activity_employees ae4 WHERE ae4.activity_id = a.id) + 
                     1
                 ) as attendees
-            FROM activities
-            ${chartWhereClause} AND (implementation_status = 'Implemented' OR approval_status = 'Approved')
-            GROUP BY activity_type;
+            FROM activities a
+            ${chartWhereClause} AND (a.implementation_status = 'Implemented' OR a.approval_status = 'Approved')
+            GROUP BY a.activity_type;
         `;
 
         const trendResult = await pool.query(trendQuery, chartParams);

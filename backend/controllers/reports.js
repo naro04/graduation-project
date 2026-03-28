@@ -42,16 +42,20 @@ exports.getTeamReports = async (req, res) => {
         }
 
         // 2. Completed and Overdue Tasks (Activities)
-        // Scoped to: (Manager responsible) OR (any Team Member assigned)
+        // Scoped to: (Manager responsible) OR (any Team Member responsible) OR (any Team Member assigned)
         let activitiesWhereClause = '';
         let activitiesParams = [];
         if (isManager) {
             activitiesParams.push(managerEmployeeId);
-            activitiesParams.push(teamMemberIds);
-            activitiesWhereClause = `WHERE (a.employee_id = $1 OR EXISTS (
-                SELECT 1 FROM activity_employees ae 
-                WHERE ae.activity_id = a.id AND ae.employee_id = ANY($2::uuid[])
-            ))`;
+            activitiesWhereClause = `WHERE (
+                a.employee_id = $1::UUID OR 
+                a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $1::UUID) OR
+                EXISTS (
+                    SELECT 1 FROM activity_employees ae 
+                    JOIN employees e2 ON ae.employee_id = e2.id 
+                    WHERE ae.activity_id = a.id AND e2.supervisor_id = $1::UUID
+                )
+            )`;
         }
 
         const activitiesQuery = `
