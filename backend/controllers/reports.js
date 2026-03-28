@@ -1,4 +1,5 @@
 const pool = require('../database/connection');
+const { autoImplementPastActivities } = require('./locationActivities');
 
 /**
  * Get team reports metrics for manager dashboard/reports page
@@ -6,6 +7,7 @@ const pool = require('../database/connection');
  */
 exports.getTeamReports = async (req, res) => {
     try {
+        await autoImplementPastActivities();
         const { from, to } = req.query;
         const userId = req.user.id;
         const isManager = req.user.role_name === 'Manager';
@@ -15,7 +17,7 @@ exports.getTeamReports = async (req, res) => {
             return res.status(403).json({ message: 'Access denied' });
         }
 
-        // 1. Get team members count
+        // 1. Get team members (Supervisor Check)
         const membersQuery = isManager 
             ? 'SELECT id, status FROM employees WHERE supervisor_id = $1'
             : 'SELECT id, status FROM employees';
@@ -40,13 +42,13 @@ exports.getTeamReports = async (req, res) => {
         }
 
         // 2. Completed and Overdue Tasks (Activities)
-        // Scoped to manager's team
+        // Scoped to: (Manager responsible) OR (any Team Member assigned)
         let activitiesWhereClause = '';
         let activitiesParams = [];
         if (isManager) {
             activitiesParams.push(managerEmployeeId);
             activitiesParams.push(teamMemberIds);
-            activitiesWhereClause = `WHERE (employee_id = $1 OR EXISTS (
+            activitiesWhereClause = `WHERE (a.employee_id = $1 OR EXISTS (
                 SELECT 1 FROM activity_employees ae 
                 WHERE ae.activity_id = a.id AND ae.employee_id = ANY($2::uuid[])
             ))`;
@@ -55,6 +57,7 @@ exports.getTeamReports = async (req, res) => {
         const activitiesQuery = `
             SELECT 
                 implementation_status,
+                approval_status,
                 end_date
             FROM activities a
             ${activitiesWhereClause}
@@ -62,12 +65,15 @@ exports.getTeamReports = async (req, res) => {
         const activitiesResult = await pool.query(activitiesQuery, activitiesParams);
         const activities = activitiesResult.rows;
 
-        const completedTasks = activities.filter(a => a.implementation_status === 'Implemented').length;
-        
         const now = new Date();
+        const completedTasks = activities.filter(a => 
+            a.implementation_status === 'Implemented' || 
+            (String(a.approval_status).toLowerCase() === 'approved' && a.end_date && new Date(a.end_date) < now)
+        ).length;
+        
         const overdueTasks = activities.filter(a => {
             const endDate = a.end_date ? new Date(a.end_date) : null;
-            return endDate && endDate < now && a.implementation_status !== 'Implemented';
+            return endDate && endDate < now && a.implementation_status !== 'Implemented' && a.implementation_status !== 'Cancelled';
         }).length;
 
         // 3. Attendance Commitment Rate

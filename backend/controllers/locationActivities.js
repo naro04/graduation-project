@@ -632,6 +632,7 @@ exports.getActivityReports = async (req, res) => {
         const isManager = String(req.user.role_name ?? '').trim().toLowerCase() === 'manager';
         const managerEmployeeId = req.user.employee_id;
 
+        // 1. Get detailed activity records
         const recordsResult = await pool.query(`
             SELECT DISTINCT
                 a.id,
@@ -644,15 +645,8 @@ exports.getActivityReports = async (req, res) => {
                 a.approval_status,
                 a.created_at,
                 a.project_name,
-                a.start_date as actual_date,
-                COALESCE((
-                    SELECT CAST(COUNT(DISTINCT att.employee_id) AS INTEGER)
-                    FROM attendance att
-                    WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = a.id)
-                      AND att.check_in_time::DATE >= a.start_date 
-                      AND att.check_in_time::DATE <= a.end_date 
-                      AND att.gps_status = 'Verified'
-                ), 0) as attendees_count,
+                a.actual_date,
+                a.attendees_count,
                 e.first_name || ' ' || e.last_name as responsible_employee,
                 l.name as location_name
             FROM activities a
@@ -662,12 +656,12 @@ exports.getActivityReports = async (req, res) => {
             WHERE ($1::DATE IS NULL OR a.end_date >= $1::DATE)
               AND ($2::DATE IS NULL OR a.start_date <= $2::DATE)
               AND ($3::TEXT IS NULL OR LOWER(TRIM(a.activity_type)) = LOWER(TRIM($3::TEXT)))
-              AND ($4::TEXT IS NULL OR a.approval_status = $4)
+              AND ($4::TEXT IS NULL OR a.implementation_status = $4)
               AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
               AND ($6::UUID IS NULL OR a.employee_id = $6
                 OR a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6)
                 OR ae.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $6))
-            ORDER BY a.created_at DESC;
+            ORDER BY a.start_date DESC;
         `, [
             from || null,
             to || null,
@@ -680,67 +674,53 @@ exports.getActivityReports = async (req, res) => {
         const fromD = from || null;
         const toD = to || null;
 
-        // Same date overlap as the records query so charts match the table filters
-        let trendParams = [fromD, toD];
-        let trendWhereClause = `WHERE ($1::DATE IS NULL OR end_date >= $1::DATE)
-              AND ($2::DATE IS NULL OR start_date <= $2::DATE)`;
-
-        let participantsParams = [fromD, toD];
-        let participantsWhereClause = `WHERE implementation_status = 'Implemented'
-              AND ($1::DATE IS NULL OR end_date >= $1::DATE)
+        // Scoping boilerplate for charts
+        let chartParams = [fromD, toD];
+        let chartWhereClause = `WHERE ($1::DATE IS NULL OR end_date >= $1::DATE)
               AND ($2::DATE IS NULL OR start_date <= $2::DATE)`;
 
         if (isManager) {
-            trendParams.push(managerEmployeeId);
-            trendWhereClause += ` AND (employee_id = $3
+            chartParams.push(managerEmployeeId);
+            chartWhereClause += ` AND (
+                employee_id = $3
                 OR employee_id IN (SELECT id FROM employees WHERE supervisor_id = $3)
                 OR EXISTS (
-                SELECT 1 FROM activity_employees ae2 
-                JOIN employees e2 ON ae2.employee_id = e2.id 
-                WHERE ae2.activity_id = activities.id AND e2.supervisor_id = $3
-            ))`;
-
-            participantsParams.push(managerEmployeeId);
-            participantsWhereClause += ` AND (employee_id = $3
-                OR employee_id IN (SELECT id FROM employees WHERE supervisor_id = $3)
-                OR EXISTS (
-                SELECT 1 FROM activity_employees ae3 
-                JOIN employees e3 ON ae3.employee_id = e3.id 
-                WHERE ae3.activity_id = activities.id AND e3.supervisor_id = $3
-            ))`;
+                    SELECT 1 FROM activity_employees ae2 
+                    JOIN employees e2 ON ae2.employee_id = e2.id 
+                    WHERE ae2.activity_id = activities.id AND e2.supervisor_id = $3
+                )
+            )`;
         }
 
+        // 2. Activity Completion Trend (Monthly)
+        // Implemented: Status is 'Implemented' OR (Approved AND Date passed)
         const trendQuery = `
             SELECT 
                 TO_CHAR(date_trunc('month', start_date), 'Mon') as month,
                 COUNT(*) FILTER (WHERE implementation_status IN ('Planned', 'Implemented')) as planned,
-                COUNT(*) FILTER (WHERE implementation_status = 'Implemented') as implemented
+                COUNT(*) FILTER (WHERE 
+                    implementation_status = 'Implemented' OR 
+                    (approval_status = 'Approved' AND end_date < CURRENT_DATE)
+                ) as implemented
             FROM activities
-            ${trendWhereClause}
+            ${chartWhereClause}
             GROUP BY date_trunc('month', start_date)
             ORDER BY date_trunc('month', start_date);
         `;
 
+        // 3. Participants by Activity Type
+        // Uses the attendees_count column
         const participantsQuery = `
             SELECT 
                 activity_type as type,
-                SUM(
-                  COALESCE((
-                      SELECT CAST(COUNT(DISTINCT att.employee_id) AS INTEGER)
-                      FROM attendance att
-                      WHERE att.employee_id IN (SELECT ae2.employee_id FROM activity_employees ae2 WHERE ae2.activity_id = activities.id)
-                        AND att.check_in_time::DATE >= activities.start_date 
-                        AND att.check_in_time::DATE <= activities.end_date 
-                        AND att.gps_status = 'Verified'
-                  ), 0)
-                ) as attendees
+                SUM(COALESCE(attendees_count, 0)) as attendees
             FROM activities
-            ${participantsWhereClause}
+            ${chartWhereClause} AND implementation_status = 'Implemented'
             GROUP BY activity_type;
         `;
 
-        const trendResult = await pool.query(trendQuery, trendParams);
-        const participantsResult = await pool.query(participantsQuery, participantsParams);
+        const trendResult = await pool.query(trendQuery, chartParams);
+        const participantsResult = await pool.query(participantsQuery, chartParams);
 
         res.status(200).json({
             status: 'success',
@@ -751,6 +731,7 @@ exports.getActivityReports = async (req, res) => {
             }
         });
     } catch (err) {
+        console.error('Error fetching activity reports:', err);
         res.status(500).json({ message: 'Error fetching activity reports', error: err.message });
     }
 };
@@ -823,3 +804,5 @@ exports.assignTeamToActivity = async (req, res) => {
 };
 
 
+exports.autoImplementPastActivities = autoImplementPastActivities;
+module.exports = exports;
