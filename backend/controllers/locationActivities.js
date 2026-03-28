@@ -662,9 +662,9 @@ exports.getActivityReports = async (req, res) => {
               AND ($3::TEXT IS NULL OR LOWER(TRIM(a.activity_type)) = LOWER(TRIM($3::TEXT)))
               AND ($4::TEXT IS NULL OR (
                   CASE 
-                    WHEN $4 IN ('Implemented', 'Completed') THEN (a.implementation_status = 'Implemented' OR a.approval_status = 'Approved')
-                    WHEN $4 = 'In Progress' THEN (a.implementation_status = 'Planned' AND a.approval_status != 'Approved')
-                    ELSE a.implementation_status = $4 
+                    WHEN LOWER(TRIM($4::TEXT)) IN ('implemented', 'completed') THEN (a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved')
+                    WHEN LOWER(TRIM($4::TEXT)) = 'in progress' THEN (a.implementation_status ILIKE 'Planned' AND a.approval_status NOT ILIKE 'Approved')
+                    ELSE a.implementation_status ILIKE $4 
                   END
               ))
               AND ($5::TEXT IS NULL OR a.name ILIKE '%' || $5 || '%')
@@ -711,8 +711,8 @@ exports.getActivityReports = async (req, res) => {
         const trendQuery = `
             SELECT 
                 TO_CHAR(date_trunc('month', a.start_date), 'Mon') as month,
-                COUNT(*) FILTER (WHERE a.implementation_status IN ('Planned', 'Implemented') OR a.approval_status = 'Approved') as planned,
-                COUNT(*) FILTER (WHERE a.implementation_status = 'Implemented' OR a.approval_status = 'Approved') as implemented
+                COUNT(*) FILTER (WHERE a.implementation_status ILIKE 'Planned' OR a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved') as planned,
+                COUNT(*) FILTER (WHERE a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved') as implemented
             FROM activities a
             ${chartWhereClause}
             GROUP BY date_trunc('month', a.start_date)
@@ -730,7 +730,7 @@ exports.getActivityReports = async (req, res) => {
                     1
                 ) as attendees
             FROM activities a
-            ${chartWhereClause} AND (a.implementation_status = 'Implemented' OR a.approval_status = 'Approved')
+            ${chartWhereClause} AND (a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved')
             GROUP BY a.activity_type;
         `;
 

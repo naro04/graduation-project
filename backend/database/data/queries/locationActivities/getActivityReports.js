@@ -5,7 +5,7 @@ const getActivityReportsQuery = `
     a.activity_type as type,
     a.employee_id,
     CASE 
-      WHEN a.employee_id IS NOT NULL THEN e.first_name || ' ' || e.last_name
+      WHEN e.first_name IS NOT NULL THEN e.first_name || ' ' || e.last_name
       ELSE NULL
     END as responsible_employee,
     a.location_id,
@@ -30,8 +30,9 @@ const getActivityReportsQuery = `
     AND ($3::TEXT IS NULL OR LOWER(TRIM(a.activity_type)) = LOWER(TRIM($3::TEXT)))
     AND ($4::TEXT IS NULL OR (
         CASE 
-          WHEN $4 = 'Implemented' THEN (a.implementation_status = 'Implemented' OR a.approval_status = 'Approved')
-          ELSE a.implementation_status = $4 
+          WHEN $4 IN ('Implemented', 'Completed') THEN (a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved')
+          WHEN $4 = 'In Progress' THEN (a.implementation_status ILIKE 'Planned' AND a.approval_status NOT ILIKE 'Approved')
+          ELSE a.implementation_status ILIKE $4 
         END
     ))
     AND ($5::TEXT IS NULL OR (a.name ILIKE '%' || $5::TEXT || '%'))
@@ -48,8 +49,8 @@ const getActivityReportsQuery = `
 const getCompletionTrendQuery = `
   SELECT 
     TO_CHAR(date_trunc('month', a.start_date), 'Mon') as month,
-    COUNT(*) FILTER (WHERE a.implementation_status IN ('Planned', 'Implemented') OR a.approval_status = 'Approved') as planned,
-    COUNT(*) FILTER (WHERE a.implementation_status = 'Implemented' OR a.approval_status = 'Approved') as implemented
+    COUNT(*) FILTER (WHERE a.implementation_status ILIKE 'Planned' OR a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved') as planned,
+    COUNT(*) FILTER (WHERE a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved') as implemented
   FROM activities a
   WHERE a.start_date >= date_trunc('year', CURRENT_DATE)
   GROUP BY date_trunc('month', a.start_date)
@@ -65,7 +66,7 @@ const getParticipantsByTypeQuery = `
         1
     ) as attendees
   FROM activities a
-  WHERE (a.implementation_status = 'Implemented' OR a.approval_status = 'Approved')
+  WHERE (a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved')
   GROUP BY a.activity_type;
 `;
 

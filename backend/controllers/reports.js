@@ -71,16 +71,13 @@ exports.getTeamReports = async (req, res) => {
 
         const now = new Date();
         const completedTasks = activities.filter(a => 
-            a.implementation_status === 'Implemented' || 
-            String(a.approval_status).toLowerCase() === 'approved'
+            (a.implementation_status && a.implementation_status.toLowerCase().trim() === 'implemented') || 
+            (a.approval_status && a.approval_status.toLowerCase().trim() === 'approved')
         ).length;
         
-        const overdueTasks = activities.filter(a => {
-            const endDate = a.end_date ? new Date(a.end_date) : null;
-            return endDate && endDate < now && 
-                   a.implementation_status === 'Planned' && 
-                   String(a.approval_status).toLowerCase() !== 'approved' && 
-                   a.implementation_status !== 'Cancelled';
+        const plannedTasks = activities.filter(a => {
+            const status = (a.implementation_status || "").toLowerCase().trim();
+            return status === 'planned';
         }).length;
 
         // 3. Attendance Commitment Rate
@@ -111,7 +108,10 @@ exports.getTeamReports = async (req, res) => {
         const attendanceResult = await pool.query(attendanceQuery, attendanceParams);
         const attendanceRecords = attendanceResult.rows;
 
-        const committedCount = attendanceRecords.filter(r => r.daily_status === 'Present' || r.daily_status === 'Late').length;
+        const committedCount = attendanceRecords.filter(r => {
+            const status = (r.daily_status || "").toLowerCase().trim();
+            return status === 'present' || status === 'late';
+        }).length;
         const totalAttendanceCount = attendanceRecords.length;
         const attendanceCommitmentRate = totalAttendanceCount > 0 
             ? Math.round((committedCount / totalAttendanceCount) * 100) 
@@ -123,7 +123,7 @@ exports.getTeamReports = async (req, res) => {
                 teamMembersCount,
                 activeEmployeesCount,
                 completedTasks,
-                overdueTasks,
+                plannedTasks,
                 attendanceCommitmentRate
             }
         });
