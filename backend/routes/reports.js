@@ -7,6 +7,6 @@ const { protect, restrictTo } = require('../middleware/auth');
 router.use(protect);
 
 // Team reports for manager view
-router.get('/team', restrictTo('manage_locations', 'manage_employees'), reportsController.getTeamReports);
+router.get('/team', restrictToRolesOrPermissions(['Manager'], 'manage_locations', 'manage_employees'), reportsController.getTeamReports);
 
 module.exports = router;
