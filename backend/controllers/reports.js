@@ -68,25 +68,28 @@ exports.getTeamReports = async (req, res) => {
         const now = new Date();
         const completedTasks = activities.filter(a => 
             a.implementation_status === 'Implemented' || 
-            (String(a.approval_status).toLowerCase() === 'approved' && a.end_date && new Date(a.end_date) < now)
+            String(a.approval_status).toLowerCase() === 'approved'
         ).length;
         
         const overdueTasks = activities.filter(a => {
             const endDate = a.end_date ? new Date(a.end_date) : null;
-            return endDate && endDate < now && a.implementation_status !== 'Implemented' && a.implementation_status !== 'Cancelled';
+            return endDate && endDate < now && 
+                   a.implementation_status === 'Planned' && 
+                   String(a.approval_status).toLowerCase() !== 'approved' && 
+                   a.implementation_status !== 'Cancelled';
         }).length;
 
         // 3. Attendance Commitment Rate
-        // Percentage of present/late records vs total records in the period
+        // Percentage of present/late records vs total records for the team IN THE PERIOD
         let attendanceWhereClause = 'WHERE 1=1';
         let attendanceParams = [];
         if (from) {
             attendanceParams.push(from);
-            attendanceWhereClause += ` AND check_in_time >= $${attendanceParams.length}`;
+            attendanceWhereClause += ` AND check_in_time >= $${attendanceParams.length}::DATE`;
         }
         if (to) {
             attendanceParams.push(to);
-            attendanceWhereClause += ` AND check_in_time <= $${attendanceParams.length}::TIMESTAMP + INTERVAL '1 day'`;
+            attendanceWhereClause += ` AND check_in_time <= $${attendanceParams.length}::DATE + INTERVAL '1 day'`;
         }
         if (isManager) {
             attendanceParams.push(teamMemberIds);
