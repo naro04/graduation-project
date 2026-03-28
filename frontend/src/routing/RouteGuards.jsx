@@ -1,6 +1,6 @@
 import React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { clearClientSession, getEffectiveRole, hasAnyPermission, hasValidAuthSession } from "../services/auth.js";
+import { getEffectiveRole, hasAnyPermission, hasValidAuthSession } from "../services/auth.js";
 
 /**
  * Central route guard: requires a present, non-expired JWT (see auth session helpers).
@@ -39,12 +39,11 @@ export function PermissionRoute({ requiredPermissions = [] }) {
 }
 
 /**
- * For login/register: if already authenticated, skip auth screens.
+ * Login/register: إن كانت الجلسة صالحة نوجّه للداشبورد بدل إبقاء شاشة عامة مفتوحة.
  */
 export function PublicOnlyRoute({ children }) {
   if (hasValidAuthSession()) {
-    // Treat opening /login or /register while authenticated as an explicit sign-out intent.
-    clearClientSession();
+    return <Navigate to="/dashboard" replace />;
   }
   return children;
 }

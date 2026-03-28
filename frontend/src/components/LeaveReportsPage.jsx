@@ -52,6 +52,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
 
   const [leaveReportsData, setLeaveReportsData] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsFetchError, setReportsFetchError] = useState(null);
 
   const formatDateShort = (val) => {
     if (!val) return "—";
@@ -75,7 +76,8 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   const fetchReports = async () => {
     try {
       setReportsLoading(true);
-      const data = await getLeaveReports({ from_date: fromDate, to_date: toDate });
+      setReportsFetchError(null);
+      const data = await getLeaveReports({ dateFrom: fromDate, dateTo: toDate });
       const list = Array.isArray(data) ? data : [];
       setLeaveReportsData(
         list.map((item) => {
@@ -98,6 +100,7 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
       );
     } catch (err) {
       console.error("Failed to fetch leave reports:", err);
+      setReportsFetchError(err?.response?.data?.message || err?.message || "Failed to load leave reports");
       setLeaveReportsData([]);
     } finally {
       setReportsLoading(false);
@@ -107,6 +110,10 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
   useEffect(() => {
     fetchReports();
   }, [fromDate, toDate]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [fromDate, toDate, searchQuery, selectedLeaveType, selectedStatus]);
 
   // Role display names
   const roleDisplayNames = {
@@ -403,6 +410,11 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                   >
                     Analyze employee leave patterns, balances, and approvals
                   </p>
+                  {reportsFetchError && (
+                    <p className="mt-3 text-sm text-red-600" role="alert">
+                      {reportsFetchError}
+                    </p>
+                  )}
                 </div>
                 <div className="relative flex-shrink-0" style={{ marginTop: '56px' }} ref={exportAllDropdownRef}>
                   <button
@@ -489,30 +501,39 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                         </>
                       ) : (
                         <>
-                          {annualAngle > 0 && (
+                          {/* SVG elliptical arcs with 360° degenerate to zero-length; use a full circle instead */}
+                          {annualAngle >= 359.5 ? (
+                            <circle cx="100" cy="100" r="80" fill="#00564F" />
+                          ) : annualAngle > 0 ? (
                             <path
                               d={`M 100 100 L ${getCoordinates(annualStartAngle, 80).x} ${getCoordinates(annualStartAngle, 80).y} A 80 80 0 ${annualAngle > 180 ? 1 : 0} 1 ${getCoordinates(annualStartAngle + annualAngle, 80).x} ${getCoordinates(annualStartAngle + annualAngle, 80).y} Z`}
                               fill="#00564F"
                             />
-                          )}
-                          {sickAngle > 0 && (
+                          ) : null}
+                          {sickAngle >= 359.5 ? (
+                            <circle cx="100" cy="100" r="80" fill="#8CCCC6" />
+                          ) : sickAngle > 0 ? (
                             <path
                               d={`M 100 100 L ${getCoordinates(sickStartAngle, 80).x} ${getCoordinates(sickStartAngle, 80).y} A 80 80 0 ${sickAngle > 180 ? 1 : 0} 1 ${getCoordinates(sickStartAngle + sickAngle, 80).x} ${getCoordinates(sickStartAngle + sickAngle, 80).y} Z`}
                               fill="#8CCCC6"
                             />
-                          )}
-                          {personalAngle > 0 && (
+                          ) : null}
+                          {personalAngle >= 359.5 ? (
+                            <circle cx="100" cy="100" r="80" fill="#626262" />
+                          ) : personalAngle > 0 ? (
                             <path
                               d={`M 100 100 L ${getCoordinates(personalStartAngle, 80).x} ${getCoordinates(personalStartAngle, 80).y} A 80 80 0 ${personalAngle > 180 ? 1 : 0} 1 ${getCoordinates(personalStartAngle + personalAngle, 80).x} ${getCoordinates(personalStartAngle + personalAngle, 80).y} Z`}
                               fill="#626262"
                             />
-                          )}
-                          {emergencyAngle > 0 && (
+                          ) : null}
+                          {emergencyAngle >= 359.5 ? (
+                            <circle cx="100" cy="100" r="80" fill="#670505" />
+                          ) : emergencyAngle > 0 ? (
                             <path
                               d={`M 100 100 L ${getCoordinates(emergencyStartAngle, 80).x} ${getCoordinates(emergencyStartAngle, 80).y} A 80 80 0 ${emergencyAngle > 180 ? 1 : 0} 1 ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).x} ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).y} Z`}
                               fill="#670505"
                             />
-                          )}
+                          ) : null}
                         </>
                       )}
                     </svg>
@@ -1140,6 +1161,9 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
           <div className="mb-6">
             <h1 className="text-[20px] font-semibold text-[#000000] mb-1">Leave Reports</h1>
             <p className="text-[12px] text-[#6B7280]">Analyze employee leave patterns, balances, and approvals</p>
+            {reportsFetchError && (
+              <p className="mt-2 text-xs text-red-600" role="alert">{reportsFetchError}</p>
+            )}
           </div>
 
           {/* Charts Section - Mobile */}
@@ -1160,30 +1184,38 @@ const LeaveReportsPage = ({ userRole = "superAdmin" }) => {
                       </>
                     ) : (
                       <>
-                        {annualAngle > 0 && (
+                        {annualAngle >= 359.5 ? (
+                          <circle cx="100" cy="100" r="80" fill="#00564F" />
+                        ) : annualAngle > 0 ? (
                           <path
                             d={`M 100 100 L ${getCoordinates(annualStartAngle, 80).x} ${getCoordinates(annualStartAngle, 80).y} A 80 80 0 ${annualAngle > 180 ? 1 : 0} 1 ${getCoordinates(annualStartAngle + annualAngle, 80).x} ${getCoordinates(annualStartAngle + annualAngle, 80).y} Z`}
                             fill="#00564F"
                           />
-                        )}
-                        {sickAngle > 0 && (
+                        ) : null}
+                        {sickAngle >= 359.5 ? (
+                          <circle cx="100" cy="100" r="80" fill="#8CCCC6" />
+                        ) : sickAngle > 0 ? (
                           <path
                             d={`M 100 100 L ${getCoordinates(sickStartAngle, 80).x} ${getCoordinates(sickStartAngle, 80).y} A 80 80 0 ${sickAngle > 180 ? 1 : 0} 1 ${getCoordinates(sickStartAngle + sickAngle, 80).x} ${getCoordinates(sickStartAngle + sickAngle, 80).y} Z`}
                             fill="#8CCCC6"
                           />
-                        )}
-                        {personalAngle > 0 && (
+                        ) : null}
+                        {personalAngle >= 359.5 ? (
+                          <circle cx="100" cy="100" r="80" fill="#626262" />
+                        ) : personalAngle > 0 ? (
                           <path
                             d={`M 100 100 L ${getCoordinates(personalStartAngle, 80).x} ${getCoordinates(personalStartAngle, 80).y} A 80 80 0 ${personalAngle > 180 ? 1 : 0} 1 ${getCoordinates(personalStartAngle + personalAngle, 80).x} ${getCoordinates(personalStartAngle + personalAngle, 80).y} Z`}
                             fill="#626262"
                           />
-                        )}
-                        {emergencyAngle > 0 && (
+                        ) : null}
+                        {emergencyAngle >= 359.5 ? (
+                          <circle cx="100" cy="100" r="80" fill="#670505" />
+                        ) : emergencyAngle > 0 ? (
                           <path
                             d={`M 100 100 L ${getCoordinates(emergencyStartAngle, 80).x} ${getCoordinates(emergencyStartAngle, 80).y} A 80 80 0 ${emergencyAngle > 180 ? 1 : 0} 1 ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).x} ${getCoordinates(emergencyStartAngle + emergencyAngle, 80).y} Z`}
                             fill="#670505"
                           />
-                        )}
+                        ) : null}
                       </>
                     )}
                   </svg>

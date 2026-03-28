@@ -4,6 +4,17 @@
 import { apiRequest, setToken, removeToken, getToken } from './api.js';
 import { isJwtExpired } from '../utils/jwt.js';
 
+/** يُضبط فقط بعد تسجيل دخول ناجح في هذا التاب — لا يُشارك بين التابات (عكس localStorage) */
+const AUTH_TAB_SESSION_KEY = 'hrms_tab_authenticated';
+
+const markTabAuthenticated = () => {
+  try {
+    sessionStorage.setItem(AUTH_TAB_SESSION_KEY, '1');
+  } catch {
+    /* private mode / quota */
+  }
+};
+
 /**
  * Clear stored session on the client (token + cached user). Does not call the API.
  */
@@ -11,6 +22,11 @@ const clearClientSession = () => {
   removeToken();
   localStorage.removeItem('userData');
   sessionStorage.removeItem('userData');
+  try {
+    sessionStorage.removeItem(AUTH_TAB_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
 };
 
 /**
@@ -22,6 +38,26 @@ const hasValidAuthSession = () => {
   if (!token || typeof token !== 'string' || !token.trim()) return false;
   if (isJwtExpired(token)) {
     clearClientSession();
+    return false;
+  }
+  // بدون userData لا نعرض لوحة كأن المستخدم مسجّل (يتطلب تسجيل دخول كامل)
+  const rawUser = localStorage.getItem('userData') || sessionStorage.getItem('userData');
+  if (!rawUser || !rawUser.trim()) {
+    clearClientSession();
+    return false;
+  }
+  try {
+    const u = JSON.parse(rawUser);
+    if (!u || typeof u !== 'object') {
+      clearClientSession();
+      return false;
+    }
+  } catch {
+    clearClientSession();
+    return false;
+  }
+  // بدون هذا التاب لم يمرّ المستخدم بتسجيل دخول هنا — يمنع فتح دومين/تاب جديد دخول مباشر بتوكن قديم
+  if (sessionStorage.getItem(AUTH_TAB_SESSION_KEY) !== '1') {
     return false;
   }
   return true;
@@ -106,6 +142,10 @@ const login = async (email, password, rememberMe = false) => {
       }
     }
 
+    if (token) {
+      markTabAuthenticated();
+    }
+
     return response;
   } catch (error) {
     // Re-throw with user-friendly message based on error status
@@ -153,19 +193,8 @@ const register = async (data) => {
       body: JSON.stringify(requestData),
     });
 
-    // Store token if provided in response
-    if (response.token || response.access_token) {
-      const token = response.token || response.access_token;
-      setToken(token);
-    } else if (response.data?.token) {
-      setToken(response.data.token);
-    }
-
-    // Store user data if needed
-    if (response.user || response) {
-      const userData = response.user || response;
-      localStorage.setItem('userData', JSON.stringify(userData));
-    }
+    // لا نخزّن توكن/مستخدم بعد التسجيل بالفورم — المطلوب يمرّ على صفحة تسجيل الدخول.
+    // (الباكند قد يرسل JWT؛ لو خزّناه، PublicOnlyRoute يحوّل /login مباشرة لـ /dashboard)
 
     return response;
   } catch (error) {
@@ -211,7 +240,13 @@ const googleAuth = async (accessToken) => {
     // Store user data if needed
     if (response.data?.user || response.user || response) {
       const userData = response.data?.user || response.user || response;
-      localStorage.setItem('userData', JSON.stringify(userData));
+      if (userData && typeof userData === 'object') {
+        localStorage.setItem('userData', JSON.stringify(userData));
+      }
+    }
+
+    if (response.token || response.access_token || response.data?.token) {
+      markTabAuthenticated();
     }
 
     return response;
@@ -270,8 +305,14 @@ const isAuthenticated = () => {
  * @returns {object|null} - User data or null
  */
 const getCurrentUser = () => {
-  const userData = localStorage.getItem('userData') || sessionStorage.getItem('userData');
-  return userData ? JSON.parse(userData) : null;
+  try {
+    const userData = localStorage.getItem('userData') || sessionStorage.getItem('userData');
+    if (!userData) return null;
+    const u = JSON.parse(userData);
+    return u && typeof u === 'object' ? u : null;
+  } catch {
+    return null;
+  }
 };
 
 /**

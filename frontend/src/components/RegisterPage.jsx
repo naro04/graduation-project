@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { register, googleAuth } from "../services/auth.js";
+import { register, googleAuth, clearClientSession } from "../services/auth.js";
 
 // Logo image
 const LogoMobile = new URL("../images/LogoMobile.jpg", import.meta.url).href;
@@ -69,10 +69,9 @@ const RegisterPage = () => {
         callback: async (tokenResponse) => {
           try {
             // Send the access token to backend
-            const result = await googleAuth(tokenResponse.access_token);
-            
-            // Success - redirect to login page
-            navigate("/login");
+            await googleAuth(tokenResponse.access_token);
+            setIsGoogleLoading(false);
+            navigate("/dashboard", { replace: true });
           } catch (err) {
             setError(err.message || "Google sign-up failed. Please try again.");
             setIsGoogleLoading(false);
@@ -127,7 +126,7 @@ const RegisterPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await register({
+      await register({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
@@ -136,8 +135,7 @@ const RegisterPage = () => {
         confirmPassword,
         privacyPolicyAgreement: agreeToTerms,
       });
-      
-      // Success - redirect to login page
+      clearClientSession();
       navigate("/login");
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");

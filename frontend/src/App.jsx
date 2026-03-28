@@ -50,7 +50,7 @@ import SupportPage from './components/SupportPage.jsx'
 
 // Activities has no single index for some roles — redirect to first sub-route or dashboard
 function ActivitiesOrRedirect() {
-  const role = getEffectiveRole('superAdmin')
+  const role = getEffectiveRole('officer')
   if (role === 'manager') return <Navigate to="/my-team/activities" replace />
   if (role === 'fieldEmployee') return <Navigate to="/activities/log" replace />
   if (role === 'officer') return <Navigate to="/dashboard" replace />

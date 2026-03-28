@@ -32,8 +32,10 @@ export function parseJwtPayload(token) {
  */
 export function isJwtExpired(token) {
   const payload = parseJwtPayload(token);
-  if (!payload || payload.exp == null) return false;
+  // ليست JWT صالحة، أو بدون exp → لا نعتمدها كجلسة (كانت تُعتبر "غير منتهية" = ثغرة)
+  if (!payload) return true;
+  if (payload.exp == null) return true;
   const expMs = Number(payload.exp) * 1000;
-  if (!Number.isFinite(expMs)) return false;
+  if (!Number.isFinite(expMs)) return true;
   return Date.now() >= expMs;
 }

@@ -145,6 +145,10 @@ const AttendanceReportPage = ({ userRole = "superAdmin" }) => {
     return () => { cancelled = true; };
   }, [isTeamReportPage, fromDate, toDate]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [fromDate, toDate, searchQuery, selectedLocation, selectedStatus, isTeamReportPage, teamSelectedType, teamSelectedStatus, teamSearchDebounced]);
+
   // Format date-time to single line for table (no scroll: compact)
   const formatDateTimeShort = (val) => {
     if (val == null || val === "" || val === "—") return "—";
