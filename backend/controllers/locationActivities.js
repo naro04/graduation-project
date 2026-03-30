@@ -2,6 +2,46 @@ const pool = require('../database/connection');
 const activityQueries = require('../database/data/queries/locationActivities');
 const locationQueries = require('../database/data/queries/locations');
 
+/**
+ * Helper to check if a user has permission to manage (approve, reject, delete) a specific activity.
+ * Admins (Super/HR) can manage anything.
+ * Managers can only manage activities where they are the responsible employee OR their team members are assigned.
+ */
+const checkActivityPermission = async (user, activityId) => {
+    // 1. Super Admin and HR Admin bypass check
+    if (user.role_name === 'Super Admin' || user.role_name === 'HR Admin') {
+        return true;
+    }
+
+    // 2. If not a Manager, they definitely shouldn't be here
+    if (user.role_name !== 'Manager') {
+        return false;
+    }
+
+    const managerEmployeeId = user.employee_id;
+    if (!managerEmployeeId) return false;
+
+    // 3. Check if activity is in Manager's scope
+    const scopeCheckQuery = `
+        SELECT 1 FROM activities a
+        WHERE a.id = $1 AND (
+            a.employee_id = $2 -- Manager is responsible
+            OR EXISTS (
+                SELECT 1 FROM activity_employees ae
+                JOIN employees e ON ae.employee_id = e.id
+                WHERE ae.activity_id = a.id AND e.supervisor_id = $2 -- Team member is assigned
+            )
+        )
+    `;
+    try {
+        const result = await pool.query(scopeCheckQuery, [activityId, managerEmployeeId]);
+        return result.rows.length > 0;
+    } catch (err) {
+        console.error('Error in checkActivityPermission:', err);
+        return false;
+    }
+};
+
 // Sync implementation_status with approval_status and date:
 //   Pending   → implementation_status = 'Pending'
 //   Rejected  → implementation_status = 'Cancelled'
@@ -432,6 +472,12 @@ exports.deleteLocationActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
 
+        // Permission check
+        const hasPermission = await checkActivityPermission(req.user, activity_id);
+        if (!hasPermission) {
+            return res.status(403).json({ status: 'fail', message: 'You do not have permission to delete this activity' });
+        }
+
         const result = await pool.query(activityQueries.deleteLocationActivityQuery, [activity_id]);
 
         if (result.rowCount === 0) {
@@ -468,6 +514,13 @@ exports.getActivityEmployees = async (req, res) => {
 exports.approveActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
+
+        // Permission check
+        const hasPermission = await checkActivityPermission(req.user, activity_id);
+        if (!hasPermission) {
+            return res.status(403).json({ status: 'fail', message: 'You do not have permission to approve this activity' });
+        }
+
         const approved_by = req.user.employee_id || req.user.id;
 
         const result = await pool.query(`
@@ -496,6 +549,13 @@ exports.approveActivity = async (req, res) => {
 exports.rejectActivity = async (req, res) => {
     try {
         const { activity_id } = req.params;
+
+        // Permission check
+        const hasPermission = await checkActivityPermission(req.user, activity_id);
+        if (!hasPermission) {
+            return res.status(403).json({ status: 'fail', message: 'You do not have permission to reject this activity' });
+        }
+
         const approved_by = req.user.employee_id || req.user.id;
 
         const result = await pool.query(`

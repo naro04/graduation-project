@@ -19,15 +19,15 @@ router.post('/:activity_id/assign', restrictToRolesOrPermissions(['Manager'], 'm
 
 router.get('/:activity_id/employees', restrictToRolesOrPermissions(['Manager'], 'manage_locations', 'manage_employees'), activityController.getActivityEmployees);
 
-router.patch('/:activity_id/approve', restrictTo('manage_locations'), activityController.approveActivity);
-router.patch('/:activity_id/reject', restrictTo('manage_locations'), activityController.rejectActivity);
+router.patch('/:activity_id/approve', restrictToRolesOrPermissions(['Manager'], 'manage_locations'), activityController.approveActivity);
+router.patch('/:activity_id/reject', restrictToRolesOrPermissions(['Manager'], 'manage_locations'), activityController.rejectActivity);
 
 router.route('/:activity_id')
     .get(restrictToRolesOrPermissions(['Manager'], 'manage_locations', 'manage_employees'), activityController.getActivityById)
     .put(restrictTo('manage_locations'), activityController.updateLocationActivity)
     .patch(restrictTo('manage_locations'), activityController.updateLocationActivity)
 
-    .delete(restrictTo('manage_locations'), activityController.deleteLocationActivity);
+    .delete(restrictToRolesOrPermissions(['Manager'], 'manage_locations'), activityController.deleteLocationActivity);
 
 module.exports = router;
 
