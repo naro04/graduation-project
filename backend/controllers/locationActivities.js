@@ -688,14 +688,15 @@ exports.getActivityReports = async (req, res) => {
         const fromD = from || null;
         const toD = to || null;
 
-        // Scoping boilerplate for charts
-        let chartParams = [fromD, toD];
-        let chartWhereClause = `WHERE ($1::DATE IS NULL OR a.end_date >= $1::DATE)
-              AND ($2::DATE IS NULL OR a.start_date <= $2::DATE)`;
+        // Scoping boilerplate for charts (Full current year)
+        const currentYearStart = `${new Date().getFullYear()}-01-01`;
+        const currentYearEnd = `${new Date().getFullYear()}-12-31`;
+        let yearParams = [currentYearStart, currentYearEnd];
+        let yearWhereClause = `WHERE (a.start_date >= $1::DATE AND a.start_date <= $2::DATE)`;
 
         if (isManager) {
-            chartParams.push(managerEmployeeId);
-            chartWhereClause += ` AND (
+            yearParams.push(managerEmployeeId);
+            yearWhereClause += ` AND (
                 a.employee_id = $3::UUID
                 OR a.employee_id IN (SELECT id FROM employees WHERE supervisor_id = $3::UUID)
                 OR EXISTS (
@@ -706,36 +707,36 @@ exports.getActivityReports = async (req, res) => {
             )`;
         }
 
-        // 2. Activity Completion Trend (Monthly)
-        // Implemented: Status is 'Implemented' OR 'Approved'
+        // 2. Activity Completion Trend (Monthly for current year)
         const trendQuery = `
             SELECT 
                 TO_CHAR(date_trunc('month', a.start_date), 'Mon') as month,
                 COUNT(*) FILTER (WHERE a.implementation_status ILIKE 'Planned' OR a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved') as planned,
                 COUNT(*) FILTER (WHERE a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved') as implemented
             FROM activities a
-            ${chartWhereClause}
+            ${yearWhereClause}
             GROUP BY date_trunc('month', a.start_date)
             ORDER BY date_trunc('month', a.start_date);
         `;
 
-        // 3. Participants by Activity Type
-        // Uses the attendees_count logic including staff
+        // 3. Participants by Activity Type and Month (Current year)
         const participantsQuery = `
             SELECT 
-                a.activity_type as type,
+                TO_CHAR(date_trunc('month', a.start_date), 'Mon') as month,
+                LOWER(TRIM(a.activity_type)) as type,
                 SUM(
                     COALESCE(a.attendees_count, 0) + 
                     (SELECT COUNT(DISTINCT ae4.employee_id) FROM activity_employees ae4 WHERE ae4.activity_id = a.id) + 
                     1
                 ) as attendees
             FROM activities a
-            ${chartWhereClause} AND (a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved')
-            GROUP BY a.activity_type;
+            ${yearWhereClause} AND (a.implementation_status ILIKE 'Implemented' OR a.approval_status ILIKE 'Approved')
+            GROUP BY date_trunc('month', a.start_date), LOWER(TRIM(a.activity_type))
+            ORDER BY date_trunc('month', a.start_date);
         `;
 
-        const trendResult = await pool.query(trendQuery, chartParams);
-        const participantsResult = await pool.query(participantsQuery, chartParams);
+        const trendResult = await pool.query(trendQuery, yearParams);
+        const participantsResult = await pool.query(participantsQuery, yearParams);
 
         res.status(200).json({
             status: 'success',
